@@ -1,0 +1,11 @@
+{
+  "java.import.gradle.enabled": false,
+  "java.autobuild.enabled": false,
+  "java.configuration.updateBuildConfiguration": "disabled",
+  "java.server.launchMode": "LightWeight",
+  "files.watcherExclude": {
+    "**/android/.gradle/**": true,
+    "**/.gradle/**": true,
+    "**/build/**": true
+  }
+}
