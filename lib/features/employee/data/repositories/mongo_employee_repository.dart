@@ -257,6 +257,27 @@ class MongoEmployeeRepository implements EmployeeRepository {
   }
 
   @override
+  Future<void> verifyDocuments({
+    required String requestId,
+    required String employeeId,
+  }) async {
+    await _ensureConnected();
+    await _assertAssigned(requestId: requestId, employeeId: employeeId);
+
+    final now = DateTime.now().toUtc().toIso8601String();
+    await _collectionService.updateOne(
+      collectionName: AppConstants.landOwnerRequestsCollection,
+      selector: where.eq('_id', ObjectId.parse(requestId)),
+      modifier: modify
+          .set('documentsVerified', true)
+          .set('status', RequestStatus.approved.value)
+          .set('reviewedBy', employeeId)
+          .set('reviewedAt', now)
+          .set('updatedAt', now),
+    );
+  }
+
+  @override
   Future<List<EmployeeNotification>> getNotifications(String employeeId) async {
     await _ensureConnected();
     final results = await _collectionService.findMany(

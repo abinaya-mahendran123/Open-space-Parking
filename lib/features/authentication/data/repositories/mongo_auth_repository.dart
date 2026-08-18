@@ -35,6 +35,22 @@ class MongoAuthRepository implements AuthRepository {
     required String email,
     required String password,
   }) async {
+    final apiClient = _apiClient;
+    if (apiClient != null) {
+      try {
+        final response = await apiClient.post('/api/auth/app-login', {
+          'email': email.trim().toLowerCase(),
+          'password': password,
+        });
+        return _sessionFromApi(response, email);
+      } on NetworkException catch (e) {
+        final msg = e.message.toLowerCase();
+        if (!msg.contains('404') && !msg.contains('cannot post')) {
+          throw AppException(e.message);
+        }
+      }
+    }
+
     final session = await _loginWithRoleCheck(
       email: email,
       password: password,
@@ -55,6 +71,22 @@ class MongoAuthRepository implements AuthRepository {
     required String email,
     required String password,
   }) async {
+    final apiClient = _apiClient;
+    if (apiClient != null) {
+      try {
+        final response = await apiClient.post('/api/auth/admin-login', {
+          'email': email.trim().toLowerCase(),
+          'password': password,
+        });
+        return _sessionFromApi(response, email);
+      } on NetworkException catch (e) {
+        final msg = e.message.toLowerCase();
+        if (!msg.contains('404') && !msg.contains('cannot post')) {
+          throw AppException(e.message);
+        }
+      }
+    }
+
     final session = await _loginWithRoleCheck(
       email: email,
       password: password,
@@ -117,8 +149,7 @@ class MongoAuthRepository implements AuthRepository {
     required String email,
     required String password,
   }) async {
-    await _ensureConnected();
-
+    // Try Express API first so phone doesn't hang waiting for direct MongoDB
     final apiClient = _apiClient;
     if (apiClient != null) {
       try {
@@ -126,17 +157,16 @@ class MongoAuthRepository implements AuthRepository {
           'email': email.trim().toLowerCase(),
           'password': password,
         });
-        return _buildSession(
-          userId: response['userId'] as String,
-          email: response['email'] as String? ?? email.trim().toLowerCase(),
-          displayName: response['displayName'] as String? ?? '',
-          role: UserRole.security,
-          issuedAt: DateTime.now().toUtc(),
-        );
+        return _sessionFromApi(response, email);
       } on NetworkException catch (e) {
-        throw AppException(e.message);
+        final msg = e.message.toLowerCase();
+        if (!msg.contains('404') && !msg.contains('cannot post')) {
+          throw AppException(e.message);
+        }
       }
     }
+
+    await _ensureConnected();
 
     await DefaultAdminSeedService(collectionService: _collectionService)
         .ensureDefaultSecurity();
@@ -226,14 +256,43 @@ class MongoAuthRepository implements AuthRepository {
 
   @override
   Future<AuthSession> loginWithPhone({required String phone}) async {
-    await _ensureConnected();
     final normalizedPhone = PhoneUtils.normalizeIndianMobile(phone);
+
+    final apiClient = _apiClient;
+    if (apiClient != null) {
+      try {
+        final response = await apiClient.post('/api/auth/phone-login', {
+          'phone': normalizedPhone,
+        });
+        return _sessionFromApi(response, _phoneEmail(normalizedPhone));
+      } on NetworkException catch (e) {
+        final msg = e.message.toLowerCase();
+        if (!msg.contains('404') && !msg.contains('cannot post')) {
+          throw AppException(e.message);
+        }
+      }
+    }
+
+    await _ensureConnected();
     final user = await _findUserByPhone(normalizedPhone);
     if (user == null) {
       throw const AppException(
         'No account found for this mobile number. Sign up first.',
       );
     }
+
+    final role = UserRoleX.fromValue(user['role'] as String? ?? '');
+    if (role == UserRole.security) {
+      final rawId = user['_id'];
+      return _buildSession(
+        userId: MongoJson.objectIdHex(rawId),
+        email: user['email'] as String? ?? _phoneEmail(normalizedPhone),
+        displayName: user['displayName'] as String? ?? '',
+        role: role,
+        issuedAt: DateTime.now().toUtc(),
+      );
+    }
+
     return _sessionFromUser(user);
   }
 
@@ -244,9 +303,38 @@ class MongoAuthRepository implements AuthRepository {
     required UserRole role,
   }) async {
     _assertSelfRegisterRole(role);
+    final normalizedPhone = PhoneUtils.normalizeIndianMobile(phone);
+
+    final apiClient = _apiClient;
+    if (apiClient != null) {
+      try {
+        final response = await apiClient.post('/api/auth/phone-register', {
+          'phone': normalizedPhone,
+          'displayName': displayName.trim(),
+          'role': role.value,
+        });
+        final session = _sessionFromApi(response, _phoneEmail(normalizedPhone));
+        try {
+          await _seedProfileForRole(
+            userId: session.userId,
+            displayName: displayName.trim(),
+            email: '',
+            phone: normalizedPhone,
+            role: role,
+            now: DateTime.now().toUtc(),
+          );
+        } catch (_) {}
+        return session;
+      } on NetworkException catch (e) {
+        final msg = e.message.toLowerCase();
+        if (!msg.contains('404') && !msg.contains('cannot post')) {
+          throw AppException(e.message);
+        }
+      }
+    }
+
     await _ensureConnected();
 
-    final normalizedPhone = PhoneUtils.normalizeIndianMobile(phone);
     if (await _findUserByPhone(normalizedPhone) != null) {
       throw const AppException('An account with this mobile number already exists.');
     }
@@ -278,7 +366,7 @@ class MongoAuthRepository implements AuthRepository {
     await _seedProfileForRole(
       userId: userId.oid,
       displayName: displayName.trim(),
-      email: syntheticEmail,
+      email: '',
       phone: normalizedPhone,
       role: role,
       now: now,
@@ -551,6 +639,16 @@ class MongoAuthRepository implements AuthRepository {
       role: role,
       jwtToken: jwtToken,
       expiresAt: expiresAt,
+    );
+  }
+
+  AuthSession _sessionFromApi(Map<String, dynamic> response, String fallbackEmail) {
+    return _buildSession(
+      userId: MongoJson.objectIdHex(response['userId']),
+      email: response['email'] as String? ?? fallbackEmail.trim().toLowerCase(),
+      displayName: response['displayName'] as String? ?? '',
+      role: UserRoleX.fromValue(response['role'] as String? ?? ''),
+      issuedAt: DateTime.now().toUtc(),
     );
   }
 

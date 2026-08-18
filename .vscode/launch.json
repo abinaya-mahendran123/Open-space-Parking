@@ -9,7 +9,7 @@
       "preLaunchTask": "Prepare Android API",
       "toolArgs": [
         "--dart-define=BASE_API_URL=http://127.0.0.1:3000",
-        "--dart-define=HOST_LAN_IP=192.168.88.8",
+        "--dart-define=HOST_LAN_IP=192.168.1.8",
         "--dart-define=GOOGLE_WEB_CLIENT_ID=514956128372-a1aac5qlpe4s0i4ej0tqr6251m1uvb4k.apps.googleusercontent.com",
         "--dart-define=GOOGLE_SERVER_CLIENT_ID=514956128372-a1aac5qlpe4s0i4ej0tqr6251m1uvb4k.apps.googleusercontent.com"
       ]

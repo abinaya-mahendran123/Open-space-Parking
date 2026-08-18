@@ -47,6 +47,11 @@ abstract class EmployeeRepository {
     required String employeeId,
   });
 
+  Future<void> verifyDocuments({
+    required String requestId,
+    required String employeeId,
+  });
+
   Future<List<EmployeeNotification>> getNotifications(String employeeId);
 
   Future<void> markNotificationRead(String notificationId);

@@ -52,6 +52,7 @@ class _AuthPageState extends ConsumerState<AuthPage> {
   void _resetPhoneFlow() {
     ref.read(phoneAuthStepProvider.notifier).state = PhoneAuthStep.enterPhone;
     ref.read(otpDevModeProvider.notifier).state = false;
+    ref.read(otpDevCodeProvider.notifier).state = null;
     ref.read(verifiedPhoneProvider.notifier).state = null;
     _otpController.clear();
   }
@@ -117,11 +118,17 @@ class _AuthPageState extends ConsumerState<AuthPage> {
 
       ref.read(phoneAuthStepProvider.notifier).state = PhoneAuthStep.enterOtp;
       ref.read(otpDevModeProvider.notifier).state = result.devMode;
+      ref.read(otpDevCodeProvider.notifier).state = result.otp;
       ref.read(verifiedPhoneProvider.notifier).state = result.phone;
+      if (result.devMode && result.otp != null && result.otp!.isNotEmpty) {
+        _otpController.text = result.otp!;
+      }
 
       snackbar.showSuccess(
         result.devMode
-            ? 'OTP sent (dev mode). Check backend console for the code.'
+            ? (result.otp != null && result.otp!.isNotEmpty
+                ? 'OTP (dev mode): ${result.otp}'
+                : 'OTP sent (dev mode). Check backend console for the code.')
             : 'OTP sent to ${result.phone}',
       );
     } on AppException catch (e) {
@@ -361,7 +368,9 @@ class _AuthPageState extends ConsumerState<AuthPage> {
                 if (ref.watch(otpDevModeProvider)) ...[
                   const SizedBox(height: 8),
                   Text(
-                    'Dev mode: check the backend terminal for your OTP code.',
+                    ref.watch(otpDevCodeProvider) != null
+                        ? 'Dev mode OTP: ${ref.watch(otpDevCodeProvider)}'
+                        : 'Dev mode: check the backend terminal for your OTP code.',
                     style: Theme.of(context).textTheme.bodySmall?.copyWith(
                           color: colorScheme.tertiary,
                         ),

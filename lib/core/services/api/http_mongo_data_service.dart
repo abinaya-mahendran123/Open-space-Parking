@@ -48,7 +48,9 @@ class HttpMongoDataService {
     });
     final document = response['document'];
     if (document == null) return null;
-    return Map<String, dynamic>.from(document as Map);
+    return Map<String, dynamic>.from(
+      MongoHttpCodec.decode(document) as Map,
+    );
   }
 
   Future<List<Map<String, dynamic>>> findMany({
@@ -64,7 +66,11 @@ class HttpMongoDataService {
     });
     final documents = response['documents'] as List<dynamic>? ?? const [];
     return documents
-        .map((doc) => Map<String, dynamic>.from(doc as Map))
+        .map(
+          (doc) => Map<String, dynamic>.from(
+            MongoHttpCodec.decode(doc) as Map,
+          ),
+        )
         .toList();
   }
 
@@ -87,7 +93,11 @@ class HttpMongoDataService {
       },
     });
     final items = (response['items'] as List<dynamic>? ?? const [])
-        .map((doc) => Map<String, dynamic>.from(doc as Map))
+        .map(
+          (doc) => Map<String, dynamic>.from(
+            MongoHttpCodec.decode(doc) as Map,
+          ),
+        )
         .toList();
 
     return PaginatedResult(
@@ -144,7 +154,9 @@ class HttpMongoDataService {
       'collection': collectionName,
       'document': doc,
     });
-    return Map<String, dynamic>.from(response['document'] as Map);
+    return Map<String, dynamic>.from(
+      MongoHttpCodec.decode(response['document']) as Map,
+    );
   }
 
   Future<bool> updateById({

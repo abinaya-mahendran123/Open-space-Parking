@@ -40,4 +40,6 @@ final postAuthRoleSelectionProvider = StateProvider<bool>((ref) => false);
 
 final otpDevModeProvider = StateProvider<bool>((ref) => false);
 
+final otpDevCodeProvider = StateProvider<String?>((ref) => null);
+
 final verifiedPhoneProvider = StateProvider<String?>((ref) => null);

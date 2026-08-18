@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 
 import 'package:http/http.dart' as http;
@@ -16,29 +17,51 @@ class ApiClient {
   Uri _uri(String path) => Uri.parse('$_baseUrl$path');
 
   Future<void> checkHealth() async {
-    final response = await _httpClient
-        .get(_uri('/api/health'))
-        .timeout(const Duration(seconds: 5));
-
-    if (response.statusCode != 200) {
-      throw NetworkException(
-        'API server unavailable (HTTP ${response.statusCode}). '
-        'Start it with: cd backend && npm install && npm start',
-      );
+    Future<bool> ping() async {
+      try {
+        final response = await _httpClient
+            .get(_uri('/api/health'))
+            .timeout(const Duration(milliseconds: 1200));
+        return response.statusCode == 200;
+      } catch (_) {
+        return false;
+      }
     }
+
+    if (await ping()) return;
+    await EnvironmentConfig.refreshReachableApiUrl();
+    if (await ping()) return;
+
+    throw NetworkException(
+      'API server unavailable. '
+      'Start it with: cd backend && npm install && npm start',
+    );
   }
 
   Future<Map<String, dynamic>> post(
     String path,
     Map<String, dynamic> body,
   ) async {
-    final response = await _httpClient
-        .post(
-          _uri(path),
-          headers: const {'Content-Type': 'application/json'},
-          body: jsonEncode(MongoHttpCodec.encode(body)),
-        )
-        .timeout(AppConstants.requestTimeout);
+    Future<http.Response> send() {
+      return _httpClient
+          .post(
+            _uri(path),
+            headers: const {'Content-Type': 'application/json'},
+            body: jsonEncode(MongoHttpCodec.encode(body)),
+          )
+          .timeout(AppConstants.requestTimeout);
+    }
+
+    http.Response response;
+    try {
+      response = await send();
+    } on TimeoutException catch (_) {
+      await EnvironmentConfig.refreshReachableApiUrl();
+      response = await send();
+    } on http.ClientException catch (_) {
+      await EnvironmentConfig.refreshReachableApiUrl();
+      response = await send();
+    }
 
     Map<String, dynamic> payload;
     try {

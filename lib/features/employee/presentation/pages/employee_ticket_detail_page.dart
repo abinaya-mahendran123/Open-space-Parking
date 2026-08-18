@@ -14,6 +14,7 @@ import 'package:open_space_parking/core/widgets/textfields/app_text_field.dart';
 import 'package:open_space_parking/features/authentication/presentation/providers/auth_state_provider.dart';
 import 'package:open_space_parking/features/employee/presentation/providers/employee_providers.dart';
 import 'package:open_space_parking/features/land_owner/domain/entities/land_owner_request.dart';
+import 'package:open_space_parking/features/land_owner/domain/entities/request_status.dart';
 
 class EmployeeTicketDetailPage extends ConsumerStatefulWidget {
   const EmployeeTicketDetailPage({super.key, required this.ticketId});
@@ -133,6 +134,26 @@ class _EmployeeTicketDetailPageState
                   _Row('Flood', ticket.landDetails.flood ? 'Y' : 'N'),
                   _Row('Boundary', ticket.landDetails.boundary ? 'Y' : 'N'),
                   _Row('CCTV', ticket.landDetails.cctv ? 'Y' : 'N'),
+                ],
+              ),
+              _Section(
+                title: 'Document verification',
+                children: [
+                  _Row(
+                    'Status',
+                    ticket.documentsVerified ? 'Verified' : 'Pending',
+                  ),
+                  const SizedBox(height: 8),
+                  if (!ticket.documentsVerified)
+                    PrimaryButton(
+                      label: 'Verify documents & list nearby',
+                      isLoading: isLoading,
+                      onPressed: () => _verifyDocuments(ticket),
+                    )
+                  else
+                    const Text(
+                      'Verified. This parking can appear in nearby search.',
+                    ),
                 ],
               ),
               _Section(
@@ -407,6 +428,28 @@ class _EmployeeTicketDetailPageState
       ref.read(snackbarServiceProvider).showError(e.message);
     } catch (_) {
       ref.read(snackbarServiceProvider).showError('Could not complete project.');
+    } finally {
+      loading.state = false;
+    }
+  }
+
+  Future<void> _verifyDocuments(LandOwnerRequest ticket) async {
+    final employeeId = ref.read(authStateProvider).session?.userId ?? '';
+    final loading = ref.read(employeeLoadingProvider.notifier);
+    loading.state = true;
+    try {
+      await ref.read(employeeRepositoryProvider).verifyDocuments(
+            requestId: ticket.id,
+            employeeId: employeeId,
+          );
+      _refresh(employeeId);
+      ref.read(snackbarServiceProvider).showSuccess(
+            'Documents verified. This parking will show in nearby search.',
+          );
+    } on AppException catch (e) {
+      ref.read(snackbarServiceProvider).showError(e.message);
+    } catch (_) {
+      ref.read(snackbarServiceProvider).showError('Could not verify documents.');
     } finally {
       loading.state = false;
     }

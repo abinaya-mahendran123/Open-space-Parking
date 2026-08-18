@@ -3,6 +3,26 @@ const { spawn } = require('child_process');
 const fs = require('fs');
 const path = require('path');
 
+(function loadLocalEnv() {
+  const envPath = path.join(__dirname, '.env');
+  if (!fs.existsSync(envPath)) return;
+  for (const raw of fs.readFileSync(envPath, 'utf8').split(/\r?\n/)) {
+    const line = raw.trim();
+    if (!line || line.startsWith('#')) continue;
+    const eq = line.indexOf('=');
+    if (eq <= 0) continue;
+    const key = line.slice(0, eq).trim();
+    let value = line.slice(eq + 1).trim();
+    if (
+      (value.startsWith('"') && value.endsWith('"')) ||
+      (value.startsWith("'") && value.endsWith("'"))
+    ) {
+      value = value.slice(1, -1);
+    }
+    if (process.env[key] === undefined) process.env[key] = value;
+  }
+})();
+
 const HOST = '127.0.0.1';
 const PORT = 27017;
 const MONGOD =
@@ -41,6 +61,11 @@ async function waitForMongo(timeoutMs = 20000) {
 }
 
 async function main() {
+  if (process.env.DATABASE_URL || process.env.SUPABASE_DB_URL) {
+    console.log('Using Supabase PostgreSQL — skipping local MongoDB.');
+    return;
+  }
+
   if (await canConnect()) {
     console.log('MongoDB already running on 127.0.0.1:27017');
     return;

@@ -16,6 +16,7 @@ import 'package:open_space_parking/features/authentication/presentation/provider
 import 'package:open_space_parking/features/land_owner/presentation/widgets/land_owner_step_scaffold.dart';
 import 'package:open_space_parking/features/vehicle_owner/domain/entities/parking_availability.dart';
 import 'package:open_space_parking/features/vehicle_owner/domain/entities/parking_listing.dart';
+import 'package:open_space_parking/features/vehicle_owner/domain/entities/vehicle_owner_profile.dart';
 import 'package:open_space_parking/features/vehicle_owner/presentation/providers/vehicle_owner_providers.dart';
 import 'package:open_space_parking/features/notification/domain/entities/notification_recipient_type.dart';
 import 'package:open_space_parking/features/notification/presentation/providers/notification_providers.dart';
@@ -45,7 +46,28 @@ class _BookingFlowPageState extends ConsumerState<BookingFlowPage> {
     super.initState();
     WidgetsBinding.instance.addPostFrameCallback((_) {
       ref.read(bookingFormProvider.notifier).init(widget.listingId);
+      _prefillVehicleFromProfile();
     });
+  }
+
+  Future<void> _prefillVehicleFromProfile() async {
+    final ownerId = ref.read(authStateProvider).session?.userId;
+    if (ownerId == null || ownerId.isEmpty) return;
+    try {
+      final profile =
+          await ref.read(vehicleOwnerProfileProvider(ownerId).future);
+      final number = profile?.vehicleNumber?.trim() ?? '';
+      final model = profile?.vehicleModel?.trim() ?? '';
+      if (!mounted) return;
+      if (number.isNotEmpty && _vehicleNumberController.text.isEmpty) {
+        _vehicleNumberController.text = number;
+        ref.read(bookingFormProvider.notifier).setVehicleNumber(number);
+      }
+      if (model.isNotEmpty && _vehicleModelController.text.isEmpty) {
+        _vehicleModelController.text = model;
+        ref.read(bookingFormProvider.notifier).setVehicleModel(model);
+      }
+    } catch (_) {}
   }
 
   @override
@@ -140,6 +162,11 @@ class _BookingFlowPageState extends ConsumerState<BookingFlowPage> {
           );
 
       ref.invalidate(vehicleOwnerBookingsProvider(vehicleOwnerId));
+      await _rememberVehicleOnProfile(
+        vehicleOwnerId: vehicleOwnerId,
+        vehicleNumber: form.vehicleNumber,
+        vehicleModel: form.vehicleModel,
+      );
       invalidateNotificationCache(
         ref,
         recipientId: vehicleOwnerId,
@@ -158,6 +185,31 @@ class _BookingFlowPageState extends ConsumerState<BookingFlowPage> {
     } finally {
       if (mounted) setState(() => _submitting = false);
     }
+  }
+
+  Future<void> _rememberVehicleOnProfile({
+    required String vehicleOwnerId,
+    required String vehicleNumber,
+    required String vehicleModel,
+  }) async {
+    try {
+      final repo = ref.read(vehicleOwnerRepositoryProvider);
+      final saved = await repo.getProfile(vehicleOwnerId);
+      await repo.updateProfile(
+        vehicleOwnerId: vehicleOwnerId,
+        profile: VehicleOwnerProfile(
+          fullName: saved?.fullName ?? '',
+          phone: saved?.phone ?? '',
+          email: saved?.email ?? '',
+          address: saved?.address,
+          vehicleNumber: vehicleNumber.trim().toUpperCase(),
+          vehicleModel: vehicleModel.trim().isEmpty
+              ? saved?.vehicleModel
+              : vehicleModel.trim(),
+        ),
+      );
+      ref.invalidate(vehicleOwnerProfileProvider(vehicleOwnerId));
+    } catch (_) {}
   }
 
   @override

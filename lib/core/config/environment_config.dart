@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 
@@ -27,7 +29,7 @@ class EnvironmentConfig {
     );
     const hostLanIp = String.fromEnvironment(
       'HOST_LAN_IP',
-      defaultValue: '192.168.88.8',
+      defaultValue: '',
     );
 
     _configuredApiUrl = configuredApiUrl;
@@ -137,36 +139,61 @@ class EnvironmentConfig {
       candidates.add(normalized);
     }
 
-    // Physical phones cannot use this PC's localhost unless `adb reverse` is set.
-    // Try the PC Wi-Fi IP first, then USB reverse, then emulator.
+    add('http://127.0.0.1:3000');
+    add('http://localhost:3000');
+    // USB reverse makes 127.0.0.1 on the phone reach this PC. Try that first.
+    // Keep the explicit configured value early as well in case the launch config
+    // points to a custom backend host/port.
+    add(configured);
+    add('http://10.0.2.2:3000');
+    // LAN IP is a fallback when the cable is unplugged (must be the PC's current IP).
     if (lanIp.trim().isNotEmpty) {
       final value = lanIp.trim();
       add(value.startsWith('http') ? value : 'http://$value:3000');
     }
-    add(configured);
-    add('http://127.0.0.1:3000');
-    add('http://localhost:3000');
-    add('http://10.0.2.2:3000');
 
     final client = http.Client();
     try {
-      for (final base in candidates) {
-        try {
-          final response = await client
-              .get(Uri.parse('$base/api/health'))
-              .timeout(const Duration(seconds: 2));
-          if (response.statusCode == 200) return base;
-        } catch (_) {}
-      }
+      final found = await _firstHealthy(client, candidates);
+      if (found != null) return found;
     } finally {
       client.close();
     }
 
-    if (lanIp.trim().isNotEmpty) {
-      final value = lanIp.trim();
-      return value.startsWith('http') ? value : 'http://$value:3000';
-    }
+    // If nothing answered yet, keep the explicitly configured base URL instead of
+    // forcing a possibly stale LAN IP. A later retry can still switch to LAN once
+    // the backend is reachable.
     return configured;
+  }
+
+  static Future<String?> _firstHealthy(
+    http.Client client,
+    List<String> candidates,
+  ) async {
+    if (candidates.isEmpty) return null;
+    final completer = Completer<String?>();
+    var pending = candidates.length;
+
+    for (final base in candidates) {
+      () async {
+        try {
+          final response = await client
+              .get(Uri.parse('$base/api/health'))
+              .timeout(const Duration(milliseconds: 1500));
+          if (response.statusCode == 200 && !completer.isCompleted) {
+            completer.complete(base);
+          }
+        } catch (_) {
+        } finally {
+          pending--;
+          if (pending == 0 && !completer.isCompleted) {
+            completer.complete(null);
+          }
+        }
+      }();
+    }
+
+    return completer.future;
   }
 
   static bool get isCloudinaryConfigured =>

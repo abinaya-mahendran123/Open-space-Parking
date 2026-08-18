@@ -42,15 +42,19 @@ class LandDetails extends Equatable {
       return 0;
     }
 
+    bool parseBool(dynamic value) {
+      return value == true || value == 1 || value == 'true' || value == '1';
+    }
+
     return LandDetails(
       gpsLatitude: parseCoord(json['gpsLatitude']),
       gpsLongitude: parseCoord(json['gpsLongitude']),
       areaSqFt: parseCoord(json['areaSqFt']),
-      roadAccess: json['roadAccess'] as bool? ?? false,
-      drainage: json['drainage'] as bool? ?? false,
-      flood: json['flood'] as bool? ?? false,
-      boundary: json['boundary'] as bool? ?? false,
-      cctv: json['cctv'] as bool? ?? false,
+      roadAccess: parseBool(json['roadAccess']),
+      drainage: parseBool(json['drainage']),
+      flood: parseBool(json['flood']),
+      boundary: parseBool(json['boundary']),
+      cctv: parseBool(json['cctv']),
       landAddress: json['landAddress'] as String?,
     );
   }

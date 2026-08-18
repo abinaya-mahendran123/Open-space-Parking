@@ -5,6 +5,12 @@ const fs = require('fs');
 const path = require('path');
 const multer = require('multer');
 const { MongoClient, ObjectId } = require('mongodb');
+const { createPgDb } = require('./pg_store');
+const {
+  nearbyVerifiedListings,
+  verifiedListingById,
+  isEmployeeVerifiedListing,
+} = require('./parking_listings');
 
 (function loadLocalEnv() {
   const envPath = path.join(__dirname, '.env');
@@ -27,13 +33,22 @@ const { MongoClient, ObjectId } = require('mongodb');
 })();
 
 const PORT = Number(process.env.PORT || 3000);
+const DATABASE_URL =
+  process.env.DATABASE_URL || process.env.SUPABASE_DB_URL || '';
 const MONGO_URI =
   process.env.MONGO_CONNECTION_STRING ||
-  'mongodb://127.0.0.1:27017/open_space_parking';
+  (DATABASE_URL ? '' : 'mongodb://127.0.0.1:27017/open_space_parking');
 
 const app = express();
 app.use(cors({ origin: true }));
 app.use(express.json({ limit: '10mb' }));
+app.use((error, _req, res, next) => {
+  if (error instanceof SyntaxError && error.status === 400 && 'body' in error) {
+    res.status(400).json({ error: 'Invalid JSON request body.' });
+    return;
+  }
+  next(error);
+});
 
 const uploadDir = path.join(__dirname, 'uploads');
 fs.mkdirSync(uploadDir, { recursive: true });
@@ -93,12 +108,15 @@ function serialize(value) {
 
 function parseSelector(selectorMap = {}) {
   if (!selectorMap || typeof selectorMap !== 'object') return {};
-  if (selectorMap.$query) {
-    const query = selectorMap.$query;
-    if (query.$and) return { $and: revive(query.$and) };
-    return revive(query);
-  }
-  return revive(selectorMap);
+  const cloned = { ...selectorMap };
+  const nestedQuery = cloned.$query;
+  delete cloned.$query;
+  delete cloned.$orderby;
+  const fromQuery =
+    nestedQuery && typeof nestedQuery === 'object' && Object.keys(nestedQuery).length
+      ? revive(nestedQuery)
+      : {};
+  return { ...fromQuery, ...revive(cloned) };
 }
 
 function buildSearchFilter(query = {}) {
@@ -127,12 +145,99 @@ function generateSalt() {
   return crypto.randomBytes(16).toString('base64url');
 }
 
+function asHexId(value) {
+  if (value == null) return '';
+  if (typeof value === 'string') {
+    const match = value.match(/[a-fA-F0-9]{24}/);
+    return match ? match[0] : value;
+  }
+  if (typeof value.toHexString === 'function') return value.toHexString();
+  if (typeof value === 'object') {
+    if (typeof value.$oid === 'string') return value.$oid;
+    if (typeof value.oid === 'string') return value.oid;
+  }
+  return String(value);
+}
+
+async function findActiveUserByEmail(email) {
+  return db.collection('users').findOne({
+    email: String(email || '').trim().toLowerCase(),
+    isDeleted: { $ne: true },
+  });
+}
+
+function phoneDigits(phone) {
+  return String(phone || '').replace(/\D/g, '');
+}
+
+function phoneKey(phone) {
+  return phoneDigits(phone).slice(-10);
+}
+
+async function findActiveUserByPhone(phone) {
+  const lastTen = phoneKey(phone);
+  if (!lastTen) return null;
+  const users = await db
+    .collection('users')
+    .find({ isDeleted: { $ne: true } })
+    .toArray();
+  return (
+    users.find((user) => phoneKey(user.phone) === lastTen) ||
+    users.find((user) => phoneKey(user.email) === lastTen) ||
+    null
+  );
+}
+
+function sessionPayload(user) {
+  const role = String(user.role || '');
+  const normalized =
+    role === 'vehicleOwner' ? 'vehicle_owner' :
+    role === 'landOwner' ? 'land_owner' :
+    role;
+  return {
+    userId: asHexId(user._id),
+    email: user.email,
+    displayName: user.displayName || '',
+    role: normalized,
+  };
+}
+
+async function authenticatePassword(email, password) {
+  const user = await findActiveUserByEmail(email);
+  if (!user || !user.passwordSalt || !user.passwordHash) {
+    return { status: 401, error: 'Invalid credentials.' };
+  }
+  const computed = hashPassword(password, user.passwordSalt);
+  if (computed !== user.passwordHash) {
+    return { status: 401, error: 'Invalid credentials.' };
+  }
+  return { user };
+}
+
 async function seedDefaultAdmin(database) {
   const users = database.collection('users');
   const existing = await users.findOne({ email: DEFAULT_ADMIN_EMAIL });
 
   if (existing) {
-    if (existing.role === 'admin') return;
+    if (existing.role === 'admin' && existing.passwordHash && existing.passwordSalt) {
+      return;
+    }
+    const salt = generateSalt();
+    const hash = hashPassword(DEFAULT_ADMIN_PASSWORD, salt);
+    await users.updateOne(
+      { email: DEFAULT_ADMIN_EMAIL },
+      {
+        $set: {
+          role: 'admin',
+          displayName: existing.displayName || DEFAULT_ADMIN_NAME,
+          passwordHash: hash,
+          passwordSalt: salt,
+          isDeleted: false,
+          updatedAt: new Date().toISOString(),
+        },
+      },
+    );
+    console.log(`Default admin repaired: ${DEFAULT_ADMIN_EMAIL}`);
     return;
   }
 
@@ -158,6 +263,9 @@ async function seedDefaultSecurity(database) {
     .toLowerCase();
   const password = process.env.DEFAULT_SECURITY_PASSWORD || 'Security@1234';
   const name = process.env.DEFAULT_SECURITY_NAME || 'Gate Security';
+  const phone = normalizePhoneNumber(
+    process.env.DEFAULT_SECURITY_PHONE || '9999999999',
+  );
   const now = new Date().toISOString();
   const salt = generateSalt();
   const hash = hashPassword(password, salt);
@@ -167,6 +275,7 @@ async function seedDefaultSecurity(database) {
     {
       $set: {
         email,
+        phone,
         displayName: name,
         role: 'security',
         passwordHash: hash,
@@ -181,6 +290,57 @@ async function seedDefaultSecurity(database) {
     { upsert: true },
   );
   console.log(`Default security ready: ${email}`);
+}
+
+async function seedDemoParkingIfEmpty(database) {
+  const requests = database.collection('land_owner_requests');
+  const count = await requests.countDocuments({ isDeleted: { $ne: true } });
+  if (count > 0) return;
+
+  const now = new Date().toISOString();
+  await requests.insertOne({
+    ticketId: 'OSP-20260810-9430',
+    ownerId: 'land-owner-yasin',
+    requestType: 'build_parking',
+    status: 'approved',
+    documentsVerified: true,
+    assignedEmployeeId: null,
+    assignedEmployeeName: null,
+    isDeleted: false,
+    ownerDetails: {
+      fullName: 'Yasin',
+      email: 'aasin12@gmail.com',
+      phone: '2345667567',
+      address: 'madurai',
+    },
+    documents: {
+      governmentIdPath: 'verified',
+      propertyDocumentPath: 'verified',
+      pattaPath: 'verified',
+      propertyTaxPath: 'verified',
+    },
+    landDetails: {
+      gpsLatitude: 13.052078844064647,
+      gpsLongitude: 80.22914082796493,
+      areaSqFt: 246,
+      roadAccess: true,
+      drainage: true,
+      flood: false,
+      boundary: true,
+      cctv: false,
+      landAddress: 'madurai',
+    },
+    parkingPreferences: {
+      priority: 'medium',
+      parkingType: 'tower_parking',
+      numberOfCars: 6,
+    },
+    submittedAt: '2026-08-10T06:57:00.000Z',
+    reviewedAt: now,
+    createdAt: '2026-08-10T06:57:00.000Z',
+    updatedAt: now,
+  });
+  console.log('Seeded demo nearby parking (no land_owner_requests found).');
 }
 
 async function ensureIndexes(database) {
@@ -247,12 +407,61 @@ app.post('/api/auth/security-login', async (req, res) => {
       return;
     }
 
-    res.json({
-      userId: user._id.toHexString(),
-      email: user.email,
-      displayName: user.displayName || 'Gate Security',
-      role: 'security',
-    });
+    res.json(sessionPayload(user));
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+app.post('/api/auth/admin-login', async (req, res) => {
+  try {
+    const email = String(req.body?.email || '').trim().toLowerCase();
+    const password = String(req.body?.password || '');
+    if (!email || !password) {
+      res.status(400).json({ error: 'Invalid credentials.' });
+      return;
+    }
+    if (email === DEFAULT_ADMIN_EMAIL) {
+      await seedDefaultAdmin(db);
+    }
+    const result = await authenticatePassword(email, password);
+    if (result.error) {
+      res.status(result.status).json({ error: result.error });
+      return;
+    }
+    if (result.user.role !== 'admin') {
+      res.status(403).json({ error: 'Only admins can login to admin portal.' });
+      return;
+    }
+    res.json(sessionPayload(result.user));
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+app.post('/api/auth/app-login', async (req, res) => {
+  try {
+    const email = String(req.body?.email || '').trim().toLowerCase();
+    const password = String(req.body?.password || '');
+    if (!email || !password) {
+      res.status(400).json({ error: 'Invalid credentials.' });
+      return;
+    }
+    const result = await authenticatePassword(email, password);
+    if (result.error) {
+      res.status(result.status).json({ error: result.error });
+      return;
+    }
+    const role = result.user.role;
+    if (role === 'employee') {
+      res.status(403).json({ error: 'Employee must use employee portal login.' });
+      return;
+    }
+    if (role === 'security') {
+      res.status(403).json({ error: 'Security must use the security gate login.' });
+      return;
+    }
+    res.json(sessionPayload(result.user));
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
@@ -262,7 +471,51 @@ app.get('/api/health', (_req, res) => {
   res.json({
     ok: true,
     mongoConnected: Boolean(db),
+    database: DATABASE_URL ? 'supabase' : 'mongodb',
   });
+});
+
+app.post('/api/parking/nearby', async (_req, res) => {
+  try {
+    if (!DATABASE_URL) {
+      const docs = await db
+        .collection('land_owner_requests')
+        .find({ isDeleted: { $ne: true } })
+        .toArray();
+      res.json({
+        documents: docs.filter(isEmployeeVerifiedListing).map(serialize),
+      });
+      return;
+    }
+    const documents = await nearbyVerifiedListings(db.pool);
+    res.json({ documents: documents.map(serialize) });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+app.post('/api/parking/listing', async (req, res) => {
+  try {
+    const id = String(req.body?.id || '').trim();
+    if (!id) {
+      res.status(400).json({ error: 'id is required' });
+      return;
+    }
+    if (!DATABASE_URL) {
+      const doc = await db.collection('land_owner_requests').findOne({
+        _id: new ObjectId(id),
+        isDeleted: { $ne: true },
+      });
+      res.json({
+        document: doc && isEmployeeVerifiedListing(doc) ? serialize(doc) : null,
+      });
+      return;
+    }
+    const document = await verifiedListingById(db.pool, id);
+    res.json({ document: document ? serialize(document) : null });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
 });
 
 app.get('/api/geocode', async (req, res) => {
@@ -367,7 +620,7 @@ app.post('/api/auth/send-otp', async (req, res) => {
     }
 
     const otp = String(Math.floor(100000 + Math.random() * 900000));
-    otpCodes.set(normalizedPhone, {
+    otpCodes.set(phoneKey(normalizedPhone), {
       hash: hashOtp(otp),
       expiresAt: Date.now() + 5 * 60 * 1000,
     });
@@ -379,6 +632,7 @@ app.post('/api/auth/send-otp', async (req, res) => {
       ok: true,
       phone: normalizedPhone,
       devMode: result.simulated === true,
+      otp: result.simulated === true ? otp : undefined,
     });
   } catch (error) {
     res.status(500).json({ error: error.message });
@@ -399,13 +653,13 @@ app.post('/api/auth/verify-otp', async (req, res) => {
       return;
     }
 
-    const entry = otpCodes.get(normalizedPhone);
+    const entry = otpCodes.get(phoneKey(normalizedPhone));
     if (!entry) {
       res.status(400).json({ error: 'OTP expired or not requested. Send a new code.' });
       return;
     }
     if (Date.now() > entry.expiresAt) {
-      otpCodes.delete(normalizedPhone);
+      otpCodes.delete(phoneKey(normalizedPhone));
       res.status(400).json({ error: 'OTP expired. Request a new code.' });
       return;
     }
@@ -414,8 +668,88 @@ app.post('/api/auth/verify-otp', async (req, res) => {
       return;
     }
 
-    otpCodes.delete(normalizedPhone);
+    otpCodes.delete(phoneKey(normalizedPhone));
     res.json({ ok: true, phone: normalizedPhone, verified: true });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+app.post('/api/auth/phone-login', async (req, res) => {
+  try {
+    const normalizedPhone = normalizePhoneNumber(req.body?.phone);
+    if (!normalizedPhone) {
+      res.status(400).json({ error: 'Enter a valid mobile number.' });
+      return;
+    }
+
+    const defaultSecurityPhone = normalizePhoneNumber(
+      process.env.DEFAULT_SECURITY_PHONE || '9999999999',
+    );
+    if (phoneKey(normalizedPhone) === phoneKey(defaultSecurityPhone)) {
+      await seedDefaultSecurity(db);
+    }
+
+    const user = await findActiveUserByPhone(normalizedPhone);
+    if (!user) {
+      res.status(404).json({
+        error: 'No account found for this mobile number. Sign up first.',
+      });
+      return;
+    }
+
+    res.json(sessionPayload(user));
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+app.post('/api/auth/phone-register', async (req, res) => {
+  try {
+    const normalizedPhone = normalizePhoneNumber(req.body?.phone);
+    const displayName = String(req.body?.displayName || '').trim();
+    let role = String(req.body?.role || 'vehicle_owner').trim();
+    if (role === 'vehicleOwner') role = 'vehicle_owner';
+    if (role === 'landOwner') role = 'land_owner';
+
+    if (!normalizedPhone) {
+      res.status(400).json({ error: 'Enter a valid mobile number.' });
+      return;
+    }
+    if (!displayName) {
+      res.status(400).json({ error: 'Enter your full name.' });
+      return;
+    }
+    if (role === 'admin' || role === 'employee' || role === 'security') {
+      res.status(403).json({ error: 'This role cannot be self-registered.' });
+      return;
+    }
+    if (role !== 'vehicle_owner' && role !== 'land_owner') {
+      role = 'vehicle_owner';
+    }
+
+    const existing = await findActiveUserByPhone(normalizedPhone);
+    if (existing) {
+      res.status(409).json({
+        error: 'An account with this mobile number already exists.',
+      });
+      return;
+    }
+
+    const now = new Date().toISOString();
+    const user = {
+      _id: new ObjectId(),
+      email: `phone.${phoneDigits(normalizedPhone)}@openspace.local`,
+      phone: normalizedPhone,
+      displayName,
+      role,
+      authProvider: 'phone',
+      isDeleted: false,
+      createdAt: now,
+      updatedAt: now,
+    };
+    await db.collection('users').insertOne(user);
+    res.json(sessionPayload(user));
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
@@ -528,52 +862,98 @@ function formatRequestType(value) {
 }
 
 async function sendOtpSms({ to, body }) {
-  const sid = process.env.TWILIO_ACCOUNT_SID;
-  const token = process.env.TWILIO_AUTH_TOKEN;
-  const from = process.env.TWILIO_SMS_FROM;
+  console.log(`[OTP SMS dev mode] To: ${to}\n${body}`);
+  return { simulated: true };
+}
 
-  if (!sid || !token || !from) {
-    console.log(`[OTP SMS dev mode] To: ${to}\n${body}`);
-    return { simulated: true };
-  }
-
-  return sendSms({ to, body });
+function isMsg91Configured() {
+  const authKey = process.env.MSG91_AUTH_KEY || '';
+  const sender = process.env.MSG91_SENDER_ID || '';
+  const flowId = process.env.MSG91_FLOW_ID || '';
+  const templateId = process.env.MSG91_TEMPLATE_ID || '';
+  return authKey.trim().length > 0 && sender.trim().length > 0 && (flowId.trim().length > 0 || templateId.trim().length > 0);
 }
 
 async function sendSms({ to, body }) {
-  const sid = process.env.TWILIO_ACCOUNT_SID;
-  const token = process.env.TWILIO_AUTH_TOKEN;
-  const from = process.env.TWILIO_SMS_FROM;
+  const authKey = String(process.env.MSG91_AUTH_KEY || '').trim();
+  const sender = String(process.env.MSG91_SENDER_ID || '').trim();
+  const flowId = String(process.env.MSG91_FLOW_ID || '').trim();
+  const templateId = String(process.env.MSG91_TEMPLATE_ID || '').trim();
+  const route = String(process.env.MSG91_ROUTE || '4').trim();
+  const otp = String(body).match(/\b(\d{4,8})\b/)?.[1] || '';
+  const normalized = String(to || '').replace(/\D/g, '');
 
-    if (!sid || !token || !from) {
-      res.status(503).json({
-        error:
-          'SMS is not configured. Set TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN, and TWILIO_SMS_FROM in the backend environment.',
-        simulated: true,
-      });
-      return;
-    }
-
-  const auth = Buffer.from(`${sid}:${token}`).toString('base64');
-  const params = new URLSearchParams({ To: to, From: from, Body: body });
-  const response = await fetch(
-    `https://api.twilio.com/2010-04-01/Accounts/${sid}/Messages.json`,
-    {
-      method: 'POST',
-      headers: {
-        Authorization: `Basic ${auth}`,
-        'Content-Type': 'application/x-www-form-urlencoded',
-      },
-      body: params,
-    },
-  );
-
-  const payload = await response.json().catch(() => ({}));
-  if (!response.ok) {
-    throw new Error(payload.message || 'SMS delivery failed.');
+  if (!authKey || !sender || (!flowId && !templateId)) {
+    throw new Error(
+      'SMS is not configured. Set MSG91_AUTH_KEY, MSG91_SENDER_ID, and MSG91_FLOW_ID or MSG91_TEMPLATE_ID in backend/.env.',
+    );
   }
 
-  return { simulated: false, messageId: payload.sid };
+  if (!normalized) {
+    throw new Error('Recipient mobile number is invalid.');
+  }
+
+  if (flowId) {
+    const flowResponse = await fetch('https://api.msg91.com/api/v5/flow/', {
+      method: 'POST',
+      headers: {
+        authkey: authKey,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        flow_id: flowId,
+        sender,
+        route,
+        recipients: [
+          {
+            mobiles: normalized,
+            OTP: otp,
+            MESSAGE: body,
+          },
+        ],
+      }),
+    });
+    const payload = await flowResponse.json().catch(() => ({}));
+    if (!flowResponse.ok) {
+      throw new Error(payload.message || payload.type || 'MSG91 flow delivery failed.');
+    }
+    return {
+      simulated: false,
+      provider: 'msg91',
+      messageId: payload.request_id || payload.message || null,
+    };
+  }
+
+  const textResponse = await fetch('https://api.msg91.com/api/v2/sendsms', {
+    method: 'POST',
+    headers: {
+      authkey: authKey,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      sender,
+      route,
+      country: '91',
+      DLT_TE_ID: templateId,
+      sms: [
+        {
+          message: body,
+          to: [normalized],
+        },
+      ],
+    }),
+  });
+
+  const payload = await textResponse.json().catch(() => ({}));
+  if (!textResponse.ok) {
+    throw new Error(payload.message || payload.type || 'MSG91 SMS delivery failed.');
+  }
+
+  return {
+    simulated: false,
+    provider: 'msg91',
+    messageId: payload.request_id || payload.message || null,
+  };
 }
 
 app.post('/api/uploads', upload.single('file'), (req, res) => {
@@ -1222,16 +1602,22 @@ app.post('/api/payments/razorpay/verify', async (req, res) => {
 });
 
 async function start() {
-  client = new MongoClient(MONGO_URI);
-  await client.connect();
-  db = client.db();
-  await ensureIndexes(db);
+  if (DATABASE_URL) {
+    db = await createPgDb(DATABASE_URL);
+    console.log('Database: Supabase PostgreSQL');
+  } else {
+    client = new MongoClient(MONGO_URI);
+    await client.connect();
+    db = client.db();
+    await ensureIndexes(db);
+    console.log('Database: MongoDB');
+  }
   await seedDefaultAdmin(db);
   await seedDefaultSecurity(db);
+  await seedDemoParkingIfEmpty(db);
   app.listen(PORT, '0.0.0.0', () => {
     console.log(`Open Space Parking API listening on http://0.0.0.0:${PORT}`);
     console.log(`Phone/emulator: use http://<this-pc-lan-ip>:${PORT}`);
-    console.log('MongoDB: connected');
   });
 }
 

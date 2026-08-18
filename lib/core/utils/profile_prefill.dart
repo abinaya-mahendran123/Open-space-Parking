@@ -40,10 +40,47 @@ class ProfilePrefill {
     );
   }
 
+  static bool isPlaceholderEmail(String? value) {
+    final text = value?.trim().toLowerCase() ?? '';
+    if (text.isEmpty) return true;
+    if (!text.contains('@')) return true;
+    if (text.endsWith('@openspace.local')) return true;
+
+    final local = text.split('@').first;
+    if (RegExp(r'^phone\.\d+$').hasMatch(local)) return true;
+    if (RegExp(r'^\+?\d{10,15}$').hasMatch(local)) return true;
+    return false;
+  }
+
+  static String? realEmail(String? value) {
+    if (isPlaceholderEmail(value)) return null;
+    return value?.trim();
+  }
+
+  static String? phoneFromAccount({
+    String? savedPhone,
+    String? accountEmail,
+    String? sessionEmail,
+  }) {
+    final saved = savedPhone?.trim() ?? '';
+    if (saved.isNotEmpty) return saved;
+
+    for (final candidate in [accountEmail, sessionEmail]) {
+      if (candidate == null || candidate.trim().isEmpty) continue;
+      if (!isPlaceholderEmail(candidate) && candidate.contains('@')) continue;
+      final digits = candidate.replaceAll(RegExp(r'\D'), '');
+      if (digits.length >= 10) {
+        return digits.length > 10 ? digits.substring(digits.length - 10) : digits;
+      }
+    }
+    return null;
+  }
+
   static VehicleOwnerProfile mergeVehicleProfile({
     VehicleOwnerProfile? saved,
     String? accountDisplayName,
     String? accountEmail,
+    String? accountPhone,
     AuthSession? session,
   }) {
     return VehicleOwnerProfile(
@@ -52,11 +89,18 @@ class ProfilePrefill {
         accountDisplayName,
         session?.displayName,
       ]),
-      phone: firstNonEmpty([saved?.phone]),
+      phone: firstNonEmpty([
+        saved?.phone,
+        accountPhone,
+        phoneFromAccount(
+          accountEmail: accountEmail,
+          sessionEmail: session?.email,
+        ),
+      ]),
       email: firstNonEmpty([
-        saved?.email,
-        accountEmail,
-        session?.email,
+        realEmail(saved?.email),
+        realEmail(accountEmail),
+        realEmail(session?.email),
       ]),
       address: saved?.address,
       vehicleNumber: saved?.vehicleNumber,

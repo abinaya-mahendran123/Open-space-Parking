@@ -19,7 +19,9 @@ class HttpMongoCollectionService {
     });
     final document = response['document'];
     if (document == null) return null;
-    return Map<String, dynamic>.from(document as Map);
+    return Map<String, dynamic>.from(
+      MongoHttpCodec.decode(document) as Map,
+    );
   }
 
   Future<List<Map<String, dynamic>>> findMany({
@@ -32,7 +34,11 @@ class HttpMongoCollectionService {
     });
     final documents = response['documents'] as List<dynamic>? ?? const [];
     return documents
-        .map((doc) => Map<String, dynamic>.from(doc as Map))
+        .map(
+          (doc) => Map<String, dynamic>.from(
+            MongoHttpCodec.decode(doc) as Map,
+          ),
+        )
         .toList();
   }
 

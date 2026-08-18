@@ -26,7 +26,6 @@ import 'package:open_space_parking/features/vehicle_owner/presentation/pages/par
 import 'package:open_space_parking/features/vehicle_owner/presentation/pages/parking_payment_page.dart';
 import 'package:open_space_parking/features/vehicle_owner/presentation/pages/parking_receipt_page.dart';
 import 'package:open_space_parking/features/vehicle_owner/presentation/pages/parking_ticket_page.dart';
-import 'package:open_space_parking/features/vehicle_owner/presentation/pages/security_login_page.dart';
 import 'package:open_space_parking/features/vehicle_owner/presentation/pages/security_scan_page.dart';
 import 'package:open_space_parking/features/vehicle_owner/presentation/pages/vehicle_owner_notifications_page.dart';
 import 'package:open_space_parking/features/vehicle_owner/presentation/pages/vehicle_owner_shell_page.dart';
@@ -43,12 +42,6 @@ final appRouterProvider = Provider<GoRouter>((ref) {
     initialLocation: RoutePaths.splash,
     refreshListenable: refresh,
     errorBuilder: (context, state) {
-      final path = state.uri.path;
-      if (path.contains('security') || path.contains('gate')) {
-        return SecurityLoginPage(
-          onBack: () => context.go(RoutePaths.authEntry),
-        );
-      }
       return Scaffold(
         body: Center(
           child: Padding(
@@ -116,9 +109,6 @@ final appRouterProvider = Provider<GoRouter>((ref) {
       }
 
       if (role == UserRole.security) {
-        if (location == RoutePaths.securityLogin) {
-          return RoutePaths.securityScan;
-        }
         if (!RoutePaths.isSecurityRoute(location)) {
           return RoutePaths.securityScan;
         }
@@ -350,18 +340,8 @@ final appRouterProvider = Provider<GoRouter>((ref) {
         },
       ),
       GoRoute(
-        path: RoutePaths.securityLogin,
-        builder: (context, __) => SecurityLoginPage(
-          onBack: () => context.go(RoutePaths.authEntry),
-        ),
-      ),
-      GoRoute(
         path: RoutePaths.securityScan,
         builder: (_, __) => const SecurityScanPage(),
-      ),
-      GoRoute(
-        path: '/security/login',
-        redirect: (_, __) => RoutePaths.securityLogin,
       ),
       GoRoute(
         path: '/security/scan',

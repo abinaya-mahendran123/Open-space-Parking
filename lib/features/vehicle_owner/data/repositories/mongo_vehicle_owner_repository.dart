@@ -5,6 +5,7 @@ import 'package:mongo_dart/mongo_dart.dart';
 import 'package:open_space_parking/core/common/exceptions/app_exception.dart';
 import 'package:open_space_parking/core/config/app_constants.dart';
 import 'package:open_space_parking/core/integration/notification_helper.dart';
+import 'package:open_space_parking/core/services/api/api_client.dart';
 import 'package:open_space_parking/core/services/mongodb/mongo_collection_service.dart';
 import 'package:open_space_parking/core/services/mongodb/mongo_database_service.dart';
 import 'package:open_space_parking/core/utils/mongo_json.dart';
@@ -32,22 +33,22 @@ class MongoVehicleOwnerRepository implements VehicleOwnerRepository {
     required MongoDatabaseService mongoDatabaseService,
     required MongoCollectionService mongoCollectionService,
     required NotificationHelper notificationHelper,
+    ApiClient? apiClient,
   })  : _databaseService = mongoDatabaseService,
         _collectionService = mongoCollectionService,
-        _notificationHelper = notificationHelper;
+        _notificationHelper = notificationHelper,
+        _apiClient = apiClient;
 
   final MongoDatabaseService _databaseService;
   final MongoCollectionService _collectionService;
   final NotificationHelper _notificationHelper;
+  final ApiClient? _apiClient;
 
   @override
   Future<List<ParkingListing>> searchParkingListings(SearchFilters filters) async {
     await _ensureConnected();
 
-    final results = await _collectionService.findMany(
-      collectionName: AppConstants.landOwnerRequestsCollection,
-      selector: where.ne('status', RequestStatus.rejected.value),
-    );
+    final results = await _loadVerifiedParkingDocs();
 
     var listings = <ParkingListing>[];
     for (final doc in results) {
@@ -133,12 +134,25 @@ class MongoVehicleOwnerRepository implements VehicleOwnerRepository {
   }
 
   Future<ParkingListing?> _getBaseListing(String listingId) async {
-    final doc = await _collectionService.findOne(
-      collectionName: AppConstants.landOwnerRequestsCollection,
-      selector: where.eq('_id', ObjectId.parse(_normalizeObjectId(listingId))),
-    );
+    Map<String, dynamic>? doc;
+    final api = _apiClient;
+    if (api != null) {
+      final response = await api.post('/api/parking/listing', {
+        'id': _normalizeObjectId(listingId),
+      });
+      final raw = response['document'];
+      if (raw is Map) {
+        doc = Map<String, dynamic>.from(raw);
+      }
+    } else {
+      doc = await _collectionService.findOne(
+        collectionName: AppConstants.landOwnerRequestsCollection,
+        selector: where.eq('_id', ObjectId.parse(_normalizeObjectId(listingId))),
+      );
+      if (doc != null && !_isListableRequest(doc)) doc = null;
+    }
 
-    if (doc == null || !_isListableRequest(doc)) return null;
+    if (doc == null) return null;
     return _mapRequestToListing(doc);
   }
 
@@ -748,6 +762,7 @@ class MongoVehicleOwnerRepository implements VehicleOwnerRepository {
       saved: saved,
       accountDisplayName: user?['displayName'] as String?,
       accountEmail: user?['email'] as String?,
+      accountPhone: user?['phone'] as String?,
     );
 
     return merged;
@@ -780,16 +795,17 @@ class MongoVehicleOwnerRepository implements VehicleOwnerRepository {
     await _ensureConnected();
     final now = DateTime.now().toUtc();
 
+    final ownerId = MongoJson.objectIdHex(vehicleOwnerId);
     final existing = await _collectionService.findOne(
       collectionName: AppConstants.vehicleOwnerProfilesCollection,
-      selector: where.eq('vehicleOwnerId', vehicleOwnerId),
+      selector: where.eq('vehicleOwnerId', ownerId),
     );
 
     if (existing == null) {
       await _collectionService.insertOne(
         collectionName: AppConstants.vehicleOwnerProfilesCollection,
         document: {
-          'vehicleOwnerId': vehicleOwnerId,
+          'vehicleOwnerId': ownerId,
           'profile': profile.toJson(),
           'createdAt': now.toIso8601String(),
           'updatedAt': now.toIso8601String(),
@@ -800,7 +816,7 @@ class MongoVehicleOwnerRepository implements VehicleOwnerRepository {
 
     await _collectionService.updateOne(
       collectionName: AppConstants.vehicleOwnerProfilesCollection,
-      selector: where.eq('vehicleOwnerId', vehicleOwnerId),
+      selector: where.eq('vehicleOwnerId', ownerId),
       modifier: modify
           .set('profile', profile.toJson())
           .set('updatedAt', now.toIso8601String()),
@@ -1018,7 +1034,23 @@ class MongoVehicleOwnerRepository implements VehicleOwnerRepository {
     );
   }
 
-  /// Employee-verified tickets with real GPS can appear in nearby search.
+  Future<List<Map<String, dynamic>>> _loadVerifiedParkingDocs() async {
+    final api = _apiClient;
+    if (api != null) {
+      final response = await api.post('/api/parking/nearby', {});
+      final documents = response['documents'] as List<dynamic>? ?? const [];
+      return documents
+          .map((doc) => Map<String, dynamic>.from(doc as Map))
+          .toList();
+    }
+    final results = await _collectionService.findMany(
+      collectionName: AppConstants.landOwnerRequestsCollection,
+      selector: where.ne('status', RequestStatus.rejected.value),
+    );
+    return results.where(_isListableRequest).toList();
+  }
+
+  /// Only employee-verified tickets with real GPS appear in nearby search.
   bool _isListableRequest(Map<String, dynamic> doc) {
     final status = RequestStatusX.fromValue(doc['status'] as String? ?? '');
     if (status == RequestStatus.rejected ||
@@ -1026,11 +1058,7 @@ class MongoVehicleOwnerRepository implements VehicleOwnerRepository {
       return false;
     }
 
-    final documentsVerified = MongoJson.asBool(doc['documentsVerified']);
-    final isReady = status == RequestStatus.approved ||
-        status == RequestStatus.completed ||
-        status == RequestStatus.inProgress;
-    if (!documentsVerified && !isReady) return false;
+    if (!MongoJson.asBool(doc['documentsVerified'])) return false;
 
     final landDetails = MongoJson.asMap(doc['landDetails']);
     if (landDetails == null) return false;

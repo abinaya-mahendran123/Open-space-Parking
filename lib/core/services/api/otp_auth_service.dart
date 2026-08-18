@@ -1,8 +1,10 @@
+import 'dart:async';
 import 'dart:convert';
 
 import 'package:http/http.dart' as http;
 
 import 'package:open_space_parking/core/common/exceptions/app_exception.dart';
+import 'package:open_space_parking/core/config/app_constants.dart';
 import 'package:open_space_parking/core/config/environment_config.dart';
 import 'package:open_space_parking/core/utils/phone_utils.dart';
 
@@ -10,10 +12,12 @@ class OtpSendResult {
   const OtpSendResult({
     required this.phone,
     required this.devMode,
+    this.otp,
   });
 
   final String phone;
   final bool devMode;
+  final String? otp;
 }
 
 class OtpAuthService {
@@ -36,6 +40,7 @@ class OtpAuthService {
     return OtpSendResult(
       phone: response['phone']?.toString() ?? normalizedPhone,
       devMode: response['devMode'] == true,
+      otp: response['otp']?.toString(),
     );
   }
 
@@ -63,30 +68,23 @@ class OtpAuthService {
     String path,
     Map<String, dynamic> body,
   ) async {
-    final uri = Uri.parse('${EnvironmentConfig.baseApiUrl}$path');
+    Future<http.Response> postTo(String base) {
+      return _httpClient
+          .post(
+            Uri.parse('$base$path'),
+            headers: const {'Content-Type': 'application/json'},
+            body: jsonEncode(body),
+          )
+          .timeout(AppConstants.requestTimeout);
+    }
+
     http.Response response;
     try {
-      response = await _httpClient.post(
-        uri,
-        headers: const {'Content-Type': 'application/json'},
-        body: jsonEncode(body),
-      );
-    } on http.ClientException {
-      try {
-        final retriedUrl = await EnvironmentConfig.refreshReachableApiUrl();
-        response = await _httpClient.post(
-          Uri.parse('$retriedUrl$path'),
-          headers: const {'Content-Type': 'application/json'},
-          body: jsonEncode(body),
-        );
-      } catch (_) {
-        throw AppException(
-          'Could not reach the auth server at ${EnvironmentConfig.baseApiUrl}. '
-          'On a phone, localhost is the phone — not your PC. Keep USB plugged in, '
-          'run adb reverse tcp:3000 tcp:3000, keep backend running (npm start), '
-          'and use the same Wi-Fi as the PC.',
-        );
-      }
+      response = await postTo(EnvironmentConfig.baseApiUrl);
+    } on TimeoutException catch (_) {
+      response = await _retryPost(postTo);
+    } on http.ClientException catch (_) {
+      response = await _retryPost(postTo);
     }
 
     Map<String, dynamic> payload;
@@ -107,5 +105,22 @@ class OtpAuthService {
     }
 
     return payload;
+  }
+
+  Future<http.Response> _retryPost(
+    Future<http.Response> Function(String base) postTo,
+  ) async {
+    try {
+      final retriedUrl = await EnvironmentConfig.refreshReachableApiUrl();
+      return await postTo(retriedUrl);
+    } catch (_) {
+      throw AppException(
+        'Phone cannot reach the API at ${EnvironmentConfig.baseApiUrl}. '
+        'Keep USB plugged in, keep backend running (cd backend && npm start), '
+        'then run: adb reverse tcp:3000 tcp:3000. '
+        'If using Wi-Fi only, phone and PC must share the same network '
+        '(turn off VPN) and the PC IP must be current.',
+      );
+    }
   }
 }

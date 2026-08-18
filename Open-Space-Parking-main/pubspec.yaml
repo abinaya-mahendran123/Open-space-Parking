@@ -1,0 +1,47 @@
+name: open_space_parking
+description: Open Space Parking - production-ready foundation.
+publish_to: 'none'
+version: 0.1.0+1
+
+environment:
+  sdk: '>=3.5.0 <4.0.0'
+
+dependencies:
+  flutter:
+    sdk: flutter
+  cupertino_icons: ^1.0.8
+  flutter_riverpod: ^2.5.1
+  go_router: ^14.2.7
+  get_it: ^8.0.2
+  logger: ^2.4.0
+  equatable: ^2.0.5
+  mongo_dart: ^0.10.3
+  flutter_secure_storage: ^9.2.2
+  crypto: ^3.0.6
+  file_picker: ^8.1.2
+  geolocator: ^13.0.1
+  intl: ^0.19.0
+  fl_chart: ^0.69.0
+  url_launcher: ^6.3.0
+  google_maps_flutter: ^2.9.0
+  http: ^1.2.2
+  firebase_core: ^3.8.1
+  firebase_messaging: ^15.1.6
+  flutter_local_notifications: ^18.0.1
+  shimmer: ^3.0.0
+  google_fonts: ^8.1.0
+  flutter_map: ^8.3.1
+  latlong2: ^0.10.1
+  qr_flutter: ^4.1.0
+  google_sign_in: ^6.2.2
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^4.0.0
+  mocktail: ^1.0.4
+
+flutter:
+  uses-material-design: true
+  assets:
+    - assets/images/parking_types/

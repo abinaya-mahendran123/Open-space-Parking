@@ -66,8 +66,7 @@ class RoutePaths {
   static String vehicleOwnerBookingReceipt(String bookingId) =>
       '/vehicle-owner/bookings/$bookingId/receipt';
 
-  /// Gate security — login only (no register). Single-segment paths so GoRouter matches.
-  static const String securityLogin = '/gate-login';
+  /// Gate security scanner route.
   static const String securityScan = '/gate-scan';
 
   static const String mapPicker = '/maps/picker';
@@ -81,9 +80,7 @@ class RoutePaths {
   }
 
   static bool isSecurityRoute(String location) {
-    return location == securityLogin ||
-        location == securityScan ||
-        location == '/security/login' ||
+    return location == securityScan ||
         location == '/security/scan' ||
         location == '/security';
   }
