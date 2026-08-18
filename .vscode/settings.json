@@ -3,6 +3,7 @@
   "java.autobuild.enabled": false,
   "java.configuration.updateBuildConfiguration": "disabled",
   "java.server.launchMode": "LightWeight",
+  "kotlin.languageServer.enabled": false,
   "files.watcherExclude": {
     "**/android/.gradle/**": true,
     "**/.gradle/**": true,

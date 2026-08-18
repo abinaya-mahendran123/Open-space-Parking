@@ -1,7 +1,10 @@
+import 'package:flutter/foundation.dart';
 import 'package:open_space_parking/core/di/service_locator.dart';
 import 'package:open_space_parking/core/mongodb/services/mongo_integration_service.dart';
 import 'package:open_space_parking/core/utils/app_logger.dart';
 import 'package:open_space_parking/features/notification/data/services/notification_service.dart';
+
+enum ApiConnectionStatus { unknown, ready, offline }
 
 /// Initializes external services with graceful degradation for production.
 class AppBootstrap {
@@ -9,19 +12,29 @@ class AppBootstrap {
 
   static bool mongoReady = false;
   static bool notificationsReady = false;
+  static final apiStatus = ValueNotifier<ApiConnectionStatus>(
+    ApiConnectionStatus.unknown,
+  );
 
   static Future<void> initialize() async {
     await _initializeMongo();
     await _initializeNotifications();
   }
 
+  static Future<bool> retryApi() async {
+    await _initializeMongo();
+    return mongoReady;
+  }
+
   static Future<void> _initializeMongo() async {
     try {
       await sl<MongoIntegrationService>().initialize();
       mongoReady = true;
+      apiStatus.value = ApiConnectionStatus.ready;
       AppLogger.i('MongoDB connected and indexes ensured');
     } catch (e, stack) {
       mongoReady = false;
+      apiStatus.value = ApiConnectionStatus.offline;
       AppLogger.w('MongoDB initialization failed — app runs in offline mode: $e');
       AppLogger.w(stack.toString());
     }

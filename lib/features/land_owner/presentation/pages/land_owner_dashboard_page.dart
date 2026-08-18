@@ -63,13 +63,6 @@ class LandOwnerDashboardPage extends ConsumerWidget {
                       'Register your existing parking facility for listing and management.',
                   onTap: () => context.push(RoutePaths.landOwnerExistingParking),
                 ),
-                AppActionCard(
-                  icon: Icons.qr_code_scanner,
-                  title: 'Gate security scan',
-                  subtitle:
-                      'Scan a driver’s QR to start or stop a parking session.',
-                  onTap: () => context.push(RoutePaths.securityScan),
-                ),
               ],
             ),
           ],

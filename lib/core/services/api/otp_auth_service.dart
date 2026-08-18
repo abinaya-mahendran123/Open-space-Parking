@@ -81,9 +81,14 @@ class OtpAuthService {
     http.Response response;
     try {
       response = await postTo(EnvironmentConfig.baseApiUrl);
-    } on TimeoutException catch (_) {
-      response = await _retryPost(postTo);
-    } on http.ClientException catch (_) {
+    } catch (error) {
+      final text = error.toString().toLowerCase();
+      final isTransport = error is TimeoutException ||
+          error is http.ClientException ||
+          text.contains('socket') ||
+          text.contains('connection') ||
+          text.contains('timed out');
+      if (!isTransport) rethrow;
       response = await _retryPost(postTo);
     }
 
@@ -114,13 +119,7 @@ class OtpAuthService {
       final retriedUrl = await EnvironmentConfig.refreshReachableApiUrl();
       return await postTo(retriedUrl);
     } catch (_) {
-      throw AppException(
-        'Phone cannot reach the API at ${EnvironmentConfig.baseApiUrl}. '
-        'Keep USB plugged in, keep backend running (cd backend && npm start), '
-        'then run: adb reverse tcp:3000 tcp:3000. '
-        'If using Wi-Fi only, phone and PC must share the same network '
-        '(turn off VPN) and the PC IP must be current.',
-      );
+      throw const AppException(EnvironmentConfig.phoneUnreachableMessage);
     }
   }
 }

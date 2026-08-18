@@ -109,12 +109,10 @@ class GoogleAuthService {
   }
 
   Future<GoogleAuthProfile> verifyIdToken(String idToken) async {
-    final uri = Uri.parse('${EnvironmentConfig.baseApiUrl}/api/auth/google');
-    http.Response response;
-    try {
-      response = await _httpClient
+    Future<http.Response> send() {
+      return _httpClient
           .post(
-            uri,
+            Uri.parse('${EnvironmentConfig.baseApiUrl}/api/auth/google'),
             headers: const {'Content-Type': 'application/json'},
             body: jsonEncode({
               'idToken': idToken,
@@ -122,14 +120,18 @@ class GoogleAuthService {
             }),
           )
           .timeout(const Duration(seconds: 20));
-    } on http.ClientException {
-      throw const AppException(
-        'Network error during Google sign-in. Check your connection.',
-      );
+    }
+
+    http.Response response;
+    try {
+      response = await send();
     } catch (_) {
-      throw const AppException(
-        'Network error during Google sign-in. Check your connection.',
-      );
+      await EnvironmentConfig.refreshReachableApiUrl();
+      try {
+        response = await send();
+      } catch (_) {
+        throw const AppException(EnvironmentConfig.phoneUnreachableMessage);
+      }
     }
 
     Map<String, dynamic> body;

@@ -1,6 +1,8 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import 'package:open_space_parking/core/bootstrap/app_bootstrap.dart';
 import 'package:open_space_parking/core/common/exceptions/app_exception.dart';
+import 'package:open_space_parking/core/config/environment_config.dart';
 import 'package:open_space_parking/core/di/service_locator.dart';
 import 'package:open_space_parking/core/services/api/google_auth_service.dart';
 import 'package:open_space_parking/core/services/api/otp_auth_service.dart';
@@ -71,10 +73,18 @@ class AuthStateNotifier extends StateNotifier<AuthState> {
     state = state.copyWith(selectedRole: role);
   }
 
+  Future<void> _ensureApiReady() async {
+    await EnvironmentConfig.refreshReachableApiUrl();
+    if (!AppBootstrap.mongoReady) {
+      await AppBootstrap.retryApi();
+    }
+  }
+
   Future<void> loginAppUser({
     required String email,
     required String password,
   }) async {
+    await _ensureApiReady();
     AppException? lastError;
 
     for (var attempt = 0; attempt < 3; attempt++) {
@@ -104,6 +114,7 @@ class AuthStateNotifier extends StateNotifier<AuthState> {
     required String displayName,
     required UserRole role,
   }) async {
+    await _ensureApiReady();
     await _authRepository.register(
       email: email,
       password: password,
@@ -116,14 +127,17 @@ class AuthStateNotifier extends StateNotifier<AuthState> {
 
   bool _isTransientLoginFailure(AppException error) {
     final message = error.message.toLowerCase();
-    return message.contains('invalid credentials') ||
-        message.contains('corrupted account');
+    return message.contains('cannot reach the server') ||
+        message.contains('unavailable') ||
+        message.contains('timed out') ||
+        message.contains('network');
   }
 
   Future<void> loginAdmin({
     required String email,
     required String password,
   }) async {
+    await _ensureApiReady();
     final session = await _authRepository.loginAdmin(
       email: email,
       password: password,
@@ -136,6 +150,7 @@ class AuthStateNotifier extends StateNotifier<AuthState> {
     required String email,
     required String password,
   }) async {
+    await _ensureApiReady();
     final session = await _authRepository.loginEmployee(
       email: email,
       password: password,
@@ -148,6 +163,7 @@ class AuthStateNotifier extends StateNotifier<AuthState> {
     required String email,
     required String password,
   }) async {
+    await _ensureApiReady();
     final session = await _authRepository.loginSecurity(
       email: email,
       password: password,
@@ -176,7 +192,8 @@ class AuthStateNotifier extends StateNotifier<AuthState> {
     return _authRepository.requestPasswordReset(email: email);
   }
 
-  Future<OtpSendResult> sendPhoneOtp(String phone) {
+  Future<OtpSendResult> sendPhoneOtp(String phone) async {
+    await _ensureApiReady();
     return sl<OtpAuthService>().sendOtp(phone);
   }
 
@@ -187,6 +204,7 @@ class AuthStateNotifier extends StateNotifier<AuthState> {
     String? displayName,
     UserRole? role,
   }) async {
+    await _ensureApiReady();
     final verifiedPhone =
         await sl<OtpAuthService>().verifyOtp(phone: phone, otp: otp);
 
@@ -211,6 +229,7 @@ class AuthStateNotifier extends StateNotifier<AuthState> {
   }
 
   Future<void> signInWithGoogle() async {
+    await _ensureApiReady();
     final profile = await sl<GoogleAuthService>().signInAndVerify(
       forceAccountPicker: true,
     );
@@ -232,6 +251,7 @@ class AuthStateNotifier extends StateNotifier<AuthState> {
       throw const AppException('This role cannot be self-registered.');
     }
 
+    await _ensureApiReady();
     final profile = await sl<GoogleAuthService>().signInAndVerify(
       forceAccountPicker: true,
     );

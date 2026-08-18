@@ -3,6 +3,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import 'package:open_space_parking/core/bootstrap/app_bootstrap.dart';
 import 'package:open_space_parking/core/common/exceptions/app_exception.dart';
 import 'package:open_space_parking/core/config/app_constants.dart';
 import 'package:open_space_parking/core/providers/core_providers.dart';
@@ -66,6 +67,24 @@ class _AuthPageState extends ConsumerState<AuthPage> {
   void _backToPicker() {
     _resetPhoneFlow();
     setState(() => _subview = _AuthSubview.picker);
+  }
+
+  Future<void> _retryApiConnection() async {
+    final loading = ref.read(authLoadingProvider.notifier);
+    final snackbar = ref.read(snackbarServiceProvider);
+    loading.state = true;
+    try {
+      final ok = await AppBootstrap.retryApi();
+      if (ok) {
+        snackbar.showSuccess('Connected to server. You can sign in now.');
+      } else {
+        snackbar.showError(
+          'Still cannot reach the server. Keep USB connected and the backend running, then try again.',
+        );
+      }
+    } finally {
+      loading.state = false;
+    }
   }
 
   Future<void> _completeAuthenticatedFlow() async {
@@ -271,6 +290,44 @@ class _AuthPageState extends ConsumerState<AuthPage> {
               style: Theme.of(context).textTheme.bodyLarge,
             ),
             const SizedBox(height: 20),
+            ValueListenableBuilder<ApiConnectionStatus>(
+              valueListenable: AppBootstrap.apiStatus,
+              builder: (context, status, _) {
+                if (status != ApiConnectionStatus.offline) {
+                  return const SizedBox.shrink();
+                }
+                return Padding(
+                  padding: const EdgeInsets.only(bottom: 16),
+                  child: DecoratedBox(
+                    decoration: BoxDecoration(
+                      color: colorScheme.errorContainer,
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: Padding(
+                      padding: const EdgeInsets.fromLTRB(12, 12, 12, 4),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: [
+                          Text(
+                            'Cannot reach the server from this phone. Keep USB connected and the backend running, then tap Retry.',
+                            style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                                  color: colorScheme.onErrorContainer,
+                                ),
+                          ),
+                          Align(
+                            alignment: Alignment.centerRight,
+                            child: TextButton(
+                              onPressed: isLoading ? null : _retryApiConnection,
+                              child: const Text('Retry connection'),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                );
+              },
+            ),
             SegmentedButton<AuthFormMode>(
               segments: const [
                 ButtonSegment(

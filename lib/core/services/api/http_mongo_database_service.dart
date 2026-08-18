@@ -1,6 +1,7 @@
 import 'package:mongo_dart/mongo_dart.dart';
 
 import 'package:open_space_parking/core/common/exceptions/network_exception.dart';
+import 'package:open_space_parking/core/config/environment_config.dart';
 import 'package:open_space_parking/core/services/api/api_client.dart';
 import 'package:open_space_parking/core/services/mongodb/mongo_database_service.dart';
 
@@ -25,7 +26,7 @@ class HttpMongoDatabaseService implements MongoDatabaseService {
       if (e is NetworkException) rethrow;
       throw NetworkException(
         'Unable to connect to API server: $e. '
-        'Run: cd backend && npm install && npm start',
+        '${EnvironmentConfig.phoneUnreachableMessage}',
       );
     }
   }

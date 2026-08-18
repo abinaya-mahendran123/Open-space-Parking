@@ -31,6 +31,8 @@ class MongoIntegrationService {
 
   /// Connect to MongoDB and ensure all collection indexes.
   Future<void> initialize({bool ensureIndexes = true}) async {
+    if (_initialized && _databaseService.isConnected) return;
+
     if (!_databaseService.isConnected) {
       await _databaseService.connect();
     }

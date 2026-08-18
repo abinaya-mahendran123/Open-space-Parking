@@ -29,7 +29,7 @@ class EnvironmentConfig {
     );
     const hostLanIp = String.fromEnvironment(
       'HOST_LAN_IP',
-      defaultValue: '',
+      defaultValue: '192.168.88.10',
     );
 
     _configuredApiUrl = configuredApiUrl;
@@ -155,16 +155,25 @@ class EnvironmentConfig {
     final client = http.Client();
     try {
       final found = await _firstHealthy(client, candidates);
-      if (found != null) return found;
+      if (found != null) {
+        debugPrint('API reachable at $found');
+        return found;
+      }
     } finally {
       client.close();
     }
 
+    debugPrint('API discovery failed. Tried: ${candidates.join(', ')}');
     // If nothing answered yet, keep the explicitly configured base URL instead of
     // forcing a possibly stale LAN IP. A later retry can still switch to LAN once
     // the backend is reachable.
     return configured;
   }
+
+  static const String phoneUnreachableMessage =
+      'Cannot reach the server from this phone. '
+      'Keep the USB cable connected, keep the backend running '
+      '(cd backend && npm start), then run: adb reverse tcp:3000 tcp:3000';
 
   static Future<String?> _firstHealthy(
     http.Client client,
@@ -179,7 +188,7 @@ class EnvironmentConfig {
         try {
           final response = await client
               .get(Uri.parse('$base/api/health'))
-              .timeout(const Duration(milliseconds: 1500));
+              .timeout(const Duration(milliseconds: 3000));
           if (response.statusCode == 200 && !completer.isCompleted) {
             completer.complete(base);
           }

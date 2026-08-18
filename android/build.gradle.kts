@@ -19,6 +19,16 @@ subprojects {
     project.evaluationDependsOn(":app")
 }
 
+// OneDrive/Windows often locks mergeDebugAssets, which makes cleanMerge*Assets
+// fail even though assemble can still overwrite the files.
+subprojects {
+    tasks.configureEach {
+        if (name.startsWith("cleanMerge") && name.contains("Assets")) {
+            enabled = false
+        }
+    }
+}
+
 tasks.register<Delete>("clean") {
     delete(rootProject.layout.buildDirectory)
 }

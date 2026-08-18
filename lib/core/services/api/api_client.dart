@@ -21,7 +21,7 @@ class ApiClient {
       try {
         final response = await _httpClient
             .get(_uri('/api/health'))
-            .timeout(const Duration(milliseconds: 1200));
+            .timeout(const Duration(milliseconds: 3000));
         return response.statusCode == 200;
       } catch (_) {
         return false;
@@ -32,10 +32,7 @@ class ApiClient {
     await EnvironmentConfig.refreshReachableApiUrl();
     if (await ping()) return;
 
-    throw NetworkException(
-      'API server unavailable. '
-      'Start it with: cd backend && npm install && npm start',
-    );
+    throw NetworkException(EnvironmentConfig.phoneUnreachableMessage);
   }
 
   Future<Map<String, dynamic>> post(
@@ -55,12 +52,14 @@ class ApiClient {
     http.Response response;
     try {
       response = await send();
-    } on TimeoutException catch (_) {
+    } catch (error) {
+      if (!_isTransportFailure(error)) rethrow;
       await EnvironmentConfig.refreshReachableApiUrl();
-      response = await send();
-    } on http.ClientException catch (_) {
-      await EnvironmentConfig.refreshReachableApiUrl();
-      response = await send();
+      try {
+        response = await send();
+      } catch (_) {
+        throw NetworkException(EnvironmentConfig.phoneUnreachableMessage);
+      }
     }
 
     Map<String, dynamic> payload;
@@ -82,5 +81,18 @@ class ApiClient {
     }
 
     return payload;
+  }
+
+  bool _isTransportFailure(Object error) {
+    if (error is TimeoutException || error is http.ClientException) {
+      return true;
+    }
+    final text = error.toString().toLowerCase();
+    return text.contains('socket') ||
+        text.contains('connection refused') ||
+        text.contains('connection failed') ||
+        text.contains('failed host lookup') ||
+        text.contains('network is unreachable') ||
+        text.contains('timed out');
   }
 }

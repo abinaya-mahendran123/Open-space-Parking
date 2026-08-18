@@ -129,6 +129,10 @@ final appRouterProvider = Provider<GoRouter>((ref) {
         return RoutePaths.vehicleOwnerDashboard;
       }
 
+      if (role == UserRole.landOwner && RoutePaths.isSecurityRoute(location)) {
+        return RoutePaths.landOwnerDashboard;
+      }
+
       // Non-admin / non-employee cannot access isolated portals.
       if (isAdminPath || (isEmployeePath && location != RoutePaths.employeeLogin)) {
         if (role == UserRole.landOwner) return RoutePaths.landOwnerDashboard;
