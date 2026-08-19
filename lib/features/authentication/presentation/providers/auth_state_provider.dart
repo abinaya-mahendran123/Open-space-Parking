@@ -5,6 +5,8 @@ import 'package:open_space_parking/core/common/exceptions/app_exception.dart';
 import 'package:open_space_parking/core/config/environment_config.dart';
 import 'package:open_space_parking/core/di/service_locator.dart';
 import 'package:open_space_parking/core/services/api/google_auth_service.dart';
+import 'package:open_space_parking/core/services/api/account_check_service.dart';
+import 'package:open_space_parking/core/services/api/backend_otp_service.dart';
 import 'package:open_space_parking/core/services/api/otp_auth_service.dart';
 import 'package:open_space_parking/core/services/session_service.dart';
 import 'package:open_space_parking/features/authentication/presentation/providers/auth_form_providers.dart';
@@ -147,12 +149,12 @@ class AuthStateNotifier extends StateNotifier<AuthState> {
   }
 
   Future<void> loginEmployee({
-    required String email,
+    required String phone,
     required String password,
   }) async {
     await _ensureApiReady();
     final session = await _authRepository.loginEmployee(
-      email: email,
+      phone: phone,
       password: password,
     );
     await _sessionService.saveSession(session);
@@ -192,9 +194,20 @@ class AuthStateNotifier extends StateNotifier<AuthState> {
     return _authRepository.requestPasswordReset(email: email);
   }
 
-  Future<OtpSendResult> sendPhoneOtp(String phone) async {
+  Future<PhoneAccountType> checkPhoneAccount(String phone) async {
     await _ensureApiReady();
-    return sl<OtpAuthService>().sendOtp(phone);
+    return sl<AccountCheckService>().checkAccount(phone);
+  }
+
+  Future<OtpSendResult> sendPhoneOtp(String phone) async {
+    // Try backend OTP first (no Firebase billing required)
+    try {
+      final result = await BackendOtpService().sendOtp(phone);
+      return OtpSendResult(phone: result.phone, autoVerified: false);
+    } catch (_) {
+      // Fall back to Firebase OTP if backend fails
+      return sl<OtpAuthService>().sendOtp(phone);
+    }
   }
 
   Future<void> verifyPhoneOtp({
@@ -205,8 +218,21 @@ class AuthStateNotifier extends StateNotifier<AuthState> {
     UserRole? role,
   }) async {
     await _ensureApiReady();
-    final verifiedPhone =
-        await sl<OtpAuthService>().verifyOtp(phone: phone, otp: otp);
+
+    String? otpToken;
+    String? idToken;
+
+    // Try backend OTP verification first
+    try {
+      final verified = await BackendOtpService().verifyOtp(phone: phone, otp: otp);
+      otpToken = verified.otpToken;
+      phone = verified.phone;
+    } catch (_) {
+      // Fall back to Firebase OTP
+      final verified = await sl<OtpAuthService>().verifyOtp(phone: phone, otp: otp);
+      idToken = verified.idToken;
+      phone = verified.phone;
+    }
 
     if (mode == AuthFormMode.signUp) {
       if (displayName == null || displayName.trim().isEmpty) {
@@ -214,16 +240,22 @@ class AuthStateNotifier extends StateNotifier<AuthState> {
       }
       final signUpRole = role ?? UserRole.vehicleOwner;
       final session = await _authRepository.registerWithPhone(
-        phone: verifiedPhone,
+        phone: phone,
         displayName: displayName.trim(),
         role: signUpRole,
+        idToken: idToken,
+        otpToken: otpToken,
       );
       await _sessionService.saveSession(session);
       state = AuthState.authenticated(session);
       return;
     }
 
-    final session = await _authRepository.loginWithPhone(phone: verifiedPhone);
+    final session = await _authRepository.loginWithPhone(
+      phone: phone,
+      idToken: idToken,
+      otpToken: otpToken,
+    );
     await _sessionService.saveSession(session);
     state = AuthState.authenticated(session);
   }
@@ -269,13 +301,18 @@ class AuthStateNotifier extends StateNotifier<AuthState> {
   }
 
   Future<void> logout() async {
-    try {
-      await sl<GoogleAuthService>().signOut();
-    } catch (_) {
-      // App session must clear even if Google sign-out fails.
-    }
     await _sessionService.clearSession();
     state = const AuthState.unauthenticated();
+
+    // Clear Google/Firebase in the background so the UI never blocks on sign-out.
+    Future<void>(() async {
+      try {
+        await sl<GoogleAuthService>().signOut().timeout(const Duration(seconds: 2));
+      } catch (_) {}
+      try {
+        await sl<OtpAuthService>().signOut().timeout(const Duration(seconds: 2));
+      } catch (_) {}
+    });
   }
 }
 

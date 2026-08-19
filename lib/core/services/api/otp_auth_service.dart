@@ -1,125 +1,221 @@
 import 'dart:async';
-import 'dart:convert';
 
-import 'package:http/http.dart' as http;
+import 'package:firebase_auth/firebase_auth.dart';
+import 'package:flutter/foundation.dart';
 
 import 'package:open_space_parking/core/common/exceptions/app_exception.dart';
-import 'package:open_space_parking/core/config/app_constants.dart';
 import 'package:open_space_parking/core/config/environment_config.dart';
+import 'package:open_space_parking/core/firebase/firebase_bootstrap.dart';
+import 'package:open_space_parking/core/utils/app_logger.dart';
 import 'package:open_space_parking/core/utils/phone_utils.dart';
 
 class OtpSendResult {
   const OtpSendResult({
     required this.phone,
-    required this.devMode,
-    this.otp,
+    this.autoVerified = false,
   });
 
   final String phone;
-  final bool devMode;
-  final String? otp;
+  final bool autoVerified;
 }
 
-class OtpAuthService {
-  OtpAuthService({http.Client? httpClient})
-      : _httpClient = httpClient ?? http.Client();
+class OtpVerifyResult {
+  const OtpVerifyResult({
+    required this.phone,
+    required this.idToken,
+  });
 
-  final http.Client _httpClient;
+  final String phone;
+  final String idToken;
+}
+
+/// Sends and verifies phone OTPs through Firebase Authentication.
+class OtpAuthService {
+  OtpAuthService({FirebaseAuth? firebaseAuth}) : _authOverride = firebaseAuth;
+
+  final FirebaseAuth? _authOverride;
+
+  FirebaseAuth get _auth => _authOverride ?? FirebaseAuth.instance;
+
+  String? _verificationId;
+  int? _resendToken;
+  ConfirmationResult? _webConfirmation;
+  String? _pendingPhone;
+  String? _autoIdToken;
+
+  Future<void> _ensureFirebase() async {
+    if (!EnvironmentConfig.isFirebaseAuthConfigured) {
+      throw const AppException(
+        'Firebase Phone Auth is not configured. Enable Phone sign-in in the '
+        'Firebase console and pass FIREBASE_API_KEY, FIREBASE_APP_ID, '
+        'FIREBASE_PROJECT_ID, FIREBASE_MESSAGING_SENDER_ID '
+        '(plus FIREBASE_AUTH_DOMAIN on web).',
+      );
+    }
+    await FirebaseBootstrap.ensureInitialized();
+    if (!FirebaseBootstrap.ready) {
+      throw const AppException(
+        'Could not start Firebase. Run flutterfire configure or pass Firebase '
+        'dart-defines, then restart the app.',
+      );
+    }
+    if (kDebugMode) {
+      await _auth.setSettings(appVerificationDisabledForTesting: true);
+    }
+  }
 
   Future<OtpSendResult> sendOtp(String phone) async {
-    final normalizedPhone = PhoneUtils.normalizeIndianMobile(phone);
+    await _ensureFirebase();
     if (!PhoneUtils.isValidIndianMobile(phone)) {
       throw const AppException('Enter a valid 10-digit mobile number.');
     }
 
-    final response = await _post(
-      '/api/auth/send-otp',
-      {'phone': normalizedPhone},
-    );
+    final e164 = PhoneUtils.normalizeIndianMobile(phone);
+    _pendingPhone = e164;
+    _autoIdToken = null;
+    _webConfirmation = null;
+    _verificationId = null;
 
-    return OtpSendResult(
-      phone: response['phone']?.toString() ?? normalizedPhone,
-      devMode: response['devMode'] == true,
-      otp: response['otp']?.toString(),
-    );
-  }
+    if (kIsWeb) {
+      try {
+        _webConfirmation = await _auth.signInWithPhoneNumber(e164);
+        return OtpSendResult(phone: e164);
+      } on FirebaseAuthException catch (error) {
+        AppLogger.w(
+          'Firebase phone auth failed [${error.code}]: ${error.message}',
+        );
+        throw AppException(_mapFirebaseError(error));
+      }
+    }
 
-  Future<String> verifyOtp({
-    required String phone,
-    required String otp,
-  }) async {
-    final normalizedPhone = PhoneUtils.normalizeIndianMobile(phone);
-    final response = await _post(
-      '/api/auth/verify-otp',
-      {
-        'phone': normalizedPhone,
-        'otp': otp.trim(),
+    final completer = Completer<OtpSendResult>();
+
+    await _auth.verifyPhoneNumber(
+      phoneNumber: e164,
+      forceResendingToken: _resendToken,
+      timeout: const Duration(seconds: 60),
+      verificationCompleted: (PhoneAuthCredential credential) async {
+        try {
+          final userCred = await _auth.signInWithCredential(credential);
+          _autoIdToken = await userCred.user?.getIdToken();
+          final result = OtpSendResult(phone: e164, autoVerified: true);
+          if (!completer.isCompleted) {
+            completer.complete(result);
+          }
+        } catch (_) {
+          if (!completer.isCompleted) {
+            completer.completeError(
+              const AppException(
+                'Automatic verification failed. Enter the SMS code.',
+              ),
+            );
+          }
+        }
+      },
+      verificationFailed: (FirebaseAuthException error) {
+        if (!completer.isCompleted) {
+          completer.completeError(AppException(_mapFirebaseError(error)));
+        }
+      },
+      codeSent: (String verificationId, int? resendToken) {
+        _verificationId = verificationId;
+        _resendToken = resendToken;
+        if (!completer.isCompleted) {
+          completer.complete(OtpSendResult(phone: e164));
+        }
+      },
+      codeAutoRetrievalTimeout: (String verificationId) {
+        _verificationId = verificationId;
       },
     );
 
-    if (response['verified'] != true) {
-      throw const AppException('OTP verification failed.');
-    }
-
-    return response['phone']?.toString() ?? normalizedPhone;
+    return completer.future.timeout(
+      const Duration(seconds: 90),
+      onTimeout: () {
+        throw const AppException(
+          'Timed out waiting for Firebase to send the SMS. Try again.',
+        );
+      },
+    );
   }
 
-  Future<Map<String, dynamic>> _post(
-    String path,
-    Map<String, dynamic> body,
-  ) async {
-    Future<http.Response> postTo(String base) {
-      return _httpClient
-          .post(
-            Uri.parse('$base$path'),
-            headers: const {'Content-Type': 'application/json'},
-            body: jsonEncode(body),
-          )
-          .timeout(AppConstants.requestTimeout);
-    }
+  Future<OtpVerifyResult> verifyOtp({
+    required String phone,
+    required String otp,
+  }) async {
+    await _ensureFirebase();
+    final e164 = PhoneUtils.normalizeIndianMobile(phone);
 
-    http.Response response;
     try {
-      response = await postTo(EnvironmentConfig.baseApiUrl);
-    } catch (error) {
-      final text = error.toString().toLowerCase();
-      final isTransport = error is TimeoutException ||
-          error is http.ClientException ||
-          text.contains('socket') ||
-          text.contains('connection') ||
-          text.contains('timed out');
-      if (!isTransport) rethrow;
-      response = await _retryPost(postTo);
-    }
+      if (_autoIdToken != null && _autoIdToken!.isNotEmpty) {
+        return OtpVerifyResult(phone: e164, idToken: _autoIdToken!);
+      }
 
-    Map<String, dynamic> payload;
-    try {
-      payload = jsonDecode(response.body) as Map<String, dynamic>;
-    } catch (_) {
-      throw const AppException('Invalid response from auth server.');
-    }
+      if (kIsWeb) {
+        final confirmation = _webConfirmation;
+        if (confirmation == null) {
+          throw const AppException('Request a new OTP, then try again.');
+        }
+        final credential = await confirmation.confirm(otp.trim());
+        return await _tokenFromUser(credential.user, e164);
+      }
 
-    if (response.statusCode < 200 || response.statusCode >= 300) {
-      throw AppException(
-        payload['error']?.toString() ?? 'Authentication request failed.',
+      final verificationId = _verificationId;
+      if (verificationId == null || verificationId.isEmpty) {
+        throw const AppException('Request a new OTP, then try again.');
+      }
+
+      final credential = PhoneAuthProvider.credential(
+        verificationId: verificationId,
+        smsCode: otp.trim(),
       );
+      final userCred = await _auth.signInWithCredential(credential);
+      return await _tokenFromUser(userCred.user, e164);
+    } on FirebaseAuthException catch (error) {
+      throw AppException(_mapFirebaseError(error));
     }
-
-    if (payload['ok'] != true) {
-      throw const AppException('Authentication request was not accepted.');
-    }
-
-    return payload;
   }
 
-  Future<http.Response> _retryPost(
-    Future<http.Response> Function(String base) postTo,
-  ) async {
+  Future<void> signOut() async {
     try {
-      final retriedUrl = await EnvironmentConfig.refreshReachableApiUrl();
-      return await postTo(retriedUrl);
-    } catch (_) {
-      throw const AppException(EnvironmentConfig.phoneUnreachableMessage);
+      await _auth.signOut().timeout(const Duration(seconds: 2));
+    } catch (_) {}
+    _verificationId = null;
+    _resendToken = null;
+    _webConfirmation = null;
+    _pendingPhone = null;
+    _autoIdToken = null;
+  }
+
+  Future<OtpVerifyResult> _tokenFromUser(User? user, String fallbackPhone) async {
+    final token = await user?.getIdToken();
+    if (token == null || token.isEmpty) {
+      throw const AppException('Firebase did not return a sign-in token.');
     }
+    final phone = user?.phoneNumber ?? _pendingPhone ?? fallbackPhone;
+    return OtpVerifyResult(phone: phone, idToken: token);
+  }
+
+  String _mapFirebaseError(FirebaseAuthException error) {
+    return switch (error.code) {
+      'invalid-phone-number' => 'Enter a valid mobile number with country code.',
+      'too-many-requests' => 'Too many OTP attempts. Wait a few minutes and try again.',
+      'quota-exceeded' => 'SMS quota exceeded. Try again later.',
+      'session-expired' => 'This OTP expired. Request a new code.',
+      'invalid-verification-code' => 'Invalid OTP. Check the SMS and try again.',
+      'invalid-verification-id' => 'Request a new OTP, then try again.',
+      'missing-client-identifier' =>
+        'Android SHA-1 is missing in Firebase. Add your debug SHA-1 and retry.',
+      'app-not-authorized' =>
+        'This app is not authorized for Firebase Phone Auth yet.',
+      'operation-not-allowed' =>
+        'Allow India for SMS in Firebase: Authentication → Settings → '
+        'SMS region policy → allow India (IN), then Save and retry.',
+      'captcha-check-failed' => 'reCAPTCHA failed. Refresh and try again.',
+      'network-request-failed' => 'Network error. Check your connection.',
+      _ => error.message?.trim().isNotEmpty == true
+          ? '${error.message} (${error.code})'
+          : 'Could not complete phone verification (${error.code}).',
+    };
   }
 }

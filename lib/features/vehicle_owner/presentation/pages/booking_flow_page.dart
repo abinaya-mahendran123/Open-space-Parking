@@ -32,6 +32,8 @@ class BookingFlowPage extends ConsumerStatefulWidget {
 }
 
 class _BookingFlowPageState extends ConsumerState<BookingFlowPage> {
+  static final _dateFormat = DateFormat('dd MMM yyyy, hh:mm a');
+
   final _vehicleFormKey = GlobalKey<FormState>();
   final _vehicleNumberController = TextEditingController();
   final _vehicleModelController = TextEditingController();
@@ -217,7 +219,6 @@ class _BookingFlowPageState extends ConsumerState<BookingFlowPage> {
     final form = ref.watch(bookingFormProvider);
     final listingAsync = ref.watch(parkingListingProvider(widget.listingId));
     final vehicleOwnerId = ref.watch(authStateProvider).session?.userId ?? '';
-    final dateFormat = DateFormat('dd MMM yyyy, hh:mm a');
 
     return listingAsync.when(
       loading: () => const Scaffold(
@@ -249,7 +250,7 @@ class _BookingFlowPageState extends ConsumerState<BookingFlowPage> {
               ? () => ref.read(bookingFormProvider.notifier).previousStep()
               : () => context.pop(),
           bottomBar: _buildBottomBar(form, listing, vehicleOwnerId, estimated),
-          child: _buildStepContent(form, listing, dateFormat, estimated),
+          child: _buildStepContent(form, listing, _dateFormat, estimated),
         );
       },
     );
@@ -276,7 +277,7 @@ class _BookingFlowPageState extends ConsumerState<BookingFlowPage> {
               title: const Text('Start'),
               subtitle: Text(
                 form.startDateTime != null
-                    ? dateFormat.format(form.startDateTime!.toLocal())
+                    ? _dateFormat.format(form.startDateTime!.toLocal())
                     : 'Not selected',
               ),
               trailing: const Icon(Icons.calendar_today),
@@ -287,7 +288,7 @@ class _BookingFlowPageState extends ConsumerState<BookingFlowPage> {
               title: const Text('End'),
               subtitle: Text(
                 form.endDateTime != null
-                    ? dateFormat.format(form.endDateTime!.toLocal())
+                    ? _dateFormat.format(form.endDateTime!.toLocal())
                     : 'Not selected',
               ),
               trailing: const Icon(Icons.calendar_today),
@@ -350,13 +351,13 @@ class _BookingFlowPageState extends ConsumerState<BookingFlowPage> {
             _SummaryRow(
               label: 'Start',
               value: form.startDateTime != null
-                  ? dateFormat.format(form.startDateTime!.toLocal())
+                  ? _dateFormat.format(form.startDateTime!.toLocal())
                   : '-',
             ),
             _SummaryRow(
               label: 'End',
               value: form.endDateTime != null
-                  ? dateFormat.format(form.endDateTime!.toLocal())
+                  ? _dateFormat.format(form.endDateTime!.toLocal())
                   : '-',
             ),
             _SummaryRow(

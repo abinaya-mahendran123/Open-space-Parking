@@ -3,11 +3,12 @@ import 'package:intl/intl.dart';
 
 import 'package:open_space_parking/features/notification/domain/entities/app_notification.dart';
 
+final _dateFormat = DateFormat('dd MMM yyyy, hh:mm a');
+
 Future<void> showNotificationDetailDialog(
   BuildContext context,
   AppNotification notification,
 ) {
-  final dateFormat = DateFormat('dd MMM yyyy, hh:mm a');
   final colorScheme = Theme.of(context).colorScheme;
 
   return showDialog<void>(
@@ -31,7 +32,7 @@ Future<void> showNotificationDetailDialog(
               ),
               const SizedBox(height: 16),
               Text(
-                dateFormat.format(notification.createdAt.toLocal()),
+                _dateFormat.format(notification.createdAt.toLocal()),
                 style: Theme.of(dialogContext).textTheme.bodySmall?.copyWith(
                       color: colorScheme.onSurfaceVariant,
                     ),

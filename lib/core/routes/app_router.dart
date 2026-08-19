@@ -13,7 +13,6 @@ import 'package:open_space_parking/features/authentication/presentation/pages/fo
 import 'package:open_space_parking/features/authentication/presentation/pages/role_selection_page.dart';
 import 'package:open_space_parking/features/authentication/presentation/pages/splash_page.dart';
 import 'package:open_space_parking/features/authentication/presentation/providers/auth_state_provider.dart';
-import 'package:open_space_parking/features/employee/presentation/pages/employee_login_page.dart';
 import 'package:open_space_parking/features/employee/presentation/pages/employee_shell_page.dart';
 import 'package:open_space_parking/features/employee/presentation/pages/employee_ticket_detail_page.dart';
 import 'package:open_space_parking/features/land_owner/presentation/pages/build_parking_flow_page.dart';
@@ -92,7 +91,7 @@ final appRouterProvider = Provider<GoRouter>((ref) {
           return RoutePaths.authEntry;
         }
         if (isEmployeePath && location != RoutePaths.employeeLogin) {
-          return RoutePaths.employeeLogin;
+          return RoutePaths.authEntry;
         }
         if (landOwnerRoutes.contains(location) || isVehicleOwnerPath) {
           return RoutePaths.authEntry;
@@ -118,7 +117,8 @@ final appRouterProvider = Provider<GoRouter>((ref) {
       // Employee confined to employee routes.
       if (role == UserRole.employee) {
         if (RoutePaths.isSecurityRoute(location)) return null;
-        if (location == RoutePaths.employeeLogin) {
+        if (location == RoutePaths.employeeLogin ||
+            location == RoutePaths.authEntry) {
           return RoutePaths.employeeDashboard;
         }
         if (!isEmployeePath) return RoutePaths.employeeDashboard;
@@ -191,13 +191,17 @@ final appRouterProvider = Provider<GoRouter>((ref) {
       ),
       GoRoute(
         path: RoutePaths.adminTickets,
-        builder: (_, __) => const AdminShellPage(initialIndex: 1),
+        builder: (_, state) => AdminShellPage(
+          initialIndex: 1,
+          ticketStatusFilter: state.uri.queryParameters['status'],
+        ),
       ),
       GoRoute(
         path: '/admin/tickets/:ticketId',
         builder: (context, state) {
           final ticketId = state.pathParameters['ticketId'] ?? '';
-          return AdminTicketDetailPage(ticketId: ticketId);
+          final readOnly = state.uri.queryParameters['readonly'] == 'true';
+          return AdminTicketDetailPage(ticketId: ticketId, readOnly: readOnly);
         },
       ),
       GoRoute(
@@ -219,7 +223,7 @@ final appRouterProvider = Provider<GoRouter>((ref) {
       // Isolated Employee Portal
       GoRoute(
         path: RoutePaths.employeeLogin,
-        builder: (_, __) => const EmployeeLoginPage(),
+        redirect: (_, __) => RoutePaths.authEntry,
       ),
       GoRoute(
         path: RoutePaths.employeeDashboard,

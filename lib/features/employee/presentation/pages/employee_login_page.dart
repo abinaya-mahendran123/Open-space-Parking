@@ -22,12 +22,12 @@ class EmployeeLoginPage extends ConsumerStatefulWidget {
 
 class _EmployeeLoginPageState extends ConsumerState<EmployeeLoginPage> {
   final _formKey = GlobalKey<FormState>();
-  final _emailController = TextEditingController();
+  final _phoneController = TextEditingController();
   final _passwordController = TextEditingController();
 
   @override
   void dispose() {
-    _emailController.dispose();
+    _phoneController.dispose();
     _passwordController.dispose();
     super.dispose();
   }
@@ -39,7 +39,7 @@ class _EmployeeLoginPageState extends ConsumerState<EmployeeLoginPage> {
     loading.state = true;
     try {
       await ref.read(authStateProvider.notifier).loginEmployee(
-            email: _emailController.text,
+            phone: _phoneController.text.trim(),
             password: _passwordController.text,
           );
       if (!mounted) return;
@@ -58,22 +58,24 @@ class _EmployeeLoginPageState extends ConsumerState<EmployeeLoginPage> {
     final isLoading = ref.watch(authLoadingProvider);
 
     return AuthScaffold(
-      title: 'Employee Portal Login',
+      title: 'Employee Portal',
+      onBack: () => context.go(RoutePaths.authEntry),
       child: Form(
         key: _formKey,
         child: Column(
           children: [
             Text(
-              'Employee access only. Credentials are issued by Admin.',
+              'Sign in with the mobile number and password shared by Admin.',
               style: Theme.of(context).textTheme.bodySmall,
               textAlign: TextAlign.center,
             ),
             const SizedBox(height: 20),
             AppTextField(
-              controller: _emailController,
-              label: 'Employee Email',
-              keyboardType: TextInputType.emailAddress,
-              validator: Validators.email,
+              controller: _phoneController,
+              label: 'Mobile Number',
+              hint: '10-digit mobile number',
+              keyboardType: TextInputType.phone,
+              validator: Validators.mobileNumber,
             ),
             const SizedBox(height: 12),
             AppPasswordField(

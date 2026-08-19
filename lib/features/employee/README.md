@@ -4,8 +4,9 @@ Isolated employee portal for field/construction staff.
 
 ## Access
 
-- Login only at `/employee/login` (not shown in normal app navigation)
-- Credentials are created by Admin when adding an employee
+- On the main sign-in screen, tap **Sign in with phone number**
+- Enter the employee mobile number; the app detects employee accounts automatically
+- Sign in with the **password** issued by Admin when the employee was created
 - Authenticated employees are confined to `/employee/*` routes
 
 ## Features

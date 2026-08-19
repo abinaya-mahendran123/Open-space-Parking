@@ -125,7 +125,7 @@ void main() {
       notifier = await createNotifier();
       when(
         () => authRepository.loginEmployee(
-          email: 'employee@test.com',
+          phone: '9876543210',
           password: AuthFixtures.testPassword,
         ),
       ).thenAnswer(
@@ -136,7 +136,7 @@ void main() {
       );
 
       await notifier.loginEmployee(
-        email: 'employee@test.com',
+        phone: '9876543210',
         password: AuthFixtures.testPassword,
       );
 

@@ -11,6 +11,9 @@ const {
   verifiedListingById,
   isEmployeeVerifiedListing,
 } = require('./parking_listings');
+const { extractGovernmentIdDetails } = require('./government_id_ocr');
+const { handleAuthUrl, handleExchange, handleFetchDocument } = require('./digilocker');
+const { handleSendOtp, handleVerifyOtp, verifyOtpToken } = require('./otp_service');
 
 (function loadLocalEnv() {
   const envPath = path.join(__dirname, '.env');
@@ -186,6 +189,22 @@ async function findActiveUserByPhone(phone) {
     users.find((user) => phoneKey(user.email) === lastTen) ||
     null
   );
+}
+
+async function findEmployeeByPhone(phone) {
+  const lastTen = phoneKey(phone);
+  if (!lastTen) return null;
+  const employees = await db.collection('employees').find({}).toArray();
+  return employees.find((employee) => phoneKey(employee.phone) === lastTen) || null;
+}
+
+function employeeSessionPayload(employee) {
+  return {
+    userId: asHexId(employee._id),
+    email: employee.email || '',
+    displayName: employee.fullName || employee.displayName || '',
+    role: 'employee',
+  };
 }
 
 function sessionPayload(user) {
@@ -475,6 +494,31 @@ app.get('/api/health', (_req, res) => {
   });
 });
 
+// ── Backend OTP (no Firebase billing required) ─────────────────────────────
+app.post('/api/auth/otp/send', handleSendOtp);
+app.post('/api/auth/otp/verify', handleVerifyOtp);
+
+// ── DigiLocker property document verification ──────────────────────────────
+app.get('/api/digilocker/auth-url', handleAuthUrl);
+app.post('/api/digilocker/exchange', handleExchange);
+app.post('/api/digilocker/fetch-document', handleFetchDocument);
+
+app.post('/api/ocr/government-id', async (req, res) => {
+  try {
+    const { frontUrl, backUrl, idType } = req.body || {};
+    const extracted = await extractGovernmentIdDetails({
+      frontUrl,
+      backUrl,
+      idType,
+    });
+    res.json(extracted);
+  } catch (error) {
+    const message = error?.message || 'Could not extract details from ID images.';
+    const status = message.includes('required') || message.includes('Unsupported') ? 400 : 500;
+    res.status(status).json({ error: message });
+  }
+});
+
 app.post('/api/parking/nearby', async (_req, res) => {
   try {
     if (!DATABASE_URL) {
@@ -605,71 +649,73 @@ app.get('/api/reverse-geocode', async (req, res) => {
   }
 });
 
-const otpCodes = new Map();
-
-function hashOtp(code) {
-  return crypto.createHash('sha256').update(String(code)).digest('hex');
-}
-
-app.post('/api/auth/send-otp', async (req, res) => {
+app.post('/api/auth/check-account', async (req, res) => {
   try {
-    const normalizedPhone = normalizePhoneNumber(req.body.phone);
+    const normalizedPhone = normalizePhoneNumber(req.body?.phone);
     if (!normalizedPhone) {
-      res.status(400).json({ error: 'Enter a valid mobile number.' });
+      res.status(400).json({ error: 'Please enter a valid mobile number.' });
       return;
     }
 
-    const otp = String(Math.floor(100000 + Math.random() * 900000));
-    otpCodes.set(phoneKey(normalizedPhone), {
-      hash: hashOtp(otp),
-      expiresAt: Date.now() + 5 * 60 * 1000,
-    });
+    const employee = await findEmployeeByPhone(normalizedPhone);
+    if (employee) {
+      if (employee.isActive !== true) {
+        res.status(403).json({
+          error:
+            'This employee account is currently inactive. Please contact the administrator.',
+        });
+        return;
+      }
+      res.json({ accountType: 'employee' });
+      return;
+    }
 
-    const message = `Your Open Space Parking verification code is ${otp}. Valid for 5 minutes.`;
-    const result = await sendOtpSms({ to: normalizedPhone, body: message });
-
-    res.json({
-      ok: true,
-      phone: normalizedPhone,
-      devMode: result.simulated === true,
-      otp: result.simulated === true ? otp : undefined,
-    });
+    res.json({ accountType: 'user' });
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
 });
 
-app.post('/api/auth/verify-otp', async (req, res) => {
+app.post('/api/auth/employee-phone-login', async (req, res) => {
   try {
-    const normalizedPhone = normalizePhoneNumber(req.body.phone);
-    const otp = String(req.body.otp || '').trim();
+    const normalizedPhone = normalizePhoneNumber(req.body?.phone);
+    const password = String(req.body?.password || '');
 
     if (!normalizedPhone) {
-      res.status(400).json({ error: 'Enter a valid mobile number.' });
+      res.status(400).json({ error: 'Please enter a valid mobile number.' });
       return;
     }
-    if (!/^\d{6}$/.test(otp)) {
-      res.status(400).json({ error: 'Enter the 6-digit OTP.' });
-      return;
-    }
-
-    const entry = otpCodes.get(phoneKey(normalizedPhone));
-    if (!entry) {
-      res.status(400).json({ error: 'OTP expired or not requested. Send a new code.' });
-      return;
-    }
-    if (Date.now() > entry.expiresAt) {
-      otpCodes.delete(phoneKey(normalizedPhone));
-      res.status(400).json({ error: 'OTP expired. Request a new code.' });
-      return;
-    }
-    if (hashOtp(otp) !== entry.hash) {
-      res.status(400).json({ error: 'Invalid OTP. Please try again.' });
+    if (!password) {
+      res.status(400).json({ error: 'Password is required.' });
       return;
     }
 
-    otpCodes.delete(phoneKey(normalizedPhone));
-    res.json({ ok: true, phone: normalizedPhone, verified: true });
+    const employee = await findEmployeeByPhone(normalizedPhone);
+    if (!employee) {
+      res.status(401).json({ error: 'Incorrect password. Please try again.' });
+      return;
+    }
+    if (employee.isActive !== true) {
+      res.status(403).json({
+        error:
+          'This employee account is currently inactive. Please contact the administrator.',
+      });
+      return;
+    }
+    if (!employee.passwordSalt || !employee.passwordHash) {
+      res.status(401).json({
+        error: 'Employee login is not configured. Contact your administrator.',
+      });
+      return;
+    }
+
+    const computed = hashPassword(password, employee.passwordSalt);
+    if (computed !== employee.passwordHash) {
+      res.status(401).json({ error: 'Incorrect password. Please try again.' });
+      return;
+    }
+
+    res.json(employeeSessionPayload(employee));
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
@@ -680,6 +726,20 @@ app.post('/api/auth/phone-login', async (req, res) => {
     const normalizedPhone = normalizePhoneNumber(req.body?.phone);
     if (!normalizedPhone) {
       res.status(400).json({ error: 'Enter a valid mobile number.' });
+      return;
+    }
+
+    const employee = await findEmployeeByPhone(normalizedPhone);
+    if (employee) {
+      res.status(403).json({
+        error: 'This mobile number is registered as an employee. Sign in with your employee password.',
+      });
+      return;
+    }
+
+    const verifiedPhone = await verifyPhoneToken(req.body?.idToken, req.body?.otpToken);
+    if (!verifiedPhone || phoneKey(verifiedPhone) !== phoneKey(normalizedPhone)) {
+      res.status(401).json({ error: 'Phone verification failed. Please try again.' });
       return;
     }
 
@@ -700,7 +760,7 @@ app.post('/api/auth/phone-login', async (req, res) => {
 
     res.json(sessionPayload(user));
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    res.status(error.statusCode || 500).json({ error: error.message });
   }
 });
 
@@ -714,6 +774,20 @@ app.post('/api/auth/phone-register', async (req, res) => {
 
     if (!normalizedPhone) {
       res.status(400).json({ error: 'Enter a valid mobile number.' });
+      return;
+    }
+
+    const employee = await findEmployeeByPhone(normalizedPhone);
+    if (employee) {
+      res.status(403).json({
+        error: 'This mobile number belongs to an employee account and cannot be self-registered.',
+      });
+      return;
+    }
+
+    const verifiedPhone = await verifyPhoneToken(req.body?.idToken, req.body?.otpToken);
+    if (!verifiedPhone || phoneKey(verifiedPhone) !== phoneKey(normalizedPhone)) {
+      res.status(401).json({ error: 'Phone verification failed. Please try again.' });
       return;
     }
     if (!displayName) {
@@ -751,7 +825,7 @@ app.post('/api/auth/phone-register', async (req, res) => {
     await db.collection('users').insertOne(user);
     res.json(sessionPayload(user));
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    res.status(error.statusCode || 500).json({ error: error.message });
   }
 });
 
@@ -803,46 +877,6 @@ app.post('/api/auth/google', async (req, res) => {
   }
 });
 
-app.post('/api/notifications/ticket-assignment', async (req, res) => {
-  try {
-    const {
-      phone,
-      employeeName,
-      ticketId,
-      ownerName,
-      ownerPhone,
-      location,
-      requestType,
-    } = req.body;
-
-    const normalizedPhone = normalizePhoneNumber(phone);
-    if (!normalizedPhone) {
-      res.status(400).json({ error: 'Employee mobile number is required.' });
-      return;
-    }
-
-    const message = [
-      'Open Space Parking - New Ticket Assigned',
-      `Hello ${employeeName || 'Employee'},`,
-      `Ticket: ${ticketId || 'N/A'}`,
-      `Type: ${formatRequestType(requestType)}`,
-      `Owner: ${ownerName || 'Land Owner'} (${ownerPhone || 'N/A'})`,
-      `Location: ${location || 'See employee portal'}`,
-      'Please check your employee portal for full details.',
-    ].join('\n');
-
-    const result = await sendSms({ to: normalizedPhone, body: message });
-    res.json({
-      ok: true,
-      phone: normalizedPhone,
-      simulated: result.simulated === true,
-      messageId: result.messageId || null,
-    });
-  } catch (error) {
-    res.status(500).json({ error: error.message });
-  }
-});
-
 function normalizePhoneNumber(phone) {
   const digits = String(phone || '').replace(/\D/g, '');
   if (!digits) return '';
@@ -854,106 +888,66 @@ function normalizePhoneNumber(phone) {
   return `+${digits}`;
 }
 
-function formatRequestType(value) {
-  if (!value) return 'Parking request';
-  return String(value)
-    .replace(/_/g, ' ')
-    .replace(/\b\w/g, (char) => char.toUpperCase());
-}
-
-async function sendOtpSms({ to, body }) {
-  console.log(`[OTP SMS dev mode] To: ${to}\n${body}`);
-  return { simulated: true };
-}
-
-function isMsg91Configured() {
-  const authKey = process.env.MSG91_AUTH_KEY || '';
-  const sender = process.env.MSG91_SENDER_ID || '';
-  const flowId = process.env.MSG91_FLOW_ID || '';
-  const templateId = process.env.MSG91_TEMPLATE_ID || '';
-  return authKey.trim().length > 0 && sender.trim().length > 0 && (flowId.trim().length > 0 || templateId.trim().length > 0);
-}
-
-async function sendSms({ to, body }) {
-  const authKey = String(process.env.MSG91_AUTH_KEY || '').trim();
-  const sender = String(process.env.MSG91_SENDER_ID || '').trim();
-  const flowId = String(process.env.MSG91_FLOW_ID || '').trim();
-  const templateId = String(process.env.MSG91_TEMPLATE_ID || '').trim();
-  const route = String(process.env.MSG91_ROUTE || '4').trim();
-  const otp = String(body).match(/\b(\d{4,8})\b/)?.[1] || '';
-  const normalized = String(to || '').replace(/\D/g, '');
-
-  if (!authKey || !sender || (!flowId && !templateId)) {
-    throw new Error(
-      'SMS is not configured. Set MSG91_AUTH_KEY, MSG91_SENDER_ID, and MSG91_FLOW_ID or MSG91_TEMPLATE_ID in backend/.env.',
-    );
+/**
+ * Accepts either:
+ *  - otpToken: our custom HMAC token from /api/auth/otp/verify (no billing needed)
+ *  - idToken: Firebase phone auth token (requires Blaze plan)
+ * Returns the verified phone number or null.
+ */
+async function verifyPhoneToken(idToken, otpToken) {
+  // Prefer our custom token — no Firebase billing required
+  if (otpToken) {
+    const phone = verifyOtpToken(String(otpToken).trim());
+    if (phone) return normalizePhoneNumber(phone);
   }
-
-  if (!normalized) {
-    throw new Error('Recipient mobile number is invalid.');
-  }
-
-  if (flowId) {
-    const flowResponse = await fetch('https://api.msg91.com/api/v5/flow/', {
-      method: 'POST',
-      headers: {
-        authkey: authKey,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        flow_id: flowId,
-        sender,
-        route,
-        recipients: [
-          {
-            mobiles: normalized,
-            OTP: otp,
-            MESSAGE: body,
-          },
-        ],
-      }),
-    });
-    const payload = await flowResponse.json().catch(() => ({}));
-    if (!flowResponse.ok) {
-      throw new Error(payload.message || payload.type || 'MSG91 flow delivery failed.');
+  // Fall back to Firebase token if provided
+  if (idToken) {
+    try {
+      return await verifyFirebasePhoneToken(idToken);
+    } catch {
+      return null;
     }
-    return {
-      simulated: false,
-      provider: 'msg91',
-      messageId: payload.request_id || payload.message || null,
-    };
+  }
+  return null;
+}
+
+async function verifyFirebasePhoneToken(idToken) {
+  const token = String(idToken || '').trim();
+  if (!token) {
+    const error = new Error('Firebase ID token is required.');
+    error.statusCode = 401;
+    throw error;
   }
 
-  const textResponse = await fetch('https://api.msg91.com/api/v2/sendsms', {
-    method: 'POST',
-    headers: {
-      authkey: authKey,
-      'Content-Type': 'application/json',
+  const apiKey = String(
+    process.env.FIREBASE_WEB_API_KEY || process.env.FIREBASE_API_KEY || '',
+  ).trim();
+  if (!apiKey) {
+    const error = new Error(
+      'FIREBASE_WEB_API_KEY is not set. Phone login requires Firebase.',
+    );
+    error.statusCode = 500;
+    throw error;
+  }
+
+  const response = await fetch(
+    `https://identitytoolkit.googleapis.com/v1/accounts:lookup?key=${encodeURIComponent(apiKey)}`,
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ idToken: token }),
     },
-    body: JSON.stringify({
-      sender,
-      route,
-      country: '91',
-      DLT_TE_ID: templateId,
-      sms: [
-        {
-          message: body,
-          to: [normalized],
-        },
-      ],
-    }),
-  });
-
-  const payload = await textResponse.json().catch(() => ({}));
-  if (!textResponse.ok) {
-    throw new Error(payload.message || payload.type || 'MSG91 SMS delivery failed.');
+  );
+  const payload = await response.json().catch(() => ({}));
+  const phone = payload.users?.[0]?.phoneNumber;
+  if (!response.ok || !phone) {
+    const error = new Error(
+      payload.error?.message || 'Firebase phone verification failed.',
+    );
+    error.statusCode = 401;
+    throw error;
   }
-
-  return {
-    simulated: false,
-    provider: 'msg91',
-    messageId: payload.request_id || payload.message || null,
-  };
+  return normalizePhoneNumber(phone);
 }
 
 app.post('/api/uploads', upload.single('file'), (req, res) => {
@@ -991,6 +985,44 @@ app.delete('/api/uploads/:fileName', (req, res) => {
     }
     fs.unlinkSync(filePath);
     res.json({ ok: true });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+const { sendPushNotification, isConfigured: isFcmConfigured } = require('./fcm_push');
+
+app.post('/api/notifications/push', async (req, res) => {
+  try {
+    const {
+      recipientId,
+      recipientType,
+      title,
+      body,
+      route,
+      referenceId,
+    } = req.body || {};
+
+    if (!recipientId || !recipientType) {
+      res.status(400).json({ error: 'recipientId and recipientType are required.' });
+      return;
+    }
+    if (!title || !body) {
+      res.status(400).json({ error: 'title and body are required.' });
+      return;
+    }
+
+    const result = await sendPushNotification({
+      db,
+      recipientId: String(recipientId),
+      recipientType: String(recipientType),
+      title: String(title),
+      body: String(body),
+      route: route ? String(route) : undefined,
+      referenceId: referenceId ? String(referenceId) : undefined,
+    });
+
+    res.json({ ok: true, ...result, configured: isFcmConfigured() });
   } catch (error) {
     res.status(500).json({ error: error.message });
   }

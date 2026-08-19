@@ -74,6 +74,12 @@ function matchValue(actual, expected) {
     return oidHex(actual) === oidHex(expected);
   }
   if (isPlainObject(expected)) {
+    if (Object.prototype.hasOwnProperty.call(expected, '$exists')) {
+      const shouldExist = expected.$exists !== false;
+      return shouldExist
+        ? actual !== undefined && actual !== null
+        : actual === undefined || actual === null;
+    }
     if (Object.prototype.hasOwnProperty.call(expected, '$ne')) {
       if (actual == null && expected.$ne === true) return true;
       return !looseEq(actual, expected.$ne);

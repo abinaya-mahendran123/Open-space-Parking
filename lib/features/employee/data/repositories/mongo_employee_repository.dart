@@ -305,6 +305,19 @@ class MongoEmployeeRepository implements EmployeeRepository {
     return notifications.where((n) => !n.isRead).length;
   }
 
+  @override
+  Future<String?> getFullName(String employeeId) async {
+    if (employeeId.isEmpty) return null;
+    await _ensureConnected();
+    final map = await _collectionService.findOne(
+      collectionName: AppConstants.employeesCollection,
+      selector: where.eq('_id', ObjectId.parse(employeeId)),
+    );
+    final name = map?['fullName'] as String? ?? map?['displayName'] as String?;
+    final trimmed = name?.trim();
+    return trimmed != null && trimmed.isNotEmpty ? trimmed : null;
+  }
+
   Future<LandOwnerRequest> _assertAssigned({
     required String requestId,
     required String employeeId,

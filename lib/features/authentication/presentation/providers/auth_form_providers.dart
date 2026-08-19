@@ -6,7 +6,7 @@ enum AuthFormMode { signIn, signUp }
 
 enum AuthMethod { phone, emailGoogle }
 
-enum PhoneAuthStep { enterPhone, enterOtp }
+enum PhoneAuthStep { enterPhone, enterEmployeePassword, enterOtp }
 
 final authFormModeProvider = StateProvider<AuthFormMode>(
   (ref) => AuthFormMode.signIn,
@@ -37,9 +37,5 @@ final pendingRegistrationProvider =
 
 /// Set after sign-in when user must confirm role before entering the app.
 final postAuthRoleSelectionProvider = StateProvider<bool>((ref) => false);
-
-final otpDevModeProvider = StateProvider<bool>((ref) => false);
-
-final otpDevCodeProvider = StateProvider<String?>((ref) => null);
 
 final verifiedPhoneProvider = StateProvider<String?>((ref) => null);

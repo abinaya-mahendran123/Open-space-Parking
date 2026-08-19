@@ -1,8 +1,7 @@
 import 'dart:async';
 
-import 'package:firebase_core/firebase_core.dart';
-
 import 'package:open_space_parking/core/config/environment_config.dart';
+import 'package:open_space_parking/core/firebase/firebase_bootstrap.dart';
 import 'package:open_space_parking/core/utils/app_logger.dart';
 import 'package:open_space_parking/features/notification/data/services/fcm_service.dart';
 import 'package:open_space_parking/features/notification/data/services/local_notification_service.dart';
@@ -43,8 +42,8 @@ class NotificationService {
 
     if (EnvironmentConfig.isFirebaseConfigured) {
       try {
-        await Firebase.initializeApp();
-        AppLogger.i('Firebase initialized');
+        await FirebaseBootstrap.ensureInitialized();
+        AppLogger.i('Firebase ready for notifications');
       } catch (e) {
         AppLogger.w('Firebase initialization skipped: $e');
       }
@@ -78,12 +77,21 @@ class NotificationService {
     _currentUserId = userId;
     _currentRecipientType = recipientType;
 
-    final token = await _fcmService.getToken();
-    if (token != null) {
-      await _registerToken(token);
-    }
+    try {
+      final token = await _fcmService.getToken().timeout(
+        const Duration(seconds: 3),
+        onTimeout: () => null,
+      );
+      if (token != null) {
+        await _registerToken(token);
+      }
+    } catch (_) {}
 
-    await _fcmService.subscribeToTopic('${recipientType.value}_updates');
+    try {
+      await _fcmService
+          .subscribeToTopic('${recipientType.value}_updates')
+          .timeout(const Duration(seconds: 3));
+    } catch (_) {}
   }
 
   Future<void> unbindUser() async {

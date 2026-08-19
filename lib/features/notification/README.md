@@ -83,7 +83,9 @@ Legacy collections merged into history:
 - `vehicle_owner_notifications`
 - `employee_notifications`
 
-FCM device tokens stored on user documents: `fcmToken`, `fcmTokenUpdatedAt`.
+FCM device tokens stored on user/employee documents: `fcmToken`, `fcmTokenUpdatedAt`.
+
+Ticket assignment push: admin assign → backend `/api/notifications/push` → employee `fcmToken`.
 
 ## FCM payload format
 

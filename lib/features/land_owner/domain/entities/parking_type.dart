@@ -1,3 +1,5 @@
+import 'package:flutter/material.dart';
+
 enum ParkingType {
   towerParking,
   shuttleParking,
@@ -56,6 +58,57 @@ extension ParkingTypeX on ParkingType {
         return 'assets/images/parking_types/pit_stack_parking.png';
       case ParkingType.puzzleParking:
         return 'assets/images/parking_types/puzzle_parking.png';
+    }
+  }
+
+  IconData get icon {
+    switch (this) {
+      case ParkingType.towerParking:
+        return Icons.apartment_rounded;
+      case ParkingType.shuttleParking:
+        return Icons.transfer_within_a_station_rounded;
+      case ParkingType.hydraulicStack2Post:
+        return Icons.vertical_split_rounded;
+      case ParkingType.hydraulicStack4Post:
+        return Icons.grid_view_rounded;
+      case ParkingType.pitStackParking:
+        return Icons.layers_rounded;
+      case ParkingType.puzzleParking:
+        return Icons.extension_rounded;
+    }
+  }
+
+  String get description {
+    switch (this) {
+      case ParkingType.towerParking:
+        return 'Vertical tower with automated car lifts. Best for small footprint with high capacity.';
+      case ParkingType.shuttleParking:
+        return 'Cars move on a shuttle platform along tracks. Efficient for medium-sized spaces.';
+      case ParkingType.hydraulicStack2Post:
+        return 'Two-post hydraulic lift that stacks one car above another. Ideal for 2-car households.';
+      case ParkingType.hydraulicStack4Post:
+        return 'Four-post system stacking multiple cars. Sturdy and suitable for wider spaces.';
+      case ParkingType.pitStackParking:
+        return 'Underground pit allows a car to be lowered, freeing surface space for another.';
+      case ParkingType.puzzleParking:
+        return 'Cars slide horizontally and vertically like puzzle pieces to maximise density.';
+    }
+  }
+
+  Color get color {
+    switch (this) {
+      case ParkingType.towerParking:
+        return const Color(0xFF1565C0);
+      case ParkingType.shuttleParking:
+        return const Color(0xFF00838F);
+      case ParkingType.hydraulicStack2Post:
+        return const Color(0xFF6A1B9A);
+      case ParkingType.hydraulicStack4Post:
+        return const Color(0xFF2E7D32);
+      case ParkingType.pitStackParking:
+        return const Color(0xFFE65100);
+      case ParkingType.puzzleParking:
+        return const Color(0xFFC62828);
     }
   }
 

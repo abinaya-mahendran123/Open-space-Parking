@@ -13,13 +13,14 @@ import 'package:open_space_parking/features/land_owner/domain/entities/land_owne
 class AdminEmployeeDetailPage extends ConsumerWidget {
   const AdminEmployeeDetailPage({super.key, required this.employeeId});
 
+  static final _dateFormat = DateFormat('dd MMM yyyy');
+
   final String employeeId;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final employeesAsync = ref.watch(adminEmployeesProvider);
     final ticketsAsync = ref.watch(adminEmployeeTicketsProvider(employeeId));
-    final dateFormat = DateFormat('dd MMM yyyy');
 
     return Scaffold(
       appBar: AppBar(title: const Text('Employee Work')),
@@ -116,11 +117,11 @@ class AdminEmployeeDetailPage extends ConsumerWidget {
                       children: tickets.map((ticket) {
                         return _AssignedTicketCard(
                           ticket: ticket,
-                          dateLabel: dateFormat.format(
+                          dateLabel: _dateFormat.format(
                             ticket.submittedAt.toLocal(),
                           ),
                           onTap: () => context.push(
-                            RoutePaths.adminTicketDetail(ticket.ticketId),
+                            '${RoutePaths.adminTicketDetail(ticket.ticketId)}?readonly=true',
                           ),
                         );
                       }).toList(),

@@ -1,5 +1,7 @@
 import 'package:flutter/services.dart';
 
+import 'package:open_space_parking/features/land_owner/domain/entities/government_id_type.dart';
+
 class Validators {
   Validators._();
 
@@ -75,6 +77,30 @@ class Validators {
       return 'Enter a valid 12-digit Aadhaar number';
     }
     return null;
+  }
+
+  static String? governmentIdNumber(String? value, GovernmentIdType type) {
+    if (value == null || value.trim().isEmpty) {
+      return '${type.label} number is required';
+    }
+
+    final compact = value.trim().toUpperCase().replaceAll(RegExp(r'[\s-]'), '');
+    return switch (type) {
+      GovernmentIdType.aadhaar =>
+        RegExp(r'^\d{12}$').hasMatch(compact) ? null : 'Enter a valid 12-digit Aadhaar number',
+      GovernmentIdType.pan =>
+        RegExp(r'^[A-Z]{5}\d{4}[A-Z]$').hasMatch(compact)
+            ? null
+            : 'Enter a valid PAN (e.g. ABCDE1234F)',
+      GovernmentIdType.drivingLicense =>
+        compact.length >= 5 && compact.length <= 20
+            ? null
+            : 'Enter a valid driving license number',
+      GovernmentIdType.voterId =>
+        RegExp(r'^[A-Z]{3}\d{7}$').hasMatch(compact)
+            ? null
+            : 'Enter a valid Voter ID (e.g. ABC1234567)',
+    };
   }
 
   static String? optionalUpi(String? value) {

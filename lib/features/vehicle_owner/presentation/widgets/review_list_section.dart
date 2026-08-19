@@ -12,6 +12,8 @@ class ReviewListSection extends StatelessWidget {
     this.onWriteReview,
   });
 
+  static final _dateFormat = DateFormat('dd MMM yyyy');
+
   final List<ParkingReview> reviews;
   final ParkingRatingSummary summary;
   final VoidCallback? onWriteReview;
@@ -19,7 +21,6 @@ class ReviewListSection extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final dateFormat = DateFormat('dd MMM yyyy');
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -63,7 +64,7 @@ class ReviewListSection extends StatelessWidget {
           const SizedBox(height: 16),
           ...reviews.take(5).map((review) => _ReviewTile(
                 review: review,
-                dateFormat: dateFormat,
+                dateFormat: _dateFormat,
               )),
           if (reviews.length > 5)
             Padding(

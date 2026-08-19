@@ -14,10 +14,11 @@ import 'package:open_space_parking/features/maps/presentation/widgets/directions
 class SavedCoordinatesPage extends ConsumerWidget {
   const SavedCoordinatesPage({super.key});
 
+  static final _dateFormat = DateFormat('dd MMM yyyy, hh:mm a');
+
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final savedAsync = ref.watch(savedCoordinatesProvider);
-    final dateFormat = DateFormat('dd MMM yyyy, hh:mm a');
 
     return Scaffold(
       appBar: AppBar(
@@ -75,7 +76,7 @@ class SavedCoordinatesPage extends ConsumerWidget {
                   leading: const Icon(Icons.place),
                   title: Text(item.label),
                   subtitle: Text(
-                    '${item.coordinate.label}\n${dateFormat.format(item.savedAt.toLocal())}',
+                    '${item.coordinate.label}\n${_dateFormat.format(item.savedAt.toLocal())}',
                   ),
                   children: [
                     Padding(

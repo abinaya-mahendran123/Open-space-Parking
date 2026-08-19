@@ -1,9 +1,8 @@
 import 'dart:async';
 
+import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
-
-import 'package:open_space_parking/core/whatsapp/domain/entities/whatsapp_provider_type.dart';
 
 class EnvironmentConfig {
   EnvironmentConfig._();
@@ -67,36 +66,37 @@ class EnvironmentConfig {
       defaultValue: '',
     );
 
-    whatsappProvider = WhatsAppProviderType.fromValue(
-      const String.fromEnvironment(
-        'WHATSAPP_PROVIDER',
-        defaultValue: 'none',
-      ),
+    firebaseApiKey = const String.fromEnvironment(
+      'FIREBASE_API_KEY',
+      defaultValue: 'AIzaSyCqLObK4oe-Y7huBVTsB1UmSl8EGqxUu6w',
     );
-
-    metaWhatsAppPhoneNumberId = const String.fromEnvironment(
-      'META_WHATSAPP_PHONE_NUMBER_ID',
+    firebaseAppId = const String.fromEnvironment(
+      'FIREBASE_APP_ID',
       defaultValue: '',
     );
-
-    metaWhatsAppAccessToken = const String.fromEnvironment(
-      'META_WHATSAPP_ACCESS_TOKEN',
-      defaultValue: '',
+    firebaseWebAppId = const String.fromEnvironment(
+      'FIREBASE_WEB_APP_ID',
+      defaultValue: '1:794049298844:web:e2d18b28cd68232fb68859',
     );
-
-    twilioAccountSid = const String.fromEnvironment(
-      'TWILIO_ACCOUNT_SID',
-      defaultValue: '',
+    firebaseAndroidAppId = const String.fromEnvironment(
+      'FIREBASE_ANDROID_APP_ID',
+      defaultValue: '1:794049298844:android:6763c9ecfb6b7a3ab68859',
     );
-
-    twilioAuthToken = const String.fromEnvironment(
-      'TWILIO_AUTH_TOKEN',
-      defaultValue: '',
+    firebaseMessagingSenderId = const String.fromEnvironment(
+      'FIREBASE_MESSAGING_SENDER_ID',
+      defaultValue: '794049298844',
     );
-
-    twilioWhatsAppFrom = const String.fromEnvironment(
-      'TWILIO_WHATSAPP_FROM',
-      defaultValue: '',
+    firebaseProjectId = const String.fromEnvironment(
+      'FIREBASE_PROJECT_ID',
+      defaultValue: 'open-space-parking',
+    );
+    firebaseAuthDomain = const String.fromEnvironment(
+      'FIREBASE_AUTH_DOMAIN',
+      defaultValue: 'open-space-parking.firebaseapp.com',
+    );
+    firebaseStorageBucket = const String.fromEnvironment(
+      'FIREBASE_STORAGE_BUCKET',
+      defaultValue: 'open-space-parking.firebasestorage.app',
     );
 
     googleWebClientId = const String.fromEnvironment(
@@ -211,35 +211,55 @@ class EnvironmentConfig {
   static bool get canDeleteFromCloudinary =>
       cloudinaryApiKey.isNotEmpty && cloudinaryApiSecret.isNotEmpty;
 
+  static late final String firebaseApiKey;
+  static late final String firebaseAppId;
+  static late final String firebaseWebAppId;
+  static late final String firebaseAndroidAppId;
+  static late final String firebaseMessagingSenderId;
+  static late final String firebaseProjectId;
+  static late final String firebaseAuthDomain;
+  static late final String firebaseStorageBucket;
+
+  static String get _platformFirebaseAppId {
+    if (kIsWeb) {
+      if (firebaseWebAppId.isNotEmpty) return firebaseWebAppId;
+    } else if (firebaseAndroidAppId.isNotEmpty) {
+      return firebaseAndroidAppId;
+    }
+    return firebaseAppId;
+  }
+
+  static bool get hasFirebaseOptions =>
+      firebaseApiKey.isNotEmpty &&
+      _platformFirebaseAppId.isNotEmpty &&
+      firebaseMessagingSenderId.isNotEmpty &&
+      firebaseProjectId.isNotEmpty;
+
+  static FirebaseOptions? get firebaseOptions {
+    if (!hasFirebaseOptions) return null;
+    return FirebaseOptions(
+      apiKey: firebaseApiKey,
+      appId: _platformFirebaseAppId,
+      messagingSenderId: firebaseMessagingSenderId,
+      projectId: firebaseProjectId,
+      authDomain: firebaseAuthDomain.isEmpty ? null : firebaseAuthDomain,
+      storageBucket:
+          firebaseStorageBucket.isEmpty ? null : firebaseStorageBucket,
+    );
+  }
+
+  /// Phone OTP needs a Firebase app. Set options via dart-define, or
+  /// `ENABLE_FIREBASE=true` after `flutterfire configure`.
+  static bool get isFirebaseAuthConfigured =>
+      hasFirebaseOptions ||
+      const bool.fromEnvironment('ENABLE_FIREBASE', defaultValue: false);
+
   /// When false, FCM initializes in a no-op mode (local notifications still work).
   static bool get isFirebaseConfigured =>
       const bool.fromEnvironment('ENABLE_FIREBASE', defaultValue: false);
 
-  static late final WhatsAppProviderType whatsappProvider;
-  static late final String metaWhatsAppPhoneNumberId;
-  static late final String metaWhatsAppAccessToken;
-  static late final String twilioAccountSid;
-  static late final String twilioAuthToken;
-  static late final String twilioWhatsAppFrom;
   static late final String googleWebClientId;
   static late final String googleServerClientId;
 
   static bool get isGoogleSignInConfigured => googleWebClientId.isNotEmpty;
-
-  static bool get isMetaWhatsAppConfigured =>
-      metaWhatsAppPhoneNumberId.isNotEmpty &&
-      metaWhatsAppAccessToken.isNotEmpty;
-
-  static bool get isTwilioWhatsAppConfigured =>
-      twilioAccountSid.isNotEmpty &&
-      twilioAuthToken.isNotEmpty &&
-      twilioWhatsAppFrom.isNotEmpty;
-
-  static bool get isWhatsAppConfigured {
-    return switch (whatsappProvider) {
-      WhatsAppProviderType.meta => isMetaWhatsAppConfigured,
-      WhatsAppProviderType.twilio => isTwilioWhatsAppConfigured,
-      WhatsAppProviderType.none => false,
-    };
-  }
 }

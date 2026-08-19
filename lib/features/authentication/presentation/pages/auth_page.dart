@@ -1,11 +1,14 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import 'package:open_space_parking/core/bootstrap/app_bootstrap.dart';
-import 'package:open_space_parking/core/common/exceptions/app_exception.dart';
 import 'package:open_space_parking/core/config/app_constants.dart';
+import 'package:open_space_parking/core/common/exceptions/app_exception.dart';
+import 'package:open_space_parking/core/services/api/account_check_service.dart';
 import 'package:open_space_parking/core/providers/core_providers.dart';
 import 'package:open_space_parking/core/routes/route_paths.dart';
 import 'package:open_space_parking/core/routes/role_navigation.dart';
@@ -37,25 +40,63 @@ class _AuthPageState extends ConsumerState<AuthPage> {
   final _emailController = TextEditingController();
   final _passwordController = TextEditingController();
 
+  final _employeePasswordController = TextEditingController();
+
   UserRole _signUpRole = UserRole.vehicleOwner;
   _AuthSubview _subview = _AuthSubview.picker;
+  Timer? _resendCooldownTimer;
+  int _resendCooldownSeconds = 0;
+  String? _checkingAccountLabel;
+
+  String _formattedPhone(String phone) {
+    final normalized = PhoneUtils.normalizeIndianMobile(phone);
+    final digits = PhoneUtils.digitsOnly(normalized);
+    final lastTen = digits.length >= 10
+        ? digits.substring(digits.length - 10)
+        : digits;
+    if (lastTen.length == 10) {
+      return '+91 ${lastTen.substring(0, 5)} ${lastTen.substring(5)}';
+    }
+    return normalized.isNotEmpty ? normalized : phone.trim();
+  }
+
+  void _startResendCooldown([int seconds = 30]) {
+    _resendCooldownTimer?.cancel();
+    setState(() => _resendCooldownSeconds = seconds);
+    _resendCooldownTimer = Timer.periodic(const Duration(seconds: 1), (timer) {
+      if (!mounted) {
+        timer.cancel();
+        return;
+      }
+      if (_resendCooldownSeconds <= 1) {
+        timer.cancel();
+        setState(() => _resendCooldownSeconds = 0);
+        return;
+      }
+      setState(() => _resendCooldownSeconds -= 1);
+    });
+  }
 
   @override
   void dispose() {
+    _resendCooldownTimer?.cancel();
     _nameController.dispose();
     _phoneController.dispose();
     _otpController.dispose();
     _emailController.dispose();
     _passwordController.dispose();
+    _employeePasswordController.dispose();
     super.dispose();
   }
 
   void _resetPhoneFlow() {
     ref.read(phoneAuthStepProvider.notifier).state = PhoneAuthStep.enterPhone;
-    ref.read(otpDevModeProvider.notifier).state = false;
-    ref.read(otpDevCodeProvider.notifier).state = null;
     ref.read(verifiedPhoneProvider.notifier).state = null;
     _otpController.clear();
+    _employeePasswordController.clear();
+    _resendCooldownTimer?.cancel();
+    _resendCooldownSeconds = 0;
+    _checkingAccountLabel = null;
   }
 
   void _onModeChanged(AuthFormMode mode) {
@@ -118,7 +159,7 @@ class _AuthPageState extends ConsumerState<AuthPage> {
     }
   }
 
-  Future<void> _sendOtp() async {
+  Future<void> _continueWithPhone() async {
     if (!_formKey.currentState!.validate()) return;
 
     if (PhoneUtils.isGateSecurityPhone(_phoneController.text)) {
@@ -130,37 +171,112 @@ class _AuthPageState extends ConsumerState<AuthPage> {
     final snackbar = ref.read(snackbarServiceProvider);
 
     loading.state = true;
+    setState(() => _checkingAccountLabel = 'Checking account...');
     try {
-      final result = await ref
+      final accountType = await ref
           .read(authStateProvider.notifier)
-          .sendPhoneOtp(_phoneController.text.trim());
+          .checkPhoneAccount(_phoneController.text.trim());
 
-      ref.read(phoneAuthStepProvider.notifier).state = PhoneAuthStep.enterOtp;
-      ref.read(otpDevModeProvider.notifier).state = result.devMode;
-      ref.read(otpDevCodeProvider.notifier).state = result.otp;
-      ref.read(verifiedPhoneProvider.notifier).state = result.phone;
-      if (result.devMode && result.otp != null && result.otp!.isNotEmpty) {
-        _otpController.text = result.otp!;
+      if (accountType == PhoneAccountType.employee) {
+        ref.read(phoneAuthStepProvider.notifier).state =
+            PhoneAuthStep.enterEmployeePassword;
+        ref.read(verifiedPhoneProvider.notifier).state =
+            PhoneUtils.normalizeIndianMobile(_phoneController.text.trim());
+        return;
       }
 
-      snackbar.showSuccess(
-        result.devMode
-            ? (result.otp != null && result.otp!.isNotEmpty
-                ? 'OTP (dev mode): ${result.otp}'
-                : 'OTP sent (dev mode). Check backend console for the code.')
-            : 'OTP sent to ${result.phone}',
-      );
+      await _sendOtp();
     } on AppException catch (e) {
       snackbar.showError(e.message);
     } catch (_) {
-      snackbar.showError('Could not send OTP. Please try again.');
+      snackbar.showError(
+        'Unable to connect. Please check your internet connection and try again.',
+      );
+    } finally {
+      if (mounted) {
+        setState(() => _checkingAccountLabel = null);
+      }
+      loading.state = false;
+    }
+  }
+
+  Future<void> _submitEmployeePassword() async {
+    if (_employeePasswordController.text.trim().length < 8) {
+      ref
+          .read(snackbarServiceProvider)
+          .showError('Password must be at least 8 characters.');
+      return;
+    }
+
+    final loading = ref.read(authLoadingProvider.notifier);
+    final snackbar = ref.read(snackbarServiceProvider);
+
+    loading.state = true;
+    try {
+      await ref.read(authStateProvider.notifier).loginEmployee(
+            phone: _phoneController.text.trim(),
+            password: _employeePasswordController.text,
+          );
+      if (!mounted) return;
+      await _completeAuthenticatedFlow();
+    } on AppException catch (e) {
+      snackbar.showError(e.message);
+    } catch (_) {
+      snackbar.showError('Employee sign-in failed. Please try again.');
     } finally {
       loading.state = false;
     }
   }
 
-  Future<void> _verifyOtpAndContinue() async {
-    if (_otpController.text.trim().length != 6) {
+  Future<void> _sendOtp() async {
+    final snackbar = ref.read(snackbarServiceProvider);
+    final result = await ref
+        .read(authStateProvider.notifier)
+        .sendPhoneOtp(_phoneController.text.trim());
+
+    ref.read(phoneAuthStepProvider.notifier).state = PhoneAuthStep.enterOtp;
+    ref.read(verifiedPhoneProvider.notifier).state = result.phone;
+    _otpController.clear();
+
+    if (result.autoVerified) {
+      await _verifyOtpAndContinue(autoVerified: true);
+      return;
+    }
+
+    snackbar.showSuccess('OTP sent to ${_formattedPhone(result.phone)}');
+    _startResendCooldown();
+  }
+
+  Future<void> _resendOtp() async {
+    if (_resendCooldownSeconds > 0) return;
+    final snackbar = ref.read(snackbarServiceProvider);
+    final loading = ref.read(authLoadingProvider.notifier);
+    loading.state = true;
+    try {
+      _otpController.clear();
+      final result = await ref
+          .read(authStateProvider.notifier)
+          .sendPhoneOtp(_phoneController.text.trim());
+      ref.read(verifiedPhoneProvider.notifier).state = result.phone;
+      if (result.autoVerified) {
+        await _verifyOtpAndContinue(autoVerified: true);
+        return;
+      }
+      snackbar.showSuccess(
+        'A new OTP was sent to ${_formattedPhone(result.phone)}',
+      );
+      _startResendCooldown();
+    } on AppException catch (e) {
+      snackbar.showError(e.message);
+    } catch (_) {
+      snackbar.showError('Could not resend OTP. Please try again.');
+    } finally {
+      loading.state = false;
+    }
+  }
+
+  Future<void> _verifyOtpAndContinue({bool autoVerified = false}) async {
+    if (!autoVerified && _otpController.text.trim().length != 6) {
       ref.read(snackbarServiceProvider).showError('Enter the 6-digit OTP.');
       return;
     }
@@ -261,8 +377,22 @@ class _AuthPageState extends ConsumerState<AuthPage> {
       await _completeAuthenticatedFlow();
     } on AppException catch (e) {
       snackbar.showError(e.message);
-    } catch (_) {
-      snackbar.showError('Google sign-in failed. Please try again.');
+    } catch (e) {
+      final msg = e.toString().toLowerCase();
+      if (msg.contains('popup') || msg.contains('blocked')) {
+        snackbar.showError(
+          'Google popup was blocked. Allow popups for this site in your browser and try again.',
+        );
+      } else if (msg.contains('origin') ||
+          msg.contains('client_id') ||
+          msg.contains('idpiframe')) {
+        snackbar.showError(
+          'Google sign-in is not configured for this URL. '
+          'Add localhost to authorized origins in Google Cloud Console.',
+        );
+      } else {
+        snackbar.showError('Google sign-in failed. Please try again.');
+      }
     } finally {
       if (mounted) loading.state = false;
     }
@@ -401,39 +531,92 @@ class _AuthPageState extends ConsumerState<AuthPage> {
                     : () => setState(() => _subview = _AuthSubview.email),
               ),
             ] else if (_subview == _AuthSubview.phone) ...[
+              Text(
+                isSignUp ? 'Sign up with phone number' : 'Sign in with phone number',
+                style: Theme.of(context).textTheme.titleMedium,
+              ),
+              const SizedBox(height: 8),
+              Text(
+                'Enter your mobile number to continue',
+                style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                      color: colorScheme.onSurfaceVariant,
+                    ),
+              ),
+              const SizedBox(height: 20),
               if (phoneStep == PhoneAuthStep.enterPhone) ...[
                 AppTextField(
                   controller: _phoneController,
                   label: 'Mobile Number',
                   hint: '10-digit mobile number',
                   keyboardType: TextInputType.phone,
+                  prefixText: '+91 ',
                   validator: Validators.mobileNumber,
                 ),
+                if (_checkingAccountLabel != null) ...[
+                  const SizedBox(height: 12),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      const SizedBox(
+                        width: 18,
+                        height: 18,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      ),
+                      const SizedBox(width: 10),
+                      Text(
+                        _checkingAccountLabel!,
+                        style: Theme.of(context).textTheme.bodySmall,
+                      ),
+                    ],
+                  ),
+                ],
                 const SizedBox(height: 20),
                 PrimaryButton(
                   label: 'Continue',
                   isLoading: isLoading,
-                  onPressed: _sendOtp,
+                  onPressed: _continueWithPhone,
+                ),
+              ] else if (phoneStep == PhoneAuthStep.enterEmployeePassword) ...[
+                Text(
+                  'Employee Sign In',
+                  style: Theme.of(context).textTheme.titleMedium,
+                ),
+                const SizedBox(height: 16),
+                Text(
+                  'Mobile Number',
+                  style: Theme.of(context).textTheme.labelLarge,
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  _formattedPhone(_phoneController.text.trim()),
+                  style: Theme.of(context).textTheme.bodyLarge,
+                ),
+                const SizedBox(height: 16),
+                AppPasswordField(
+                  controller: _employeePasswordController,
+                  label: 'Password',
+                  validator: (value) => Validators.minLength(value, 8),
+                ),
+                const SizedBox(height: 20),
+                PrimaryButton(
+                  label: 'Sign In',
+                  isLoading: isLoading,
+                  onPressed: _submitEmployeePassword,
                 ),
               ] else ...[
                 Text(
-                  'Enter the 6-digit code sent to ${_phoneController.text.trim()}',
+                  'Verify Mobile Number',
+                  style: Theme.of(context).textTheme.titleMedium,
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  "We've sent a verification code to\n${_formattedPhone(_phoneController.text.trim())}",
+                  textAlign: TextAlign.center,
                   style: Theme.of(context).textTheme.bodySmall?.copyWith(
                         color: colorScheme.onSurfaceVariant,
                       ),
                 ),
-                if (ref.watch(otpDevModeProvider)) ...[
-                  const SizedBox(height: 8),
-                  Text(
-                    ref.watch(otpDevCodeProvider) != null
-                        ? 'Dev mode OTP: ${ref.watch(otpDevCodeProvider)}'
-                        : 'Dev mode: check the backend terminal for your OTP code.',
-                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                          color: colorScheme.tertiary,
-                        ),
-                  ),
-                ],
-                const SizedBox(height: 12),
+                const SizedBox(height: 16),
                 AppTextField(
                   controller: _otpController,
                   label: 'OTP',
@@ -442,6 +625,7 @@ class _AuthPageState extends ConsumerState<AuthPage> {
                   maxLength: 6,
                   inputFormatters: [FilteringTextInputFormatter.digitsOnly],
                   validator: (value) {
+                    if (phoneStep != PhoneAuthStep.enterOtp) return null;
                     if (value == null || value.trim().length != 6) {
                       return 'Enter the 6-digit OTP';
                     }
@@ -450,14 +634,20 @@ class _AuthPageState extends ConsumerState<AuthPage> {
                 ),
                 const SizedBox(height: 12),
                 PrimaryButton(
-                  label: isSignUp ? 'Verify & Create Account' : 'Verify & Sign In',
+                  label: isSignUp ? 'Verify & Create Account' : 'Verify OTP',
                   isLoading: isLoading,
                   onPressed: _verifyOtpAndContinue,
                 ),
                 const SizedBox(height: 8),
                 TextButton(
-                  onPressed: isLoading ? null : _resetPhoneFlow,
-                  child: const Text('Resend OTP'),
+                  onPressed: isLoading || _resendCooldownSeconds > 0
+                      ? null
+                      : _resendOtp,
+                  child: Text(
+                    _resendCooldownSeconds > 0
+                        ? 'Resend OTP in $_resendCooldownSeconds seconds'
+                        : 'Resend OTP',
+                  ),
                 ),
               ],
             ] else ...[

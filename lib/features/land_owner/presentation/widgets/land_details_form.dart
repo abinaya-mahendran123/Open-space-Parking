@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 import 'package:get_it/get_it.dart';
 
 import 'package:open_space_parking/core/utils/validators.dart';
-import 'package:open_space_parking/core/widgets/buttons/primary_button.dart';
 import 'package:open_space_parking/core/widgets/textfields/app_text_field.dart';
 import 'package:open_space_parking/features/land_owner/domain/entities/land_details.dart';
 import 'package:open_space_parking/features/land_owner/presentation/pages/land_location_picker_page.dart';
@@ -39,6 +38,9 @@ class LandDetailsFormState extends State<LandDetailsForm> {
   GeocodingResult? _resolvedLocation;
   bool _applyingPickedLocation = false;
   bool _isOpeningMapPicker = false;
+  bool _isVerifyingName = false;
+  // 0 = type name, 1 = pick on map
+  int _locationTab = 0;
 
   @override
   void initState() {
@@ -135,24 +137,28 @@ class LandDetailsFormState extends State<LandDetailsForm> {
     final locationName = _locationNameController.text.trim();
     if (locationName.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Enter a location name to verify.')),
+        const SnackBar(content: Text('Enter a location name first.')),
       );
       return;
     }
-
-    await _openLocationPicker(
-      initialName: locationName,
-      searchOnOpen: true,
-    );
+    if (_isVerifyingName) return;
+    setState(() => _isVerifyingName = true);
+    try {
+      await _openLocationPicker(
+        initialName: locationName,
+        searchOnOpen: true,
+      );
+    } finally {
+      if (mounted) setState(() => _isVerifyingName = false);
+    }
   }
 
   Future<void> _pickOnMap() async {
     if (_isOpeningMapPicker) return;
-
     setState(() => _isOpeningMapPicker = true);
     try {
       await _openLocationPicker(
-        initialName: '',
+        initialName: _locationNameController.text.trim(),
         searchOnOpen: false,
       );
     } finally {
@@ -202,78 +208,139 @@ class LandDetailsFormState extends State<LandDetailsForm> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          AppTextField(
-            controller: _locationNameController,
-            label: 'Location Name',
-            hint: 'e.g. Anna Nagar, Chennai',
-            textInputAction: TextInputAction.done,
-            onFieldSubmitted: (_) => _verifyByName(),
-          ),
-          const SizedBox(height: 8),
+          // ── Location section ───────────────────────────────────────────────
           Text(
-            'Choose either option: type the area name and verify, or pick on the map '
-            'manually — pin the spot, then tap Confirm Location to save.',
-            style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                  color: colorScheme.onSurfaceVariant,
+            'Land Location',
+            style: Theme.of(context)
+                .textTheme
+                .titleSmall
+                ?.copyWith(fontWeight: FontWeight.w600),
+          ),
+          const SizedBox(height: 10),
+          // Tab toggle
+          Container(
+            decoration: BoxDecoration(
+              color: colorScheme.surfaceContainerHighest,
+              borderRadius: BorderRadius.circular(12),
+            ),
+            padding: const EdgeInsets.all(4),
+            child: Row(
+              children: [
+                _TabButton(
+                  label: 'Type Location',
+                  icon: Icons.search,
+                  selected: _locationTab == 0,
+                  onTap: () => setState(() => _locationTab = 0),
                 ),
-          ),
-          const SizedBox(height: 12),
-          PrimaryButton(
-            label: 'Verify by Name',
-            onPressed: _verifyByName,
-          ),
-          const SizedBox(height: 8),
-          OutlinedButton.icon(
-            onPressed: _isOpeningMapPicker ? null : _pickOnMap,
-            icon: _isOpeningMapPicker
-                ? SizedBox(
-                    width: 16,
-                    height: 16,
-                    child: CircularProgressIndicator(
-                      strokeWidth: 2,
-                      color: colorScheme.primary,
-                    ),
-                  )
-                : const Icon(Icons.map_outlined),
-            label: Text(
-              _isOpeningMapPicker ? 'Opening map...' : 'Pick on Map Manually',
+                _TabButton(
+                  label: 'Pick on Map',
+                  icon: Icons.map_outlined,
+                  selected: _locationTab == 1,
+                  onTap: () => setState(() => _locationTab = 1),
+                ),
+              ],
             ),
           ),
+          const SizedBox(height: 14),
+
+          if (_locationTab == 0) ...[
+            AppTextField(
+              controller: _locationNameController,
+              label: 'Area / Locality Name',
+              hint: 'e.g. Anna Nagar, Chennai',
+              textInputAction: TextInputAction.done,
+              onFieldSubmitted: (_) => _verifyByName(),
+            ),
+            const SizedBox(height: 10),
+            FilledButton.icon(
+              onPressed: _isVerifyingName ? null : _verifyByName,
+              icon: _isVerifyingName
+                  ? const SizedBox(
+                      width: 16,
+                      height: 16,
+                      child: CircularProgressIndicator(
+                          strokeWidth: 2, color: Colors.white),
+                    )
+                  : const Icon(Icons.search),
+              label: Text(_isVerifyingName ? 'Searching...' : 'Search & Confirm on Map'),
+            ),
+          ] else ...[
+            OutlinedButton.icon(
+              onPressed: _isOpeningMapPicker ? null : _pickOnMap,
+              style: OutlinedButton.styleFrom(
+                padding: const EdgeInsets.symmetric(vertical: 14),
+              ),
+              icon: _isOpeningMapPicker
+                  ? SizedBox(
+                      width: 16,
+                      height: 16,
+                      child: CircularProgressIndicator(
+                        strokeWidth: 2,
+                        color: colorScheme.primary,
+                      ),
+                    )
+                  : const Icon(Icons.pin_drop_outlined),
+              label: Text(
+                _isOpeningMapPicker ? 'Opening map...' : 'Open Map & Pin Location',
+              ),
+            ),
+            const SizedBox(height: 6),
+            Text(
+              'Pan and zoom the map to your land, then tap to drop a pin and confirm.',
+              style: Theme.of(context)
+                  .textTheme
+                  .bodySmall
+                  ?.copyWith(color: colorScheme.onSurfaceVariant),
+            ),
+          ],
+
+          // Confirmed location banner
           if (_resolvedLocation != null) ...[
             const SizedBox(height: 12),
-            Card(
-              color: colorScheme.primaryContainer.withValues(alpha: 0.35),
-              child: Padding(
-                padding: const EdgeInsets.all(12),
-                child: Row(
-                  children: [
-                    Icon(Icons.check_circle, color: colorScheme.primary),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            'Location set',
+            Container(
+              decoration: BoxDecoration(
+                color: colorScheme.primaryContainer.withValues(alpha: 0.4),
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(
+                    color: colorScheme.primary.withValues(alpha: 0.3)),
+              ),
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+              child: Row(
+                children: [
+                  Icon(Icons.check_circle_rounded,
+                      color: colorScheme.primary, size: 20),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text('Location confirmed',
                             style: Theme.of(context)
                                 .textTheme
-                                .titleSmall
-                                ?.copyWith(fontWeight: FontWeight.w600),
-                          ),
-                          const SizedBox(height: 4),
-                          Text(
-                            _resolvedLocation!.displayName,
-                            style: Theme.of(context).textTheme.bodySmall,
-                          ),
-                        ],
-                      ),
+                                .labelMedium
+                                ?.copyWith(
+                                    fontWeight: FontWeight.w600,
+                                    color: colorScheme.primary)),
+                        const SizedBox(height: 2),
+                        Text(
+                          _resolvedLocation!.displayName,
+                          style: Theme.of(context).textTheme.bodySmall,
+                        ),
+                      ],
                     ),
-                  ],
-                ),
+                  ),
+                  IconButton(
+                    icon: Icon(Icons.edit_location_alt_outlined,
+                        size: 18, color: colorScheme.primary),
+                    tooltip: 'Change location',
+                    onPressed: () =>
+                        setState(() => _resolvedLocation = null),
+                  ),
+                ],
               ),
             ),
           ],
-          const SizedBox(height: 16),
+          const SizedBox(height: 20),
           AppTextField(
             controller: _areaController,
             label: 'Area (sq ft)',
@@ -335,6 +402,71 @@ class LandDetailsFormState extends State<LandDetailsForm> {
             onChanged: (v) => setState(() => _cctv = v),
           ),
         ],
+      ),
+    );
+  }
+}
+
+class _TabButton extends StatelessWidget {
+  const _TabButton({
+    required this.label,
+    required this.icon,
+    required this.selected,
+    required this.onTap,
+  });
+
+  final String label;
+  final IconData icon;
+  final bool selected;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
+    return Expanded(
+      child: GestureDetector(
+        onTap: onTap,
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 200),
+          padding: const EdgeInsets.symmetric(vertical: 10),
+          decoration: BoxDecoration(
+            color: selected ? colorScheme.surface : Colors.transparent,
+            borderRadius: BorderRadius.circular(9),
+            boxShadow: selected
+                ? [
+                    BoxShadow(
+                      color: Colors.black.withValues(alpha: 0.08),
+                      blurRadius: 4,
+                      offset: const Offset(0, 1),
+                    )
+                  ]
+                : [],
+          ),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(
+                icon,
+                size: 16,
+                color: selected
+                    ? colorScheme.primary
+                    : colorScheme.onSurfaceVariant,
+              ),
+              const SizedBox(width: 6),
+              Text(
+                label,
+                style: Theme.of(context).textTheme.labelMedium?.copyWith(
+                      color: selected
+                          ? colorScheme.primary
+                          : colorScheme.onSurfaceVariant,
+                      fontWeight: selected
+                          ? FontWeight.w600
+                          : FontWeight.normal,
+                    ),
+              ),
+            ],
+          ),
+        ),
       ),
     );
   }
