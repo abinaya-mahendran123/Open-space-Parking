@@ -5,25 +5,28 @@ allprojects {
     }
 }
 
-val newBuildDir: Directory =
-    rootProject.layout.buildDirectory
-        .dir("../../build")
-        .get()
-rootProject.layout.buildDirectory.value(newBuildDir)
+// Keep Gradle intermediates off OneDrive. Syncing build\... causes
+// AccessDeniedException on mergeDebugNativeLibs / mergeDebugAssets.
+val androidBuildRoot =
+    java.io.File(
+        System.getenv("LOCALAPPDATA") ?: System.getProperty("user.home"),
+        "osp-parking-android-build",
+    )
+rootProject.layout.buildDirectory.set(androidBuildRoot)
 
 subprojects {
-    val newSubprojectBuildDir: Directory = newBuildDir.dir(project.name)
-    project.layout.buildDirectory.value(newSubprojectBuildDir)
+    project.layout.buildDirectory.set(java.io.File(androidBuildRoot, project.name))
 }
 subprojects {
     project.evaluationDependsOn(":app")
 }
 
-// OneDrive/Windows often locks mergeDebugAssets, which makes cleanMerge*Assets
-// fail even though assemble can still overwrite the files.
+// OneDrive/Windows often locks merge output folders during clean.
 subprojects {
     tasks.configureEach {
-        if (name.startsWith("cleanMerge") && name.contains("Assets")) {
+        if (name.startsWith("cleanMerge") &&
+            (name.contains("Assets") || name.contains("NativeLibs"))
+        ) {
             enabled = false
         }
     }

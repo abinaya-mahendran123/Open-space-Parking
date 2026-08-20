@@ -14,8 +14,9 @@ function Clear-LockedPath {
     Remove-Item -LiteralPath $path -Recurse -Force -ErrorAction SilentlyContinue
 }
 
-# Web and Android asset folders often stay locked on Windows / OneDrive.
+# Web and Android folders often stay locked on Windows / OneDrive.
 Clear-LockedPath 'build\flutter_assets'
 Clear-LockedPath 'build\app\intermediates\assets\debug\mergeDebugAssets'
+Clear-LockedPath 'build\app\intermediates\merged_native_libs'
 
 exit 0
