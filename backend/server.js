@@ -491,6 +491,8 @@ app.get('/api/health', (_req, res) => {
     ok: true,
     mongoConnected: Boolean(db),
     database: DATABASE_URL ? 'supabase' : 'mongodb',
+    razorpay: RAZORPAY_DEMO ? 'demo' : 'live',
+    companyAccountConfigured: Boolean(RAZORPAY_COMPANY_ACCOUNT_ID),
   });
 });
 
@@ -1229,6 +1231,10 @@ const PLATFORM_COMMISSION_PERCENT = Number(
 );
 const PLATFORM_ACCOUNT_NAME =
   process.env.PLATFORM_ACCOUNT_NAME || 'Media account (Open Space Parking)';
+// Razorpay linked account ID that receives the 10% platform commission.
+// Set this to your own acc_... ID for testing; replace with company account in production.
+const RAZORPAY_COMPANY_ACCOUNT_ID =
+  process.env.RAZORPAY_COMPANY_ACCOUNT_ID || '';
 
 function amountToPaise(amount) {
   return Math.round(Number(amount) * 100);
@@ -1244,6 +1250,7 @@ function splitParkingPayment(amount) {
     totalAmount: Number(amount),
     commissionPercent: PLATFORM_COMMISSION_PERCENT,
     platformAccountName: PLATFORM_ACCOUNT_NAME,
+    platformAccountId: RAZORPAY_COMPANY_ACCOUNT_ID || null,
     platformCommission: commissionPaise / 100,
     landOwnerPayout: landOwnerPaise / 100,
     commissionPaise,
@@ -1400,18 +1407,25 @@ app.post('/api/payments/razorpay/create-order', async (req, res) => {
           landOwnerPayout: String(split.landOwnerPayout),
         },
       };
+      const transfers = [];
       if (canAutoTransfer && split.landOwnerPaise >= 100) {
-        orderBody.transfers = [
-          {
-            account: linkedAccount,
-            amount: split.landOwnerPaise,
-            currency: 'INR',
-            notes: {
-              role: 'land_owner',
-              bookingId,
-            },
-          },
-        ];
+        transfers.push({
+          account: linkedAccount,
+          amount: split.landOwnerPaise,
+          currency: 'INR',
+          notes: { role: 'land_owner', bookingId },
+        });
+      }
+      if (RAZORPAY_COMPANY_ACCOUNT_ID && split.commissionPaise >= 100) {
+        transfers.push({
+          account: RAZORPAY_COMPANY_ACCOUNT_ID,
+          amount: split.commissionPaise,
+          currency: 'INR',
+          notes: { role: 'platform_commission', bookingId },
+        });
+      }
+      if (transfers.length > 0) {
+        orderBody.transfers = transfers;
       }
       const response = await fetch('https://api.razorpay.com/v1/orders', {
         method: 'POST',
