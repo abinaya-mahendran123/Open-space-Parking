@@ -6,9 +6,10 @@ import 'package:open_space_parking/core/services/mongodb/mongo_collection_servic
 import 'package:open_space_parking/core/services/mongodb/mongo_database_service.dart';
 import 'package:open_space_parking/core/services/secure_storage_service.dart';
 import 'package:open_space_parking/core/services/api/api_client.dart';
-import 'package:open_space_parking/core/services/api/ticket_notification_service.dart';
 import 'package:open_space_parking/core/services/api/otp_auth_service.dart';
 import 'package:open_space_parking/core/services/api/google_auth_service.dart';
+import 'package:open_space_parking/core/services/api/account_check_service.dart';
+import 'package:open_space_parking/core/services/api/push_notification_service.dart';
 import 'package:open_space_parking/core/services/session_service.dart';
 import 'package:open_space_parking/core/services/snackbar_service.dart';
 import 'package:open_space_parking/core/utils/app_logger.dart';
@@ -43,7 +44,6 @@ import 'package:open_space_parking/features/notification/data/services/local_not
 import 'package:open_space_parking/features/notification/data/services/notification_service.dart';
 import 'package:open_space_parking/features/notification/domain/repositories/notification_repository.dart';
 import 'package:open_space_parking/core/integration/notification_helper.dart';
-import 'package:open_space_parking/core/whatsapp/data/services/whatsapp_service.dart';
 
 final GetIt sl = GetIt.instance;
 
@@ -97,9 +97,6 @@ Future<void> configureDependencies() async {
     );
   }
 
-  if (!sl.isRegistered<TicketNotificationService>()) {
-    sl.registerLazySingleton<TicketNotificationService>(TicketNotificationService.new);
-  }
   if (!sl.isRegistered<OtpAuthService>()) {
     sl.registerLazySingleton<OtpAuthService>(OtpAuthService.new);
   }
@@ -107,18 +104,12 @@ Future<void> configureDependencies() async {
     sl.registerLazySingleton<GoogleAuthService>(GoogleAuthService.new);
   }
 
-  if (!sl.isRegistered<WhatsAppService>()) {
-    sl.registerLazySingleton<WhatsAppService>(WhatsAppService.new);
-  }
-
   if (!sl.isRegistered<AdminRepository>()) {
     sl.registerLazySingleton<AdminRepository>(
       () => MongoAdminRepository(
         mongoDatabaseService: sl<MongoDatabaseService>(),
         mongoCollectionService: sl<MongoCollectionService>(),
-        whatsAppService: sl<WhatsAppService>(),
         notificationHelper: sl<NotificationHelper>(),
-        ticketNotificationService: sl<TicketNotificationService>(),
       ),
     );
   }
@@ -242,6 +233,14 @@ Future<void> configureDependencies() async {
     );
   }
 
+  if (!sl.isRegistered<AccountCheckService>()) {
+    sl.registerLazySingleton<AccountCheckService>(AccountCheckService.new);
+  }
+
+  if (!sl.isRegistered<PushNotificationService>()) {
+    sl.registerLazySingleton<PushNotificationService>(PushNotificationService.new);
+  }
+
   if (!sl.isRegistered<NotificationService>()) {
     sl.registerLazySingleton<NotificationService>(
       () => NotificationService(
@@ -256,6 +255,7 @@ Future<void> configureDependencies() async {
     sl.registerLazySingleton<NotificationHelper>(
       () => NotificationHelper(
         notificationService: sl<NotificationService>(),
+        pushNotificationService: sl<PushNotificationService>(),
       ),
     );
   }

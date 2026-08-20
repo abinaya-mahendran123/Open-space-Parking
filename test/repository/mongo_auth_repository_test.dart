@@ -139,7 +139,7 @@ void main() {
         ).thenAnswer((_) async => employee);
 
         final session = await repository.loginEmployee(
-          email: 'employee@test.com',
+          phone: '9876543210',
           password: AuthFixtures.testPassword,
         );
 
@@ -157,7 +157,7 @@ void main() {
 
         expect(
           () => repository.loginEmployee(
-            email: 'employee@test.com',
+            phone: '9876543210',
             password: AuthFixtures.testPassword,
           ),
           throwsA(

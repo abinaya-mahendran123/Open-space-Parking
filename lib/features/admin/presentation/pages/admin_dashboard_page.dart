@@ -68,48 +68,68 @@ class AdminDashboardPage extends ConsumerWidget {
                         value: '${stats.totalTickets}',
                         icon: Icons.confirmation_number_outlined,
                         color: palette[0],
+                        onTap: () => context.go(RoutePaths.adminTickets),
                       ),
                       AdminStatCard(
                         label: 'Submitted',
                         value: '${stats.submittedCount}',
                         icon: Icons.inbox_outlined,
                         color: palette[1],
+                        onTap: () => context.go(
+                          '${RoutePaths.adminTickets}?status=submitted',
+                        ),
                       ),
                       AdminStatCard(
                         label: 'Under Review',
                         value: '${stats.underReviewCount}',
                         icon: Icons.hourglass_top_outlined,
                         color: palette[2],
+                        onTap: () => context.go(
+                          '${RoutePaths.adminTickets}?status=under_review',
+                        ),
                       ),
                       AdminStatCard(
                         label: 'Approved',
                         value: '${stats.approvedCount}',
                         icon: Icons.check_circle_outline,
                         color: palette[3],
+                        onTap: () => context.go(
+                          '${RoutePaths.adminTickets}?status=approved',
+                        ),
                       ),
                       AdminStatCard(
                         label: 'Rejected',
                         value: '${stats.rejectedCount}',
                         icon: Icons.cancel_outlined,
                         color: palette[4],
+                        onTap: () => context.go(
+                          '${RoutePaths.adminTickets}?status=rejected',
+                        ),
                       ),
                       AdminStatCard(
                         label: 'Unassigned',
                         value: '${stats.unassignedTickets}',
                         icon: Icons.person_off_outlined,
                         color: palette[5],
+                        onTap: () => context.go(
+                          '${RoutePaths.adminTickets}?status=unassigned',
+                        ),
                       ),
                       AdminStatCard(
                         label: 'Docs Pending',
                         value: '${stats.documentsPendingVerification}',
                         icon: Icons.folder_shared_outlined,
                         color: palette[6],
+                        onTap: () => context.go(
+                          '${RoutePaths.adminTickets}?status=docs_pending',
+                        ),
                       ),
                       AdminStatCard(
                         label: 'Active Employees',
                         value: '${stats.activeEmployees}',
                         icon: Icons.badge_outlined,
                         color: palette[7],
+                        onTap: () => context.go(RoutePaths.adminEmployees),
                       ),
                     ],
                   ),

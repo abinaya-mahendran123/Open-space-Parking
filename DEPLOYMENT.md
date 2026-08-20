@@ -4,7 +4,7 @@
 
 - Flutter SDK 3.16+
 - MongoDB instance (Atlas or self-hosted)
-- Optional: Cloudinary account, Firebase project, Meta/Twilio WhatsApp API
+- Optional: Cloudinary account, Firebase project (required for phone OTP)
 
 ## Build & Run
 
@@ -35,13 +35,12 @@ flutter build web --release \
 | `CLOUDINARY_UPLOAD_PRESET` | For uploads | — | Unsigned upload preset |
 | `CLOUDINARY_API_KEY` | For delete | — | Signed delete operations |
 | `CLOUDINARY_API_SECRET` | For delete | — | Signed delete operations |
-| `ENABLE_FIREBASE` | No | `false` | Set `true` after FlutterFire setup |
-| `WHATSAPP_PROVIDER` | No | `none` | `meta`, `twilio`, or `none` |
-| `META_WHATSAPP_PHONE_NUMBER_ID` | Meta WA | — | Meta Graph API phone ID |
-| `META_WHATSAPP_ACCESS_TOKEN` | Meta WA | — | Meta access token |
-| `TWILIO_ACCOUNT_SID` | Twilio WA | — | Twilio account SID |
-| `TWILIO_AUTH_TOKEN` | Twilio WA | — | Twilio auth token |
-| `TWILIO_WHATSAPP_FROM` | Twilio WA | — | Twilio WhatsApp sender |
+| `ENABLE_FIREBASE` | Phone OTP / FCM | `false` | `true` after FlutterFire setup, or pass Firebase options below |
+| `FIREBASE_API_KEY` | Phone OTP | — | Firebase Web API key |
+| `FIREBASE_APP_ID` | Phone OTP | — | Firebase app ID |
+| `FIREBASE_MESSAGING_SENDER_ID` | Phone OTP | — | Firebase sender ID |
+| `FIREBASE_PROJECT_ID` | Phone OTP | — | Firebase project ID |
+| `FIREBASE_AUTH_DOMAIN` | Phone OTP (web) | — | `your-project.firebaseapp.com` |
 | `GOOGLE_WEB_CLIENT_ID` | Google Sign-In | Web client ID | OAuth Web client for Web/Android/iOS |
 | `GOOGLE_SERVER_CLIENT_ID` | Google Sign-In | same as web | `serverClientId` for mobile ID tokens |
 
@@ -59,7 +58,6 @@ MongoDB        → Feature repos + canonical MongoDataService layer
 Cloudinary     → Land owner document uploads → DocumentMongoRepository
 Maps           → LocationService + GoogleMapView + map picker routes
 Notifications  → NotificationHelper → MongoDB history + local push
-WhatsApp       → Admin assignEmployee + approve/reject status updates
 ```
 
 ## Platform Setup
@@ -89,4 +87,4 @@ flutter create .
 - [ ] Land owner document upload (Cloudinary configured)
 - [ ] Map picker from land owner flow
 - [ ] Booking creates notification for vehicle owner
-- [ ] Admin ticket assign triggers WhatsApp + notifications
+- [ ] Admin ticket assign triggers FCM push to assigned employee

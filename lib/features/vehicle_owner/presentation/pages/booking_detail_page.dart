@@ -26,6 +26,8 @@ class BookingDetailPage extends ConsumerStatefulWidget {
 }
 
 class _BookingDetailPageState extends ConsumerState<BookingDetailPage> {
+  static final _dateFormat = DateFormat('dd MMM yyyy, hh:mm a');
+
   bool _cancelling = false;
 
   Future<void> _cancel(String vehicleOwnerId) async {
@@ -80,7 +82,6 @@ class _BookingDetailPageState extends ConsumerState<BookingDetailPage> {
   Widget build(BuildContext context) {
     final vehicleOwnerId = ref.watch(authStateProvider).session?.userId ?? '';
     final bookingAsync = ref.watch(bookingDetailProvider(widget.bookingId));
-    final dateFormat = DateFormat('dd MMM yyyy, hh:mm a');
 
     return Scaffold(
       appBar: AppBar(title: const Text('Booking Details')),
@@ -127,7 +128,7 @@ class _BookingDetailPageState extends ConsumerState<BookingDetailPage> {
                 _DetailTile(
                   icon: Icons.schedule,
                   label: 'Start',
-                  value: dateFormat.format(
+                  value: _dateFormat.format(
                     (booking.checkedInAt ?? booking.startDateTime).toLocal(),
                   ),
                 ),
@@ -136,7 +137,7 @@ class _BookingDetailPageState extends ConsumerState<BookingDetailPage> {
                   _DetailTile(
                     icon: Icons.schedule,
                     label: booking.checkedOutAt != null ? 'Stop' : 'End',
-                    value: dateFormat.format(
+                    value: _dateFormat.format(
                       (booking.checkedOutAt ?? booking.endDateTime).toLocal(),
                     ),
                   ),

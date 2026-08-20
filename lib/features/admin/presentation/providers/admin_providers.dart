@@ -73,10 +73,18 @@ final ticketFilterProvider =
   (ref) => TicketFilterNotifier(),
 );
 
+/// Debounced search query — the UI updates this 400ms after the user stops typing.
+/// Kept as a top-level (non-private) provider so `admin_tickets_page.dart` can
+/// write to it directly.
+final debouncedSearchProvider = StateProvider<String>((ref) => '');
+
 final adminTicketsProvider = FutureProvider<List<LandOwnerRequest>>((ref) async {
+  ref.keepAlive();
   final filter = ref.watch(ticketFilterProvider);
+  // Use debounced search to avoid a network call on every keystroke.
+  final debounced = ref.watch(debouncedSearchProvider);
   return ref.read(adminRepositoryProvider).getAllTickets(
-        searchQuery: filter.searchQuery,
+        searchQuery: debounced,
         statusFilter: filter.status,
         typeFilter: filter.requestType,
         unassignedOnly: filter.unassignedOnly ? true : null,
@@ -89,6 +97,7 @@ final adminTicketDetailProvider =
 });
 
 final adminEmployeesProvider = FutureProvider<List<Employee>>((ref) async {
+  ref.keepAlive();
   return ref.read(adminRepositoryProvider).getEmployees();
 });
 
@@ -100,9 +109,11 @@ final adminEmployeeTicketsProvider =
 });
 
 final activeEmployeesProvider = FutureProvider<List<Employee>>((ref) async {
+  ref.keepAlive();
   return ref.read(adminRepositoryProvider).getEmployees(activeOnly: true);
 });
 
 final adminStatisticsProvider = FutureProvider<AdminStatistics>((ref) async {
+  ref.keepAlive();
   return ref.read(adminRepositoryProvider).getStatistics();
 });

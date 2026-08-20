@@ -13,13 +13,14 @@ class NotificationTile extends StatelessWidget {
     required this.onTap,
   });
 
+  static final _dateFormat = DateFormat('dd MMM yyyy, hh:mm a');
+
   final AppNotification notification;
   final VoidCallback onTap;
 
   @override
   Widget build(BuildContext context) {
     final colorScheme = Theme.of(context).colorScheme;
-    final dateFormat = DateFormat('dd MMM yyyy, hh:mm a');
 
     return AppFadeSlide(
       child: AppCard(
@@ -83,7 +84,7 @@ class NotificationTile extends StatelessWidget {
                   ),
                   const SizedBox(height: 8),
                   Text(
-                    dateFormat.format(notification.createdAt.toLocal()),
+                    _dateFormat.format(notification.createdAt.toLocal()),
                     style: Theme.of(context).textTheme.labelSmall?.copyWith(
                           color: colorScheme.onSurfaceVariant,
                         ),

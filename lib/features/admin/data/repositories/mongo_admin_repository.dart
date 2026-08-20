@@ -8,13 +8,7 @@ import 'package:open_space_parking/core/common/exceptions/app_exception.dart';
 import 'package:open_space_parking/core/config/app_constants.dart';
 import 'package:open_space_parking/core/services/mongodb/mongo_collection_service.dart';
 import 'package:open_space_parking/core/services/mongodb/mongo_database_service.dart';
-import 'package:open_space_parking/core/config/environment_config.dart';
 import 'package:open_space_parking/core/integration/notification_helper.dart';
-import 'package:open_space_parking/core/services/api/ticket_notification_service.dart';
-import 'package:open_space_parking/core/utils/app_logger.dart';
-import 'package:open_space_parking/core/utils/phone_utils.dart';
-import 'package:open_space_parking/core/whatsapp/data/services/whatsapp_service.dart';
-import 'package:open_space_parking/core/whatsapp/domain/entities/whatsapp_template_id.dart';
 import 'package:open_space_parking/features/admin/domain/entities/admin_statistics.dart';
 import 'package:open_space_parking/features/admin/domain/entities/created_employee_result.dart';
 import 'package:open_space_parking/features/admin/domain/entities/employee.dart';
@@ -31,20 +25,14 @@ class MongoAdminRepository implements AdminRepository {
   MongoAdminRepository({
     required MongoDatabaseService mongoDatabaseService,
     required MongoCollectionService mongoCollectionService,
-    required WhatsAppService whatsAppService,
     required NotificationHelper notificationHelper,
-    required TicketNotificationService ticketNotificationService,
   })  : _databaseService = mongoDatabaseService,
         _collectionService = mongoCollectionService,
-        _whatsAppService = whatsAppService,
-        _notificationHelper = notificationHelper,
-        _ticketNotificationService = ticketNotificationService;
+        _notificationHelper = notificationHelper;
 
   final MongoDatabaseService _databaseService;
   final MongoCollectionService _collectionService;
-  final WhatsAppService _whatsAppService;
   final NotificationHelper _notificationHelper;
-  final TicketNotificationService _ticketNotificationService;
 
   @override
   Future<List<LandOwnerRequest>> getAllTickets({
@@ -57,7 +45,7 @@ class MongoAdminRepository implements AdminRepository {
 
     final results = await _collectionService.findMany(
       collectionName: AppConstants.landOwnerRequestsCollection,
-      selector: where.exists('_id'),
+      selector: where,
     );
 
     var tickets = results.map(_mapRequest).toList();
@@ -150,9 +138,6 @@ class MongoAdminRepository implements AdminRepository {
       ticketId: request.ticketId,
       title: 'Request Approved',
       message: 'Your request ${request.ticketId} has been approved.',
-      statusLabel: 'Approved',
-      ownerPhone: request.ownerDetails.phone,
-      ownerName: request.ownerDetails.fullName,
     );
   }
 
@@ -186,9 +171,6 @@ class MongoAdminRepository implements AdminRepository {
       ticketId: request.ticketId,
       title: 'Request Rejected',
       message: 'Your request ${request.ticketId} was rejected. Reason: $reason',
-      statusLabel: 'Rejected',
-      ownerPhone: request.ownerDetails.phone,
-      ownerName: request.ownerDetails.fullName,
     );
   }
 
@@ -210,27 +192,12 @@ class MongoAdminRepository implements AdminRepository {
       throw const AppException('Cannot assign inactive employee.');
     }
 
-    final employeePhone = employee['phone'] as String? ?? '';
-    if (!PhoneUtils.isValidIndianMobile(employeePhone)) {
-      throw const AppException(
-        'Employee mobile number is missing or invalid. Update the employee profile first.',
-      );
-    }
-    final normalizedPhone = PhoneUtils.normalizeIndianMobile(employeePhone);
-
     final requestMap = await _collectionService.findOne(
       collectionName: AppConstants.landOwnerRequestsCollection,
       selector: where.eq('_id', ObjectId.parse(requestId)),
     );
     if (requestMap == null) throw const AppException('Ticket not found.');
     final ticketId = requestMap['ticketId'] as String;
-
-    final deliverySummary = await _requireEmployeeAssignmentMessage(
-      requestMap: requestMap,
-      employeeName: employeeName,
-      ticketId: ticketId,
-      employeePhone: normalizedPhone,
-    );
 
     final now = DateTime.now().toUtc().toIso8601String();
     await _collectionService.updateOne(
@@ -264,7 +231,7 @@ class MongoAdminRepository implements AdminRepository {
       },
     );
 
-    await _notificationHelper.notifyEmployee(
+    final pushSent = await _notificationHelper.notifyEmployee(
       employeeId: employeeId,
       title: 'New Project Assigned',
       message: 'You have been assigned to ticket $ticketId.',
@@ -280,94 +247,13 @@ class MongoAdminRepository implements AdminRepository {
         message: '$employeeName has been assigned to your request $ticketId.',
         ticketId: ticketId,
       );
-
-      final ownerDetails =
-          requestMap['ownerDetails'] as Map<String, dynamic>? ?? {};
-      final ownerPhone = ownerDetails['phone'] as String? ?? '';
-      final ownerName = ownerDetails['fullName'] as String? ?? 'Land Owner';
-      if (ownerPhone.trim().isNotEmpty) {
-        try {
-          await _whatsAppService.sendOwnerAssignment(
-            ownerPhone: ownerPhone,
-            ownerName: ownerName,
-            ticketId: ticketId,
-            employeeName: employeeName,
-          );
-        } catch (e) {
-          AppLogger.w('Owner WhatsApp assignment notice failed: $e');
-        }
-      }
     }
 
-    return deliverySummary;
-  }
-
-  Future<String> _requireEmployeeAssignmentMessage({
-    required Map<String, dynamic> requestMap,
-    required String employeeName,
-    required String ticketId,
-    required String employeePhone,
-  }) async {
-    final ownerDetails =
-        requestMap['ownerDetails'] as Map<String, dynamic>? ?? {};
-    final landDetails = requestMap['landDetails'] as Map<String, dynamic>? ?? {};
-
-    final ownerPhone = ownerDetails['phone'] as String? ?? '';
-    final ownerName = ownerDetails['fullName'] as String? ?? 'Land Owner';
-    final location = landDetails['landAddress'] as String? ??
-        landDetails['address'] as String? ??
-        landDetails['city'] as String? ??
-        'Location in employee portal';
-    final requestType = requestMap['requestType'] as String? ?? 'parking_request';
-
-    String? smsError;
-    try {
-      final smsResult = await _ticketNotificationService.sendTicketAssignment(
-        employeePhone: employeePhone,
-        employeeName: employeeName,
-        ticketId: ticketId,
-        ownerName: ownerName,
-        ownerPhone: ownerPhone,
-        location: location,
-        requestType: requestType,
-      );
-      if (smsResult.delivered) {
-        return 'SMS sent to ${smsResult.phone}';
-      }
-    } on AppException catch (e) {
-      smsError = e.message;
-    } catch (e) {
-      smsError = e.toString();
+    if (pushSent) {
+      return 'Assigned to $employeeName. Push notification sent to their phone.';
     }
-
-    if (EnvironmentConfig.isWhatsAppConfigured) {
-      final whatsAppResult = await _whatsAppService.sendEmployeeAssignment(
-        employeePhone: employeePhone,
-        employeeName: employeeName,
-        ticketId: ticketId,
-        location: location,
-      );
-
-      if (whatsAppResult.success && !whatsAppResult.simulated) {
-        return 'WhatsApp sent to $employeePhone';
-      }
-
-      final whatsAppError = whatsAppResult.errorMessage ??
-          (whatsAppResult.simulated
-              ? 'WhatsApp is not fully configured.'
-              : 'WhatsApp delivery failed.');
-      throw AppException(
-        smsError == null
-            ? 'Could not send assignment message via WhatsApp: $whatsAppError'
-            : 'Could not send assignment message. SMS: $smsError WhatsApp: $whatsAppError',
-      );
-    }
-
-    throw AppException(
-      smsError ??
-          'Could not send assignment message. Configure Twilio SMS on the backend '
-          'or WhatsApp in the app.',
-    );
+    return 'Assigned to $employeeName. Employee will see it in Assigned when they open the app '
+        '(push not sent — employee must log in once with notifications enabled).';
   }
 
   @override
@@ -392,7 +278,7 @@ class MongoAdminRepository implements AdminRepository {
 
     final results = await _collectionService.findMany(
       collectionName: AppConstants.employeesCollection,
-      selector: where.exists('_id'),
+      selector: where,
     );
 
     var employees = results.map(_mapEmployee).toList();
@@ -541,9 +427,6 @@ class MongoAdminRepository implements AdminRepository {
     required String ticketId,
     required String title,
     required String message,
-    String? statusLabel,
-    String? ownerPhone,
-    String? ownerName,
   }) async {
     await _notificationHelper.notifyLandOwner(
       ownerId: ownerId,
@@ -551,24 +434,6 @@ class MongoAdminRepository implements AdminRepository {
       message: message,
       ticketId: ticketId,
     );
-
-    if (statusLabel != null &&
-        ownerPhone != null &&
-        ownerPhone.trim().isNotEmpty) {
-      try {
-        await _whatsAppService.sendTemplate(
-          templateId: WhatsAppTemplateId.requestStatusUpdate,
-          toPhone: ownerPhone,
-          variables: {
-            'recipientName': ownerName ?? 'Land Owner',
-            'ticketId': ticketId,
-            'status': statusLabel,
-          },
-        );
-      } catch (e) {
-        AppLogger.w('WhatsApp status update failed: $e');
-      }
-    }
   }
 
   LandOwnerRequest _mapRequest(Map<String, dynamic> map) {

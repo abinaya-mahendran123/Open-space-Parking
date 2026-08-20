@@ -214,6 +214,11 @@ class MongoLandOwnerRepository implements LandOwnerRepository {
   }) async {
     await _ensureConnected();
 
+    final documentsWithGovId = documents.copyWith(
+      governmentIdPath:
+          documents.governmentIdPath ?? ownerDetails.governmentIdFrontPath,
+    );
+
     final requestId = ObjectId();
     final ticketId = _generateTicketId();
     final now = DateTime.now().toUtc();
@@ -225,7 +230,7 @@ class MongoLandOwnerRepository implements LandOwnerRepository {
       'requestType': requestType.value,
       'status': RequestStatus.submitted.value,
       'ownerDetails': ownerDetails.toJson(),
-      'documents': documents.toJson(),
+      'documents': documentsWithGovId.toJson(),
       'landDetails': landDetails.toJson(),
       if (parkingPreferences != null)
         'parkingPreferences': parkingPreferences.toJson(),

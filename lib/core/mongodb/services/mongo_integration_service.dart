@@ -37,7 +37,7 @@ class MongoIntegrationService {
       await _databaseService.connect();
     }
 
-    if (ensureIndexes) {
+    if (ensureIndexes && !kIsWeb) {
       await _indexService.ensureAllIndexes();
     }
 

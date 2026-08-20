@@ -37,6 +37,13 @@ class ProfilePrefill {
       ]),
       address: firstNonEmpty([saved?.address, fromRequest?.address]),
       aadhaarNumber: saved?.aadhaarNumber ?? fromRequest?.aadhaarNumber,
+      governmentIdType: saved?.governmentIdType ?? fromRequest?.governmentIdType,
+      governmentIdNumber:
+          saved?.governmentIdNumber ?? fromRequest?.governmentIdNumber,
+      governmentIdFrontPath:
+          saved?.governmentIdFrontPath ?? fromRequest?.governmentIdFrontPath,
+      governmentIdBackPath:
+          saved?.governmentIdBackPath ?? fromRequest?.governmentIdBackPath,
     );
   }
 

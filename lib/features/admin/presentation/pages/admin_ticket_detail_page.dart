@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import 'package:open_space_parking/core/domain/domain_extensions.dart';
 import 'package:open_space_parking/core/cloudinary/presentation/widgets/cloudinary_asset_preview.dart';
@@ -13,18 +15,25 @@ import 'package:open_space_parking/core/widgets/loading/app_loading_widget.dart'
 import 'package:open_space_parking/features/admin/domain/entities/employee.dart';
 import 'package:open_space_parking/features/admin/presentation/providers/admin_providers.dart';
 import 'package:open_space_parking/features/authentication/presentation/providers/auth_state_provider.dart';
+import 'package:open_space_parking/features/land_owner/domain/entities/land_details.dart';
 import 'package:open_space_parking/features/land_owner/domain/entities/land_owner_request.dart';
 
 class AdminTicketDetailPage extends ConsumerWidget {
-  const AdminTicketDetailPage({super.key, required this.ticketId});
+  const AdminTicketDetailPage({
+    super.key,
+    required this.ticketId,
+    this.readOnly = false,
+  });
+
+  static final _dateFormat = DateFormat('dd MMM yyyy, hh:mm a');
 
   final String ticketId;
+  final bool readOnly;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final ticketAsync = ref.watch(adminTicketDetailProvider(ticketId));
     final isLoading = ref.watch(adminLoadingProvider);
-    final dateFormat = DateFormat('dd MMM yyyy, hh:mm a');
 
     return Scaffold(
       appBar: AppBar(title: Text(ticketId)),
@@ -51,7 +60,7 @@ class AdminTicketDetailPage extends ConsumerWidget {
                       _InfoRow('Type', ticket.requestType.label),
                       _InfoRow(
                         'Submitted',
-                        dateFormat.format(ticket.submittedAt.toLocal()),
+                        _dateFormat.format(ticket.submittedAt.toLocal()),
                       ),
                       _InfoRow(
                         'Assigned',
@@ -74,19 +83,16 @@ class AdminTicketDetailPage extends ConsumerWidget {
                       _InfoRow('Address', ticket.ownerDetails.address),
                     ],
                   ),
+                  _LandLocationCard(landDetails: ticket.landDetails),
                   _SectionCard(
                     title: 'Land Details',
                     children: [
-                      _InfoRow(
-                        'GPS',
-                        '${ticket.landDetails.gpsLatitude}, ${ticket.landDetails.gpsLongitude}',
-                      ),
                       _InfoRow('Area', '${ticket.landDetails.areaSqFt} sq ft'),
-                      _InfoRow('Road Access', ticket.landDetails.roadAccess ? 'Y' : 'N'),
-                      _InfoRow('Drainage', ticket.landDetails.drainage ? 'Y' : 'N'),
-                      _InfoRow('Flood', ticket.landDetails.flood ? 'Y' : 'N'),
-                      _InfoRow('Boundary', ticket.landDetails.boundary ? 'Y' : 'N'),
-                      _InfoRow('CCTV', ticket.landDetails.cctv ? 'Y' : 'N'),
+                      _InfoRow('Road Access', ticket.landDetails.roadAccess ? 'Yes' : 'No'),
+                      _InfoRow('Drainage', ticket.landDetails.drainage ? 'Yes' : 'No'),
+                      _InfoRow('Flood Risk', ticket.landDetails.flood ? 'Yes' : 'No'),
+                      _InfoRow('Boundary', ticket.landDetails.boundary ? 'Yes' : 'No'),
+                      _InfoRow('CCTV', ticket.landDetails.cctv ? 'Yes' : 'No'),
                     ],
                   ),
                   if (ticket.parkingPreferences != null)
@@ -115,61 +121,175 @@ class AdminTicketDetailPage extends ConsumerWidget {
                   _SectionCard(
                     title: 'Verify Documents',
                     children: [
-                      _DocRow('Government ID', ticket.documents.governmentIdPath),
-                      _DocRow('Property Document', ticket.documents.propertyDocumentPath),
-                      _DocRow('Patta', ticket.documents.pattaPath),
-                      _DocRow('Property Tax', ticket.documents.propertyTaxPath),
+                      // DigiLocker verified banner
+                      if (ticket.documents.digilockerVerified) ...[
+                        Container(
+                          margin: const EdgeInsets.only(bottom: 12),
+                          padding: const EdgeInsets.all(12),
+                          decoration: BoxDecoration(
+                            color: Colors.green.shade50,
+                            borderRadius: BorderRadius.circular(10),
+                            border: Border.all(color: Colors.green.shade200),
+                          ),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Row(
+                                children: [
+                                  const Icon(Icons.verified, color: Colors.green, size: 20),
+                                  const SizedBox(width: 8),
+                                  Text(
+                                    'DigiLocker Verified',
+                                    style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                                          color: Colors.green.shade800,
+                                          fontWeight: FontWeight.bold,
+                                        ),
+                                  ),
+                                  const SizedBox(width: 6),
+                                  Container(
+                                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                    decoration: BoxDecoration(
+                                      color: Colors.green.shade100,
+                                      borderRadius: BorderRadius.circular(4),
+                                    ),
+                                    child: Text(
+                                      'Government Certified',
+                                      style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                                            color: Colors.green.shade800,
+                                          ),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                              const SizedBox(height: 8),
+                              if (ticket.documents.digilockerDocumentType?.isNotEmpty == true)
+                                _InfoRow('Doc Type', ticket.documents.digilockerDocumentType!),
+                              if (ticket.documents.digilockerOwnerName?.isNotEmpty == true)
+                                _InfoRow('Owner Name', ticket.documents.digilockerOwnerName!),
+                              if (ticket.documents.digilockerSurveyNumber?.isNotEmpty == true)
+                                _InfoRow('Survey No.', ticket.documents.digilockerSurveyNumber!),
+                              if (ticket.documents.digilockerLandArea?.isNotEmpty == true)
+                                _InfoRow('Land Area', ticket.documents.digilockerLandArea!),
+                              if (ticket.documents.digilockerDistrict?.isNotEmpty == true)
+                                _InfoRow('District', ticket.documents.digilockerDistrict!),
+                              if (ticket.documents.digilockerIssuedBy?.isNotEmpty == true)
+                                _InfoRow('Issued By', ticket.documents.digilockerIssuedBy!),
+                              if (ticket.documents.digilockerVerificationUrl?.isNotEmpty == true) ...[
+                                const SizedBox(height: 4),
+                                Text(
+                                  'Verification URL:',
+                                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                                        fontWeight: FontWeight.w600,
+                                      ),
+                                ),
+                                SelectableText(
+                                  ticket.documents.digilockerVerificationUrl!,
+                                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                                        color: Theme.of(context).colorScheme.primary,
+                                      ),
+                                ),
+                              ],
+                            ],
+                          ),
+                        ),
+                      ] else ...[
+                        // Manual documents
+                        _DocRow('Government ID', ticket.documents.governmentIdPath),
+                        _DocRow('Property Document', ticket.documents.propertyDocumentPath),
+                        _DocRow('Patta', ticket.documents.pattaPath),
+                        _DocRow('Property Tax', ticket.documents.propertyTaxPath),
+                        const SizedBox(height: 4),
+                        Text(
+                          'Employee site visit required to verify manually uploaded documents.',
+                          style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                                color: Theme.of(context).colorScheme.onSurfaceVariant,
+                              ),
+                        ),
+                      ],
                       const SizedBox(height: 12),
-                      if (!ticket.documentsVerified)
+                      if (!ticket.documentsVerified && !readOnly)
                         PrimaryButton(
-                          label: 'Mark Documents Verified',
+                          label: ticket.documents.digilockerVerified
+                              ? 'Confirm DigiLocker Verification'
+                              : 'Mark Documents Verified',
                           isLoading: isLoading,
                           onPressed: () => _verify(context, ref, ticket),
                         )
-                      else
-                        const ListTile(
-                          leading: Icon(Icons.verified, color: Colors.green),
-                          title: Text('Documents verified'),
+                      else if (ticket.documentsVerified)
+                        ListTile(
+                          contentPadding: EdgeInsets.zero,
+                          leading: const Icon(Icons.verified, color: Colors.green),
+                          title: const Text('Documents verified'),
+                          subtitle: ticket.documents.digilockerVerified
+                              ? const Text('via DigiLocker (Government certified)')
+                              : const Text('via manual employee review'),
                         ),
                     ],
                   ),
-                  const SizedBox(height: 8),
-                  Text('Ticket Actions', style: Theme.of(context).textTheme.titleMedium),
-                  const SizedBox(height: 12),
-                  Wrap(
-                    spacing: 12,
-                    runSpacing: 12,
-                    children: [
-                      FilledButton.tonalIcon(
-                        onPressed: isLoading
-                            ? null
-                            : () => _assignEmployee(context, ref, ticket),
-                        icon: const Icon(Icons.person_add),
-                        label: const Text('Assign Employee'),
-                      ),
-                      FilledButton.icon(
-                        onPressed: isLoading ||
-                                ticket.status == RequestStatus.approved ||
-                                ticket.status == RequestStatus.rejected
-                            ? null
-                            : () => _approve(context, ref, ticket),
-                        icon: const Icon(Icons.check),
-                        label: const Text('Approve'),
-                      ),
-                      FilledButton.icon(
-                        style: FilledButton.styleFrom(
-                          backgroundColor: Theme.of(context).colorScheme.error,
+                  if (!readOnly) ...[
+                    const SizedBox(height: 8),
+                    Text('Ticket Actions', style: Theme.of(context).textTheme.titleMedium),
+                    const SizedBox(height: 12),
+                    Wrap(
+                      spacing: 12,
+                      runSpacing: 12,
+                      children: [
+                        ticket.assignedEmployeeId != null
+                            ? FilledButton.tonalIcon(
+                                onPressed: isLoading
+                                    ? null
+                                    : () => _assignEmployee(context, ref, ticket),
+                                style: FilledButton.styleFrom(
+                                  backgroundColor: Colors.green.shade50,
+                                  foregroundColor: Colors.green.shade700,
+                                ),
+                                icon: const Icon(Icons.person_pin, size: 18),
+                                label: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    const Text(
+                                      'Employee Assigned',
+                                      style: TextStyle(fontWeight: FontWeight.w700),
+                                    ),
+                                    Text(
+                                      ticket.assignedEmployeeName ?? '',
+                                      style: const TextStyle(fontSize: 11),
+                                    ),
+                                  ],
+                                ),
+                              )
+                            : FilledButton.tonalIcon(
+                                onPressed: isLoading
+                                    ? null
+                                    : () => _assignEmployee(context, ref, ticket),
+                                icon: const Icon(Icons.person_add),
+                                label: const Text('Assign Employee'),
+                              ),
+                        FilledButton.icon(
+                          onPressed: isLoading ||
+                                  ticket.status == RequestStatus.approved ||
+                                  ticket.status == RequestStatus.rejected
+                              ? null
+                              : () => _approve(context, ref, ticket),
+                          icon: const Icon(Icons.check),
+                          label: const Text('Approve'),
                         ),
-                        onPressed: isLoading ||
-                                ticket.status == RequestStatus.approved ||
-                                ticket.status == RequestStatus.rejected
-                            ? null
-                            : () => _reject(context, ref, ticket),
-                        icon: const Icon(Icons.close),
-                        label: const Text('Reject'),
-                      ),
-                    ],
-                  ),
+                        FilledButton.icon(
+                          style: FilledButton.styleFrom(
+                            backgroundColor: Theme.of(context).colorScheme.error,
+                          ),
+                          onPressed: isLoading ||
+                                  ticket.status == RequestStatus.approved ||
+                                  ticket.status == RequestStatus.rejected
+                              ? null
+                              : () => _reject(context, ref, ticket),
+                          icon: const Icon(Icons.close),
+                          label: const Text('Reject'),
+                        ),
+                      ],
+                    ),
+                  ],
                   const SizedBox(height: 32),
                 ],
               ),
@@ -255,32 +375,9 @@ class AdminTicketDetailPage extends ConsumerWidget {
     WidgetRef ref,
     LandOwnerRequest ticket,
   ) async {
-    final reasonController = TextEditingController();
     final reason = await showDialog<String>(
       context: context,
-      builder: (context) {
-        return AlertDialog(
-          title: const Text('Reject Ticket'),
-          content: TextField(
-            controller: reasonController,
-            decoration: const InputDecoration(
-              labelText: 'Rejection reason',
-              border: OutlineInputBorder(),
-            ),
-            maxLines: 3,
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(context),
-              child: const Text('Cancel'),
-            ),
-            FilledButton(
-              onPressed: () => Navigator.pop(context, reasonController.text),
-              child: const Text('Reject'),
-            ),
-          ],
-        );
-      },
+      builder: (context) => const _RejectDialog(),
     );
 
     if (reason == null || reason.trim().isEmpty) return;
@@ -310,7 +407,32 @@ class AdminTicketDetailPage extends ConsumerWidget {
     WidgetRef ref,
     LandOwnerRequest ticket,
   ) async {
-    final employees = await ref.read(activeEmployeesProvider.future);
+    // Guard against double-tap: if already loading, do nothing.
+    if (ref.read(adminLoadingProvider)) return;
+
+    final loading = ref.read(adminLoadingProvider.notifier);
+    loading.state = true;
+
+    List<Employee> employees;
+    try {
+      employees = await ref.read(activeEmployeesProvider.future);
+    } on Exception catch (e) {
+      if (context.mounted) {
+        ref.read(snackbarServiceProvider).showError(
+              e is AppException ? e.message : 'Could not load employees.',
+            );
+      }
+      loading.state = false;
+      return;
+    } finally {
+      if (!context.mounted) {
+        loading.state = false;
+        return;
+      }
+    }
+
+    loading.state = false;
+
     if (!context.mounted) return;
 
     if (employees.isEmpty) {
@@ -341,8 +463,8 @@ class AdminTicketDetailPage extends ConsumerWidget {
     if (selected == null) return;
 
     final adminId = ref.read(authStateProvider).session?.userId ?? '';
-    final loading = ref.read(adminLoadingProvider.notifier);
-    loading.state = true;
+    final assignLoading = ref.read(adminLoadingProvider.notifier);
+    assignLoading.state = true;
     try {
       final deliverySummary = await ref.read(adminRepositoryProvider).assignEmployee(
             requestId: ticket.id,
@@ -359,7 +481,7 @@ class AdminTicketDetailPage extends ConsumerWidget {
     } catch (_) {
       ref.read(snackbarServiceProvider).showError('Assignment failed.');
     } finally {
-      loading.state = false;
+      assignLoading.state = false;
     }
   }
 
@@ -416,6 +538,178 @@ class _InfoRow extends StatelessWidget {
           ),
           Expanded(child: Text(value)),
         ],
+      ),
+    );
+  }
+}
+
+class _RejectDialog extends StatefulWidget {
+  const _RejectDialog();
+
+  @override
+  State<_RejectDialog> createState() => _RejectDialogState();
+}
+
+class _RejectDialogState extends State<_RejectDialog> {
+  late final TextEditingController _controller;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = TextEditingController();
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: const Text('Reject Ticket'),
+      content: TextField(
+        controller: _controller,
+        decoration: const InputDecoration(
+          labelText: 'Rejection reason',
+          border: OutlineInputBorder(),
+        ),
+        maxLines: 3,
+        autofocus: true,
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context),
+          child: const Text('Cancel'),
+        ),
+        FilledButton(
+          onPressed: () => Navigator.pop(context, _controller.text),
+          child: const Text('Reject'),
+        ),
+      ],
+    );
+  }
+}
+
+class _LandLocationCard extends StatelessWidget {
+  const _LandLocationCard({required this.landDetails});
+
+  final LandDetails landDetails;
+
+  Future<void> _openMaps(BuildContext context) async {
+    final lat = landDetails.gpsLatitude;
+    final lng = landDetails.gpsLongitude;
+    final uri = Uri.parse('https://www.google.com/maps/search/?api=1&query=$lat,$lng');
+    if (!await launchUrl(uri, mode: LaunchMode.externalApplication)) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Could not open maps.')),
+        );
+      }
+    }
+  }
+
+  void _copyCoords(BuildContext context) {
+    final lat = landDetails.gpsLatitude;
+    final lng = landDetails.gpsLongitude;
+    Clipboard.setData(ClipboardData(text: '$lat, $lng'));
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('Coordinates copied to clipboard.')),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
+    final lat = landDetails.gpsLatitude;
+    final lng = landDetails.gpsLongitude;
+    final hasLocation = lat != 0 || lng != 0;
+    final locationName = landDetails.landAddress;
+
+    return Card(
+      margin: const EdgeInsets.only(bottom: 12),
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Icon(Icons.location_on, color: colorScheme.primary, size: 20),
+                const SizedBox(width: 8),
+                Text(
+                  'Land Location',
+                  style: Theme.of(context)
+                      .textTheme
+                      .titleSmall
+                      ?.copyWith(fontWeight: FontWeight.w700),
+                ),
+              ],
+            ),
+            const SizedBox(height: 12),
+            if (locationName != null && locationName.isNotEmpty) ...[
+              Text(
+                'Area / Address',
+                style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                      color: colorScheme.onSurfaceVariant,
+                    ),
+              ),
+              const SizedBox(height: 4),
+              Text(
+                locationName,
+                style: Theme.of(context)
+                    .textTheme
+                    .bodyMedium
+                    ?.copyWith(fontWeight: FontWeight.w500),
+              ),
+              const SizedBox(height: 12),
+            ],
+            if (hasLocation) ...[
+              Text(
+                'GPS Coordinates',
+                style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                      color: colorScheme.onSurfaceVariant,
+                    ),
+              ),
+              const SizedBox(height: 4),
+              Row(
+                children: [
+                  Expanded(
+                    child: Text(
+                      '${lat.toStringAsFixed(6)}, ${lng.toStringAsFixed(6)}',
+                      style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                            fontFamily: 'monospace',
+                          ),
+                    ),
+                  ),
+                  IconButton(
+                    icon: const Icon(Icons.copy, size: 18),
+                    tooltip: 'Copy coordinates',
+                    visualDensity: VisualDensity.compact,
+                    onPressed: () => _copyCoords(context),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 10),
+              SizedBox(
+                width: double.infinity,
+                child: OutlinedButton.icon(
+                  onPressed: () => _openMaps(context),
+                  icon: const Icon(Icons.open_in_new, size: 16),
+                  label: const Text('Open in Google Maps'),
+                ),
+              ),
+            ] else
+              Text(
+                'Location not set',
+                style: Theme.of(context)
+                    .textTheme
+                    .bodySmall
+                    ?.copyWith(color: colorScheme.error),
+              ),
+          ],
+        ),
       ),
     );
   }

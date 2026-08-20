@@ -11,8 +11,31 @@ import 'package:open_space_parking/features/land_owner/domain/entities/land_owne
 import 'package:open_space_parking/features/land_owner/domain/entities/request_status.dart';
 import 'package:open_space_parking/features/land_owner/domain/entities/request_type.dart';
 
-class AdminTicketsPage extends ConsumerWidget {
+class AdminTicketsPage extends ConsumerStatefulWidget {
   const AdminTicketsPage({super.key});
+
+  @override
+  ConsumerState<AdminTicketsPage> createState() => _AdminTicketsPageState();
+}
+
+class _AdminTicketsPageState extends ConsumerState<AdminTicketsPage> {
+  static final _dateFormat = DateFormat('dd MMM yyyy');
+
+  late final TextEditingController _searchController;
+
+  @override
+  void initState() {
+    super.initState();
+    _searchController = TextEditingController(
+      text: ref.read(ticketFilterProvider).searchQuery,
+    );
+  }
+
+  @override
+  void dispose() {
+    _searchController.dispose();
+    super.dispose();
+  }
 
   Color _statusColor(RequestStatus status) {
     switch (status) {
@@ -32,10 +55,9 @@ class AdminTicketsPage extends ConsumerWidget {
   }
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  Widget build(BuildContext context) {
     final filter = ref.watch(ticketFilterProvider);
     final ticketsAsync = ref.watch(adminTicketsProvider);
-    final dateFormat = DateFormat('dd MMM yyyy');
 
     return Column(
       children: [
@@ -44,6 +66,7 @@ class AdminTicketsPage extends ConsumerWidget {
           child: Column(
             children: [
               TextField(
+                controller: _searchController,
                 decoration: InputDecoration(
                   hintText: 'Search ticket, owner, phone, employee...',
                   prefixIcon: const Icon(Icons.search),
@@ -51,13 +74,33 @@ class AdminTicketsPage extends ConsumerWidget {
                   suffixIcon: filter.searchQuery.isNotEmpty
                       ? IconButton(
                           icon: const Icon(Icons.clear),
-                          onPressed: () =>
-                              ref.read(ticketFilterProvider.notifier).setSearch(''),
+                          onPressed: () {
+                            _searchController.clear();
+                            ref
+                                .read(ticketFilterProvider.notifier)
+                                .setSearch('');
+                            ref
+                                .read(debouncedSearchProvider.notifier)
+                                .state = '';
+                          },
                         )
                       : null,
                 ),
-                onChanged: (v) =>
-                    ref.read(ticketFilterProvider.notifier).setSearch(v),
+                onChanged: (v) {
+                  ref.read(ticketFilterProvider.notifier).setSearch(v);
+                  final debounced =
+                      ref.read(debouncedSearchProvider.notifier);
+                  final query = v;
+                  Future<void>.delayed(
+                    const Duration(milliseconds: 400),
+                    () {
+                      if (ref.read(ticketFilterProvider).searchQuery ==
+                          query) {
+                        debounced.state = query;
+                      }
+                    },
+                  );
+                },
               ),
               const SizedBox(height: 12),
               SingleChildScrollView(
@@ -67,8 +110,9 @@ class AdminTicketsPage extends ConsumerWidget {
                     FilterChip(
                       label: const Text('All Status'),
                       selected: filter.status == null,
-                      onSelected: (_) =>
-                          ref.read(ticketFilterProvider.notifier).setStatus(null),
+                      onSelected: (_) => ref
+                          .read(ticketFilterProvider.notifier)
+                          .setStatus(null),
                     ),
                     const SizedBox(width: 8),
                     ...RequestStatus.values.map(
@@ -94,8 +138,9 @@ class AdminTicketsPage extends ConsumerWidget {
                     FilterChip(
                       label: const Text('All Types'),
                       selected: filter.requestType == null,
-                      onSelected: (_) =>
-                          ref.read(ticketFilterProvider.notifier).setType(null),
+                      onSelected: (_) => ref
+                          .read(ticketFilterProvider.notifier)
+                          .setType(null),
                     ),
                     const SizedBox(width: 8),
                     ...LandOwnerRequestType.values.map(
@@ -104,8 +149,9 @@ class AdminTicketsPage extends ConsumerWidget {
                         child: FilterChip(
                           label: Text(type.label),
                           selected: filter.requestType == type,
-                          onSelected: (_) =>
-                              ref.read(ticketFilterProvider.notifier).setType(type),
+                          onSelected: (_) => ref
+                              .read(ticketFilterProvider.notifier)
+                              .setType(type),
                         ),
                       ),
                     ),
@@ -132,7 +178,8 @@ class AdminTicketsPage extends ConsumerWidget {
             ),
             data: (tickets) {
               if (tickets.isEmpty) {
-                return const Center(child: Text('No tickets match your filters.'));
+                return const Center(
+                    child: Text('No tickets match your filters.'));
               }
 
               return RefreshIndicator(
@@ -144,7 +191,8 @@ class AdminTicketsPage extends ConsumerWidget {
                     final ticket = tickets[index];
                     return _TicketCard(
                       ticket: ticket,
-                      dateLabel: dateFormat.format(ticket.submittedAt.toLocal()),
+                      dateLabel:
+                          _dateFormat.format(ticket.submittedAt.toLocal()),
                       statusColor: _statusColor(ticket.status),
                       onTap: () => context.push(
                         RoutePaths.adminTicketDetail(ticket.ticketId),
@@ -203,7 +251,8 @@ class _TicketCard extends StatelessWidget {
               ),
               const SizedBox(height: 8),
               Text(ticket.requestType.label),
-              Text('${ticket.ownerDetails.fullName} • ${ticket.ownerDetails.phone}'),
+              Text(
+                  '${ticket.ownerDetails.fullName} • ${ticket.ownerDetails.phone}'),
               const SizedBox(height: 8),
               Wrap(
                 spacing: 8,
@@ -220,9 +269,7 @@ class _TicketCard extends StatelessWidget {
                       label: Text('Docs Pending'),
                     ),
                   Chip(
-                    label: Text(
-                      ticket.assignedEmployeeName ?? 'Unassigned',
-                    ),
+                    label: Text(ticket.assignedEmployeeName ?? 'Unassigned'),
                   ),
                   Chip(label: Text(dateLabel)),
                 ],

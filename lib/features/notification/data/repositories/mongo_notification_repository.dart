@@ -9,6 +9,13 @@ import 'package:open_space_parking/features/notification/domain/entities/app_not
 import 'package:open_space_parking/features/notification/domain/entities/notification_recipient_type.dart';
 import 'package:open_space_parking/features/notification/domain/repositories/notification_repository.dart';
 
+String _collectionForRecipient(NotificationRecipientType type) {
+  return switch (type) {
+    NotificationRecipientType.employee => AppConstants.employeesCollection,
+    _ => AppConstants.usersCollection,
+  };
+}
+
 class MongoNotificationRepository implements NotificationRepository {
   MongoNotificationRepository({
     required NotificationMongoRepository notificationMongoRepository,
@@ -145,7 +152,7 @@ class MongoNotificationRepository implements NotificationRepository {
 
     try {
       await _collectionService.updateOne(
-        collectionName: AppConstants.usersCollection,
+        collectionName: _collectionForRecipient(recipientType),
         selector: where.eq('_id', ObjectId.parse(userId)),
         modifier: modify
             .set('fcmToken', token)

@@ -1,4 +1,8 @@
 {
+  "terminal.integrated.env.windows": {
+    "JAVA_HOME": "C:\\Program Files\\Microsoft\\jdk-17.0.20.8-hotspot",
+    "PATH": "C:\\Program Files\\Microsoft\\jdk-17.0.20.8-hotspot\\bin;C:\\Program Files\\nodejs;${env:PATH}"
+  },
   "java.import.gradle.enabled": false,
   "java.autobuild.enabled": false,
   "java.configuration.updateBuildConfiguration": "disabled",

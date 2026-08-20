@@ -101,22 +101,43 @@ class MongoAuthRepository implements AuthRepository {
 
   @override
   Future<AuthSession> loginEmployee({
-    required String email,
+    required String phone,
     required String password,
   }) async {
+    final normalizedPhone = PhoneUtils.normalizeIndianMobile(phone);
+
+    final apiClient = _apiClient;
+    if (apiClient != null) {
+      try {
+        final response = await apiClient.post('/api/auth/employee-phone-login', {
+          'phone': normalizedPhone,
+          'password': password,
+        });
+        return _sessionFromApi(
+          response,
+          response['email'] as String? ?? '',
+          displayNameOverride:
+              response['displayName'] as String? ??
+                  response['fullName'] as String?,
+        );
+      } on NetworkException catch (e) {
+        final msg = e.message.toLowerCase();
+        if (!msg.contains('404') && !msg.contains('cannot post')) {
+          throw AppException(e.message);
+        }
+      }
+    }
+
     await _ensureConnected();
 
-    final normalizedEmail = email.trim().toLowerCase();
-    final employee = await _collectionService.findOne(
-      collectionName: AppConstants.employeesCollection,
-      selector: where.eq('email', normalizedEmail),
-    );
-
+    final employee = await _findEmployeeByPhone(phone);
     if (employee == null) {
       throw const AppException('Invalid credentials.');
     }
     if (employee['isActive'] != true) {
-      throw const AppException('Employee account is inactive.');
+      throw const AppException(
+        'This employee account is currently inactive. Please contact the administrator.',
+      );
     }
 
     final salt = employee['passwordSalt'] as String?;
@@ -129,19 +150,41 @@ class MongoAuthRepository implements AuthRepository {
 
     final computedHash = sha256.convert(utf8.encode('$password::$salt')).toString();
     if (computedHash != hash) {
-      throw const AppException('Invalid credentials.');
+      throw const AppException('Incorrect password. Please try again.');
     }
 
     final rawId = employee['_id'];
     final userId = MongoJson.objectIdHex(rawId);
+    final email = employee['email'] as String? ?? '';
 
     return _buildSession(
       userId: userId,
-      email: normalizedEmail,
+      email: email,
       displayName: employee['fullName'] as String? ?? '',
       role: UserRole.employee,
       issuedAt: DateTime.now().toUtc(),
     );
+  }
+
+  Future<Map<String, dynamic>?> _findEmployeeByPhone(String phone) async {
+    final trimmed = phone.trim();
+    final digits = PhoneUtils.digitsOnly(trimmed);
+    final candidates = <String>{
+      trimmed,
+      if (digits.length == 10) digits,
+      if (digits.length == 10) '+91$digits',
+      if (digits.length == 12 && digits.startsWith('91')) '+$digits',
+      PhoneUtils.normalizeIndianMobile(trimmed),
+    }..removeWhere((value) => value.isEmpty);
+
+    for (final candidate in candidates) {
+      final doc = await _collectionService.findOne(
+        collectionName: AppConstants.employeesCollection,
+        selector: where.eq('phone', candidate),
+      );
+      if (doc != null) return doc;
+    }
+    return null;
   }
 
   @override
@@ -255,7 +298,11 @@ class MongoAuthRepository implements AuthRepository {
   }
 
   @override
-  Future<AuthSession> loginWithPhone({required String phone}) async {
+  Future<AuthSession> loginWithPhone({
+    required String phone,
+    String? idToken,
+    String? otpToken,
+  }) async {
     final normalizedPhone = PhoneUtils.normalizeIndianMobile(phone);
 
     final apiClient = _apiClient;
@@ -263,6 +310,8 @@ class MongoAuthRepository implements AuthRepository {
       try {
         final response = await apiClient.post('/api/auth/phone-login', {
           'phone': normalizedPhone,
+          if (otpToken != null && otpToken.isNotEmpty) 'otpToken': otpToken,
+          if (idToken != null && idToken.isNotEmpty) 'idToken': idToken,
         });
         return _sessionFromApi(response, _phoneEmail(normalizedPhone));
       } on NetworkException catch (e) {
@@ -301,6 +350,8 @@ class MongoAuthRepository implements AuthRepository {
     required String phone,
     required String displayName,
     required UserRole role,
+    String? idToken,
+    String? otpToken,
   }) async {
     _assertSelfRegisterRole(role);
     final normalizedPhone = PhoneUtils.normalizeIndianMobile(phone);
@@ -312,6 +363,8 @@ class MongoAuthRepository implements AuthRepository {
           'phone': normalizedPhone,
           'displayName': displayName.trim(),
           'role': role.value,
+          if (otpToken != null && otpToken.isNotEmpty) 'otpToken': otpToken,
+          if (idToken != null && idToken.isNotEmpty) 'idToken': idToken,
         });
         final session = _sessionFromApi(response, _phoneEmail(normalizedPhone));
         try {
@@ -642,11 +695,20 @@ class MongoAuthRepository implements AuthRepository {
     );
   }
 
-  AuthSession _sessionFromApi(Map<String, dynamic> response, String fallbackEmail) {
+  AuthSession _sessionFromApi(
+    Map<String, dynamic> response,
+    String fallbackEmail, {
+    String? displayNameOverride,
+  }) {
+    final displayName = (displayNameOverride ??
+            response['displayName'] as String? ??
+            response['fullName'] as String? ??
+            '')
+        .trim();
     return _buildSession(
       userId: MongoJson.objectIdHex(response['userId']),
       email: response['email'] as String? ?? fallbackEmail.trim().toLowerCase(),
-      displayName: response['displayName'] as String? ?? '',
+      displayName: displayName,
       role: UserRoleX.fromValue(response['role'] as String? ?? ''),
       issuedAt: DateTime.now().toUtc(),
     );

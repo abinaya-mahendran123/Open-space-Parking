@@ -10,6 +10,7 @@ import 'package:open_space_parking/features/employee/presentation/pages/employee
 import 'package:open_space_parking/features/employee/presentation/pages/employee_completed_page.dart';
 import 'package:open_space_parking/features/employee/presentation/pages/employee_dashboard_page.dart';
 import 'package:open_space_parking/features/employee/presentation/pages/employee_notifications_page.dart';
+import 'package:open_space_parking/features/employee/presentation/providers/employee_providers.dart';
 
 class EmployeeShellPage extends ConsumerStatefulWidget {
   const EmployeeShellPage({super.key, this.initialIndex = 0});
@@ -21,57 +22,52 @@ class EmployeeShellPage extends ConsumerStatefulWidget {
 }
 
 class _EmployeeShellPageState extends ConsumerState<EmployeeShellPage> {
-  late int _currentIndex;
+  static const _pages = [
+    EmployeeDashboardPage(),
+    EmployeeAssignedPage(),
+    EmployeeCompletedPage(),
+    EmployeeNotificationsPage(),
+  ];
 
   @override
   void initState() {
     super.initState();
-    _currentIndex = widget.initialIndex;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      ref.read(employeeShellTabProvider.notifier).state = widget.initialIndex;
+    });
   }
 
   @override
   void didUpdateWidget(covariant EmployeeShellPage oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.initialIndex != widget.initialIndex) {
-      _currentIndex = widget.initialIndex;
+      ref.read(employeeShellTabProvider.notifier).state = widget.initialIndex;
     }
   }
 
   void _onSelect(int index) {
-    setState(() => _currentIndex = index);
-    switch (index) {
-      case 0:
-        context.go(RoutePaths.employeeDashboard);
-        break;
-      case 1:
-        context.go(RoutePaths.employeeAssigned);
-        break;
-      case 2:
-        context.go(RoutePaths.employeeCompleted);
-        break;
-      case 3:
-        context.go(RoutePaths.employeeNotifications);
-        break;
-    }
+    ref.read(employeeShellTabProvider.notifier).state = index;
+  }
+
+  Future<void> _logout() async {
+    ref.read(employeeShellTabProvider.notifier).state = 0;
+    await ref.read(authStateProvider.notifier).logout();
+    if (!mounted) return;
+    context.go(RoutePaths.authEntry);
   }
 
   @override
   Widget build(BuildContext context) {
+    final currentIndex = ref.watch(employeeShellTabProvider);
     final isWide = context.isDesktop || context.isTablet;
-    const pages = [
-      EmployeeDashboardPage(),
-      EmployeeAssignedPage(),
-      EmployeeCompletedPage(),
-      EmployeeNotificationsPage(),
-    ];
-    final body = IndexedStack(index: _currentIndex, children: pages);
 
     final appBar = AppBar(
       title: const Text('Employee Portal'),
       actions: [
         IconButton(
           tooltip: 'Logout',
-          onPressed: () => ref.read(authStateProvider.notifier).logout(),
+          onPressed: _logout,
           icon: const Icon(Icons.logout),
         ),
       ],
@@ -83,7 +79,7 @@ class _EmployeeShellPageState extends ConsumerState<EmployeeShellPage> {
         body: Row(
           children: [
             NavigationRail(
-              selectedIndex: _currentIndex,
+              selectedIndex: currentIndex,
               onDestinationSelected: _onSelect,
               labelType: NavigationRailLabelType.all,
               destinations: const [
@@ -110,7 +106,7 @@ class _EmployeeShellPageState extends ConsumerState<EmployeeShellPage> {
               ],
             ),
             const VerticalDivider(width: 1),
-            Expanded(child: body),
+            Expanded(child: _pages[currentIndex]),
           ],
         ),
       );
@@ -118,8 +114,8 @@ class _EmployeeShellPageState extends ConsumerState<EmployeeShellPage> {
 
     return AppShellScaffold(
       appBar: appBar,
-      body: body,
-      selectedIndex: _currentIndex,
+      body: _pages[currentIndex],
+      selectedIndex: currentIndex,
       onDestinationSelected: _onSelect,
       destinations: const [
         NavigationDestination(

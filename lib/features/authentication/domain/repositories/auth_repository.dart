@@ -13,7 +13,7 @@ abstract class AuthRepository {
   });
 
   Future<AuthSession> loginEmployee({
-    required String email,
+    required String phone,
     required String password,
   });
 
@@ -31,12 +31,18 @@ abstract class AuthRepository {
 
   Future<void> requestPasswordReset({required String email});
 
-  Future<AuthSession> loginWithPhone({required String phone});
+  Future<AuthSession> loginWithPhone({
+    required String phone,
+    String? idToken,
+    String? otpToken,
+  });
 
   Future<AuthSession> registerWithPhone({
     required String phone,
     required String displayName,
     required UserRole role,
+    String? idToken,
+    String? otpToken,
   });
 
   Future<AuthSession> loginWithGoogle({

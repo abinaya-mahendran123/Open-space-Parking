@@ -36,6 +36,7 @@ class AuthFixtures {
 
   static Map<String, dynamic> employeeDocument({
     String email = 'employee@test.com',
+    String phone = '9876543210',
     String password = testPassword,
     String salt = testSalt,
     bool isActive = true,
@@ -44,6 +45,7 @@ class AuthFixtures {
     return {
       '_id': id ?? ObjectId(),
       'email': email.trim().toLowerCase(),
+      'phone': phone,
       'fullName': 'Test Employee',
       'isActive': isActive,
       'passwordSalt': salt,

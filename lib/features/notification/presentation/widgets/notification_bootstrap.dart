@@ -54,14 +54,15 @@ class _NotificationBootstrapState extends ConsumerState<NotificationBootstrap> {
     return widget.child;
   }
 
-  Future<void> _syncAuthBinding() async {
+  Future<void> _syncAuthBinding() {
     final auth = ref.read(authStateProvider);
     if (auth.status == AuthStatus.authenticated && auth.session != null) {
-      await bindNotificationUser(
+      return bindNotificationUser(
         ref,
         userId: auth.session!.userId,
         role: auth.session!.role,
       );
     }
+    return Future.value();
   }
 }

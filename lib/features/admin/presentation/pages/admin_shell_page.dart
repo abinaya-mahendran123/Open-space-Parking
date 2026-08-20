@@ -9,12 +9,19 @@ import 'package:open_space_parking/features/admin/presentation/pages/admin_dashb
 import 'package:open_space_parking/features/admin/presentation/pages/admin_employees_page.dart';
 import 'package:open_space_parking/features/admin/presentation/pages/admin_statistics_page.dart';
 import 'package:open_space_parking/features/admin/presentation/pages/admin_tickets_page.dart';
+import 'package:open_space_parking/features/admin/presentation/providers/admin_providers.dart';
 import 'package:open_space_parking/features/authentication/presentation/providers/auth_state_provider.dart';
+import 'package:open_space_parking/features/land_owner/domain/entities/request_status.dart';
 
 class AdminShellPage extends ConsumerStatefulWidget {
-  const AdminShellPage({super.key, this.initialIndex = 0});
+  const AdminShellPage({
+    super.key,
+    this.initialIndex = 0,
+    this.ticketStatusFilter,
+  });
 
   final int initialIndex;
+  final String? ticketStatusFilter;
 
   @override
   ConsumerState<AdminShellPage> createState() => _AdminShellPageState();
@@ -50,14 +57,48 @@ class _AdminShellPageState extends ConsumerState<AdminShellPage> {
   void initState() {
     super.initState();
     _currentIndex = widget.initialIndex;
+    // Apply status filter from dashboard card tap (after first frame)
+    if (widget.ticketStatusFilter != null) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        _applyStatusFilter(widget.ticketStatusFilter!);
+      });
+    }
   }
 
   @override
   void didUpdateWidget(covariant AdminShellPage oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.initialIndex != widget.initialIndex) {
-      _currentIndex = widget.initialIndex;
+      setState(() => _currentIndex = widget.initialIndex);
     }
+    if (oldWidget.ticketStatusFilter != widget.ticketStatusFilter &&
+        widget.ticketStatusFilter != null) {
+      _applyStatusFilter(widget.ticketStatusFilter!);
+    }
+  }
+
+  void _applyStatusFilter(String statusParam) {
+    RequestStatus? status;
+    switch (statusParam) {
+      case 'submitted':
+        status = RequestStatus.submitted;
+        break;
+      case 'under_review':
+        status = RequestStatus.underReview;
+        break;
+      case 'approved':
+        status = RequestStatus.approved;
+        break;
+      case 'rejected':
+        status = RequestStatus.rejected;
+        break;
+      case 'unassigned':
+      case 'docs_pending':
+        // No direct status for these — show all tickets so user can see context
+        status = null;
+        break;
+    }
+    ref.read(ticketFilterProvider.notifier).setStatus(status);
   }
 
   void _onSelect(int index) {
@@ -88,7 +129,7 @@ class _AdminShellPageState extends ConsumerState<AdminShellPage> {
       const AdminStatisticsPage(),
     ];
 
-    final body = IndexedStack(index: _currentIndex, children: pages);
+    final body = pages[_currentIndex];
 
     if (isWide) {
       return Scaffold(

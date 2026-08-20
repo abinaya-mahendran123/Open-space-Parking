@@ -2,19 +2,6 @@
   "version": "0.2.0",
   "configurations": [
     {
-      "name": "Open Space Parking (Android phone)",
-      "request": "launch",
-      "type": "dart",
-      "program": "lib/main.dart",
-      "preLaunchTask": "Prepare Android API",
-      "toolArgs": [
-        "--dart-define=BASE_API_URL=http://127.0.0.1:3000",
-        "--dart-define=HOST_LAN_IP=192.168.88.3",
-        "--dart-define=GOOGLE_WEB_CLIENT_ID=514956128372-a1aac5qlpe4s0i4ej0tqr6251m1uvb4k.apps.googleusercontent.com",
-        "--dart-define=GOOGLE_SERVER_CLIENT_ID=514956128372-a1aac5qlpe4s0i4ej0tqr6251m1uvb4k.apps.googleusercontent.com"
-      ]
-    },
-    {
       "name": "Open Space Parking (Chrome)",
       "request": "launch",
       "type": "dart",
@@ -25,7 +12,16 @@
         "--web-port=8080",
         "--dart-define=BASE_API_URL=http://localhost:3000",
         "--dart-define=GOOGLE_WEB_CLIENT_ID=514956128372-a1aac5qlpe4s0i4ej0tqr6251m1uvb4k.apps.googleusercontent.com",
-        "--dart-define=GOOGLE_SERVER_CLIENT_ID=514956128372-a1aac5qlpe4s0i4ej0tqr6251m1uvb4k.apps.googleusercontent.com"
+        "--dart-define=GOOGLE_SERVER_CLIENT_ID=514956128372-a1aac5qlpe4s0i4ej0tqr6251m1uvb4k.apps.googleusercontent.com",
+        "--dart-define=ENABLE_FIREBASE=true",
+        "--dart-define=FIREBASE_API_KEY=AIzaSyCqLObK4oe-Y7huBVTsB1UmSl8EGqxUu6w",
+        "--dart-define=FIREBASE_WEB_APP_ID=1:794049298844:web:e2d18b28cd68232fb68859",
+        "--dart-define=FIREBASE_ANDROID_APP_ID=1:794049298844:android:6763c9ecfb6b7a3ab68859",
+        "--dart-define=FIREBASE_APP_ID=1:794049298844:web:e2d18b28cd68232fb68859",
+        "--dart-define=FIREBASE_MESSAGING_SENDER_ID=794049298844",
+        "--dart-define=FIREBASE_PROJECT_ID=open-space-parking",
+        "--dart-define=FIREBASE_AUTH_DOMAIN=open-space-parking.firebaseapp.com",
+        "--dart-define=FIREBASE_STORAGE_BUCKET=open-space-parking.firebasestorage.app"
       ]
     },
     {
@@ -40,7 +36,38 @@
         "--web-port=8080",
         "--dart-define=BASE_API_URL=http://localhost:3000",
         "--dart-define=GOOGLE_WEB_CLIENT_ID=514956128372-a1aac5qlpe4s0i4ej0tqr6251m1uvb4k.apps.googleusercontent.com",
-        "--dart-define=GOOGLE_SERVER_CLIENT_ID=514956128372-a1aac5qlpe4s0i4ej0tqr6251m1uvb4k.apps.googleusercontent.com"
+        "--dart-define=GOOGLE_SERVER_CLIENT_ID=514956128372-a1aac5qlpe4s0i4ej0tqr6251m1uvb4k.apps.googleusercontent.com",
+        "--dart-define=ENABLE_FIREBASE=true",
+        "--dart-define=FIREBASE_API_KEY=AIzaSyCqLObK4oe-Y7huBVTsB1UmSl8EGqxUu6w",
+        "--dart-define=FIREBASE_WEB_APP_ID=1:794049298844:web:e2d18b28cd68232fb68859",
+        "--dart-define=FIREBASE_ANDROID_APP_ID=1:794049298844:android:6763c9ecfb6b7a3ab68859",
+        "--dart-define=FIREBASE_APP_ID=1:794049298844:web:e2d18b28cd68232fb68859",
+        "--dart-define=FIREBASE_MESSAGING_SENDER_ID=794049298844",
+        "--dart-define=FIREBASE_PROJECT_ID=open-space-parking",
+        "--dart-define=FIREBASE_AUTH_DOMAIN=open-space-parking.firebaseapp.com",
+        "--dart-define=FIREBASE_STORAGE_BUCKET=open-space-parking.firebasestorage.app"
+      ]
+    },
+    {
+      "name": "Open Space Parking (Android phone)",
+      "request": "launch",
+      "type": "dart",
+      "program": "lib/main.dart",
+      "preLaunchTask": "Prepare Android API",
+      "toolArgs": [
+        "--dart-define=BASE_API_URL=http://127.0.0.1:3000",
+        "--dart-define=HOST_LAN_IP=192.168.88.3",
+        "--dart-define=GOOGLE_WEB_CLIENT_ID=514956128372-a1aac5qlpe4s0i4ej0tqr6251m1uvb4k.apps.googleusercontent.com",
+        "--dart-define=GOOGLE_SERVER_CLIENT_ID=514956128372-a1aac5qlpe4s0i4ej0tqr6251m1uvb4k.apps.googleusercontent.com",
+        "--dart-define=ENABLE_FIREBASE=true",
+        "--dart-define=FIREBASE_API_KEY=AIzaSyCqLObK4oe-Y7huBVTsB1UmSl8EGqxUu6w",
+        "--dart-define=FIREBASE_WEB_APP_ID=1:794049298844:web:e2d18b28cd68232fb68859",
+        "--dart-define=FIREBASE_ANDROID_APP_ID=1:794049298844:android:6763c9ecfb6b7a3ab68859",
+        "--dart-define=FIREBASE_APP_ID=1:794049298844:android:6763c9ecfb6b7a3ab68859",
+        "--dart-define=FIREBASE_MESSAGING_SENDER_ID=794049298844",
+        "--dart-define=FIREBASE_PROJECT_ID=open-space-parking",
+        "--dart-define=FIREBASE_AUTH_DOMAIN=open-space-parking.firebaseapp.com",
+        "--dart-define=FIREBASE_STORAGE_BUCKET=open-space-parking.firebasestorage.app"
       ]
     }
   ]

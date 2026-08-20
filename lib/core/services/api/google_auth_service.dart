@@ -71,7 +71,32 @@ class GoogleAuthService {
         await _clearCachedGoogleSession();
       }
 
-      final account = await _googleSignIn.signIn();
+      GoogleSignInAccount? account;
+      try {
+        account = await _googleSignIn.signIn().timeout(
+          // Web popup should resolve quickly; give it 60s before giving up.
+          Duration(seconds: kIsWeb ? 60 : 120),
+          onTimeout: () => throw const AppException(
+            'Google sign-in timed out. '
+            'If a popup was blocked, allow popups for this site and try again.',
+          ),
+        );
+      } on AppException {
+        rethrow;
+      } catch (e) {
+        final msg = e.toString().toLowerCase();
+        if (msg.contains('popup_blocked') ||
+            msg.contains('popup-blocked') ||
+            msg.contains('bfcache') ||
+            msg.contains('blocked')) {
+          throw const AppException(
+            'The Google sign-in popup was blocked by your browser. '
+            'Allow popups for this site and try again.',
+          );
+        }
+        rethrow;
+      }
+
       if (account == null) {
         throw const AppException('Google sign-in was cancelled.');
       }
@@ -80,7 +105,7 @@ class GoogleAuthService {
       final idToken = auth.idToken?.trim() ?? '';
 
       if (idToken.isNotEmpty) {
-        return verifyIdToken(idToken);
+        return await verifyIdToken(idToken);
       }
 
       // Rare web edge case: account selected but ID token not yet issued.
@@ -169,7 +194,7 @@ class GoogleAuthService {
 
   Future<void> signOut() async {
     try {
-      await _googleSignIn.signOut();
+      await _googleSignIn.signOut().timeout(const Duration(seconds: 2));
     } catch (e) {
       AppLogger.w('Google signOut failed: $e');
     }

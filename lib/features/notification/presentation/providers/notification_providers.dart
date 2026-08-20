@@ -70,13 +70,13 @@ NotificationRecipientType recipientTypeForRole(UserRole role) {
   };
 }
 
-Future<void> bindNotificationUser(
+  Future<void> bindNotificationUser(
   WidgetRef ref, {
   required String userId,
   required UserRole role,
-}) async {
-  if (userId.isEmpty) return;
-  await ref.read(notificationServiceProvider).bindUser(
+}) {
+  if (userId.isEmpty) return Future.value();
+  return ref.read(notificationServiceProvider).bindUser(
         userId: userId,
         recipientType: recipientTypeForRole(role),
       );

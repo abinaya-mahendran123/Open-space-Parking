@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:firebase_messaging/firebase_messaging.dart';
+import 'package:flutter/foundation.dart';
 
 import 'package:open_space_parking/core/config/environment_config.dart';
 import 'package:open_space_parking/core/utils/app_logger.dart';
@@ -36,7 +37,9 @@ class FcmService {
 
     _messaging = FirebaseMessaging.instance;
 
-    FirebaseMessaging.onBackgroundMessage(firebaseMessagingBackgroundHandler);
+    if (!kIsWeb) {
+      FirebaseMessaging.onBackgroundMessage(firebaseMessagingBackgroundHandler);
+    }
 
     FirebaseMessaging.onMessage.listen(_handleForegroundMessage);
     FirebaseMessaging.onMessageOpenedApp.listen(_handleOpenedMessage);
@@ -68,7 +71,7 @@ class FcmService {
   Future<String?> getToken() async {
     if (!_initialized || _messaging == null) return null;
     try {
-      return await _messaging!.getToken();
+      return await _messaging!.getToken().timeout(const Duration(seconds: 3));
     } catch (e) {
       AppLogger.w('Failed to get FCM token: $e');
       return null;

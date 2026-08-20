@@ -35,17 +35,10 @@ class ApiClient {
     throw NetworkException(EnvironmentConfig.phoneUnreachableMessage);
   }
 
-  Future<Map<String, dynamic>> post(
-    String path,
-    Map<String, dynamic> body,
-  ) async {
+  Future<Map<String, dynamic>> get(String path) async {
     Future<http.Response> send() {
       return _httpClient
-          .post(
-            _uri(path),
-            headers: const {'Content-Type': 'application/json'},
-            body: jsonEncode(MongoHttpCodec.encode(body)),
-          )
+          .get(_uri(path))
           .timeout(AppConstants.requestTimeout);
     }
 
@@ -83,16 +76,69 @@ class ApiClient {
     return payload;
   }
 
-  bool _isTransportFailure(Object error) {
-    if (error is TimeoutException || error is http.ClientException) {
-      return true;
+  Future<Map<String, dynamic>> post(
+    String path,
+    Map<String, dynamic> body, {
+    Duration? timeout,
+  }) async {
+    final effectiveTimeout = timeout ?? AppConstants.requestTimeout;
+
+    Future<http.Response> send() {
+      return _httpClient
+          .post(
+            _uri(path),
+            headers: const {'Content-Type': 'application/json'},
+            body: jsonEncode(MongoHttpCodec.encode(body)),
+          )
+          .timeout(effectiveTimeout);
     }
+
+    http.Response response;
+    try {
+      response = await send();
+    } catch (error) {
+      // A TimeoutException means the server IS reachable but the request took
+      // too long — rethrow directly so the caller sees a meaningful error
+      // (not "Cannot reach the server").
+      if (error is TimeoutException) rethrow;
+      if (!_isTransportFailure(error)) rethrow;
+      await EnvironmentConfig.refreshReachableApiUrl();
+      try {
+        response = await send();
+      } catch (retryError) {
+        if (retryError is TimeoutException) rethrow;
+        throw NetworkException(EnvironmentConfig.phoneUnreachableMessage);
+      }
+    }
+
+    Map<String, dynamic> payload;
+    try {
+      payload = Map<String, dynamic>.from(
+        MongoHttpCodec.decode(jsonDecode(response.body)) as Map,
+      );
+    } catch (_) {
+      throw NetworkException(
+        'Invalid API response (HTTP ${response.statusCode}).',
+      );
+    }
+
+    if (response.statusCode >= 400) {
+      throw NetworkException(
+        payload['error']?.toString() ??
+            'API request failed (HTTP ${response.statusCode}).',
+      );
+    }
+
+    return payload;
+  }
+
+  bool _isTransportFailure(Object error) {
+    if (error is http.ClientException) return true;
     final text = error.toString().toLowerCase();
     return text.contains('socket') ||
         text.contains('connection refused') ||
         text.contains('connection failed') ||
         text.contains('failed host lookup') ||
-        text.contains('network is unreachable') ||
-        text.contains('timed out');
+        text.contains('network is unreachable');
   }
 }

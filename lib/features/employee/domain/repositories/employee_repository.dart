@@ -57,4 +57,6 @@ abstract class EmployeeRepository {
   Future<void> markNotificationRead(String notificationId);
 
   Future<int> getUnreadCount(String employeeId);
+
+  Future<String?> getFullName(String employeeId);
 }

@@ -34,6 +34,7 @@ class _LandOwnerProfilePageState extends ConsumerState<LandOwnerProfilePage> {
   bool _initialized = false;
   bool _payoutInitialized = false;
   bool _saving = false;
+  bool _payoutListenerRegistered = false;
 
   @override
   void initState() {
@@ -136,7 +137,16 @@ class _LandOwnerProfilePageState extends ConsumerState<LandOwnerProfilePage> {
     final auth = ref.watch(authStateProvider);
     final ownerId = auth.session?.userId ?? '';
     final profileAsync = ref.watch(landOwnerProfileProvider(ownerId));
-    ref.watch(landOwnerPayoutProvider(ownerId)).whenData(_fillPayout);
+
+    // Register payout listener once — avoids side-effects in build().
+    if (!_payoutListenerRegistered && ownerId.isNotEmpty) {
+      _payoutListenerRegistered = true;
+      ref.listenManual(
+        landOwnerPayoutProvider(ownerId),
+        (_, next) => next.whenData(_fillPayout),
+        fireImmediately: true,
+      );
+    }
 
     return Scaffold(
       appBar: AppBar(title: const Text('Profile')),

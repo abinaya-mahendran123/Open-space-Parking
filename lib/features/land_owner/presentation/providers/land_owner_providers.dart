@@ -24,11 +24,13 @@ final landOwnerNotificationRepositoryProvider =
 
 final requestHistoryProvider =
     FutureProvider.family<List<LandOwnerRequest>, String>((ref, ownerId) async {
+  ref.keepAlive();
   return ref.read(landOwnerRepositoryProvider).getRequestHistory(ownerId);
 });
 
 final landOwnerProfileProvider =
     FutureProvider.family<OwnerDetails?, String>((ref, ownerId) async {
+  ref.keepAlive();
   return ref.read(landOwnerRepositoryProvider).getOwnerProfile(ownerId);
 });
 
@@ -44,6 +46,7 @@ final landOwnerNotificationsProvider =
 
 final unreadNotificationCountProvider =
     FutureProvider.family<int, String>((ref, ownerId) async {
+  ref.keepAlive();
   return ref.read(notificationRepositoryProvider).getUnreadCount(
         recipientId: ownerId,
         recipientType: NotificationRecipientType.landOwner,

@@ -9,47 +9,53 @@ import 'package:open_space_parking/core/widgets/errors/app_error_widget.dart';
 import 'package:open_space_parking/core/widgets/loading/app_loading_widget.dart';
 import 'package:open_space_parking/features/authentication/presentation/providers/auth_state_provider.dart';
 import 'package:open_space_parking/features/employee/presentation/providers/employee_providers.dart';
+import 'package:open_space_parking/features/employee/presentation/widgets/employee_sub_page_frame.dart';
 import 'package:open_space_parking/features/land_owner/domain/entities/land_owner_request.dart';
 
 class EmployeeAssignedPage extends ConsumerWidget {
   const EmployeeAssignedPage({super.key});
 
+  static final _dateFormat = DateFormat('dd MMM yyyy');
+
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final employeeId = ref.watch(authStateProvider).session?.userId ?? '';
     final projectsAsync = ref.watch(assignedProjectsProvider(employeeId));
-    final dateFormat = DateFormat('dd MMM yyyy');
 
-    return projectsAsync.when(
-      loading: () => const AppLoadingWidget(message: 'Loading assigned projects...'),
-      error: (_, __) => AppErrorWidget(
-        message: 'Failed to load assigned projects',
-        onRetry: () => ref.invalidate(assignedProjectsProvider(employeeId)),
+    return EmployeeSubPageFrame(
+      title: 'Assigned Projects',
+      child: projectsAsync.when(
+        loading: () =>
+            const AppLoadingWidget(message: 'Loading assigned projects...'),
+        error: (_, __) => AppErrorWidget(
+          message: 'Failed to load assigned projects',
+          onRetry: () => ref.invalidate(assignedProjectsProvider(employeeId)),
+        ),
+        data: (projects) {
+          if (projects.isEmpty) {
+            return const Center(child: Text('No assigned projects yet.'));
+          }
+
+          return RefreshIndicator(
+            onRefresh: () async =>
+                ref.invalidate(assignedProjectsProvider(employeeId)),
+            child: ListView.builder(
+              padding: const EdgeInsets.all(16),
+              itemCount: projects.length,
+              itemBuilder: (context, index) {
+                final project = projects[index];
+                return _ProjectCard(
+                  project: project,
+                  dateLabel: _dateFormat.format(project.submittedAt.toLocal()),
+                  onTap: () => context.push(
+                    RoutePaths.employeeTicketDetail(project.ticketId),
+                  ),
+                );
+              },
+            ),
+          );
+        },
       ),
-      data: (projects) {
-        if (projects.isEmpty) {
-          return const Center(child: Text('No assigned projects yet.'));
-        }
-
-        return RefreshIndicator(
-          onRefresh: () async =>
-              ref.invalidate(assignedProjectsProvider(employeeId)),
-          child: ListView.builder(
-            padding: const EdgeInsets.all(16),
-            itemCount: projects.length,
-            itemBuilder: (context, index) {
-              final project = projects[index];
-              return _ProjectCard(
-                project: project,
-                dateLabel: dateFormat.format(project.submittedAt.toLocal()),
-                onTap: () => context.push(
-                  RoutePaths.employeeTicketDetail(project.ticketId),
-                ),
-              );
-            },
-          ),
-        );
-      },
     );
   }
 }

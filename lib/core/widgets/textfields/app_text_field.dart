@@ -8,9 +8,11 @@ class AppTextField extends StatelessWidget {
     required this.label,
     this.hint,
     this.obscureText = false,
+    this.readOnly = false,
     this.keyboardType,
     this.validator,
     this.prefixIcon,
+    this.prefixText,
     this.suffixIcon,
     this.maxLines = 1,
     this.textInputAction,
@@ -24,9 +26,11 @@ class AppTextField extends StatelessWidget {
   final String label;
   final String? hint;
   final bool obscureText;
+  final bool readOnly;
   final TextInputType? keyboardType;
   final String? Function(String?)? validator;
   final IconData? prefixIcon;
+  final String? prefixText;
   final Widget? suffixIcon;
   final int maxLines;
   final TextInputAction? textInputAction;
@@ -40,6 +44,7 @@ class AppTextField extends StatelessWidget {
     return TextFormField(
       controller: controller,
       obscureText: obscureText,
+      readOnly: readOnly,
       keyboardType: keyboardType,
       validator: validator,
       maxLines: maxLines,
@@ -52,6 +57,7 @@ class AppTextField extends StatelessWidget {
         labelText: label,
         hintText: hint,
         prefixIcon: prefixIcon != null ? Icon(prefixIcon) : null,
+        prefixText: prefixText,
         suffixIcon: suffixIcon,
       ),
     );

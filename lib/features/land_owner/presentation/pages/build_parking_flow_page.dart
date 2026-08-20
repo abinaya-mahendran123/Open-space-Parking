@@ -8,6 +8,7 @@ import 'package:open_space_parking/core/routes/route_paths.dart';
 import 'package:open_space_parking/core/widgets/buttons/primary_button.dart';
 import 'package:open_space_parking/features/authentication/presentation/providers/auth_state_provider.dart';
 import 'package:open_space_parking/core/utils/profile_prefill.dart';
+import 'package:open_space_parking/features/land_owner/domain/entities/owner_details.dart';
 import 'package:open_space_parking/features/land_owner/domain/entities/parking_preferences.dart';
 import 'package:open_space_parking/features/land_owner/domain/entities/parking_type.dart';
 import 'package:open_space_parking/features/land_owner/domain/entities/request_priority.dart';
@@ -15,8 +16,8 @@ import 'package:open_space_parking/features/land_owner/presentation/providers/la
 import 'package:open_space_parking/features/notification/domain/entities/notification_recipient_type.dart';
 import 'package:open_space_parking/features/notification/presentation/providers/notification_providers.dart';
 import 'package:open_space_parking/features/land_owner/presentation/widgets/land_details_form.dart';
+import 'package:open_space_parking/features/land_owner/presentation/widgets/government_id_owner_details_form.dart';
 import 'package:open_space_parking/features/land_owner/presentation/widgets/land_owner_step_scaffold.dart';
-import 'package:open_space_parking/features/land_owner/presentation/widgets/owner_details_form.dart';
 import 'package:open_space_parking/features/land_owner/presentation/widgets/parking_type_carousel.dart';
 import 'package:open_space_parking/features/land_owner/presentation/widgets/upload_documents_form.dart';
 
@@ -28,7 +29,7 @@ class BuildParkingFlowPage extends ConsumerStatefulWidget {
 }
 
 class _BuildParkingFlowPageState extends ConsumerState<BuildParkingFlowPage> {
-  final _ownerFormKey = GlobalKey<OwnerDetailsFormState>();
+  final _ownerFormKey = GlobalKey<GovernmentIdOwnerDetailsFormState>();
   final _landFormKey = GlobalKey<LandDetailsFormState>();
   final _docsFormKey = GlobalKey<UploadDocumentsFormState>();
   final _carsController = TextEditingController(text: '1');
@@ -55,18 +56,23 @@ class _BuildParkingFlowPageState extends ConsumerState<BuildParkingFlowPage> {
     final form = ref.read(buildParkingFormProvider);
     if (form.ownerDetails != null) return;
 
-    final profile = await ref.read(landOwnerProfileProvider(ownerId).future);
-    final session = ref.read(authStateProvider).session;
-    final merged = ProfilePrefill.mergeOwnerDetails(
-      saved: profile,
-      accountDisplayName: session?.displayName,
-      accountEmail: session?.email,
-      session: session,
-    );
-
-    if (!ProfilePrefill.hasAnyOwnerDetails(merged)) return;
-    if (!mounted) return;
-    ref.read(buildParkingFormProvider.notifier).setOwnerDetails(merged);
+    try {
+      final profile = await ref
+          .read(landOwnerProfileProvider(ownerId).future)
+          .timeout(const Duration(seconds: 10));
+      if (!mounted) return;
+      final session = ref.read(authStateProvider).session;
+      final merged = ProfilePrefill.mergeOwnerDetails(
+        saved: profile,
+        accountDisplayName: session?.displayName,
+        accountEmail: session?.email,
+        session: session,
+      );
+      if (!ProfilePrefill.hasAnyOwnerDetails(merged)) return;
+      ref.read(buildParkingFormProvider.notifier).setOwnerDetails(merged);
+    } catch (_) {
+      // Profile seed is best-effort — user can fill manually.
+    }
   }
 
   @override
@@ -74,6 +80,17 @@ class _BuildParkingFlowPageState extends ConsumerState<BuildParkingFlowPage> {
     _carsController.dispose();
     _rateController.dispose();
     super.dispose();
+  }
+
+  void _saveOwnerDetails(OwnerDetails details) {
+    final notifier = ref.read(buildParkingFormProvider.notifier);
+    notifier.setOwnerDetails(details);
+    if (details.governmentIdFrontPath != null) {
+      final current = ref.read(buildParkingFormProvider).documents;
+      notifier.setDocuments(
+        current.copyWith(governmentIdPath: details.governmentIdFrontPath),
+      );
+    }
   }
 
   Future<void> _submit() async {
@@ -199,10 +216,12 @@ class _BuildParkingFlowPageState extends ConsumerState<BuildParkingFlowPage> {
   Widget _buildStepContent(BuildParkingFormState form) {
     switch (form.currentStep) {
       case 0:
-        return OwnerDetailsForm(
+        return GovernmentIdOwnerDetailsForm(
           key: _ownerFormKey,
           initial: form.ownerDetails,
-          onSave: ref.read(buildParkingFormProvider.notifier).setOwnerDetails,
+          ownerId: ref.watch(authStateProvider).session?.userId ?? '',
+          accountEmail: ref.watch(authStateProvider).session?.email,
+          onSave: _saveOwnerDetails,
         );
       case 1:
         return UploadDocumentsForm(
@@ -286,7 +305,13 @@ class _BuildParkingFlowPageState extends ConsumerState<BuildParkingFlowPage> {
             const Text('Review your request before submitting to admin.'),
             const SizedBox(height: 16),
             _ReviewTile('Owner', form.ownerDetails?.fullName ?? '-'),
-            _ReviewTile('Email', form.ownerDetails?.email ?? '-'),
+            _ReviewTile('Phone', form.ownerDetails?.phone ?? '-'),
+            _ReviewTile(
+              'Government ID',
+              form.ownerDetails?.governmentIdType?.label ??
+                  form.ownerDetails?.governmentIdNumber ??
+                  '-',
+            ),
             _ReviewTile('Area', '${form.landDetails?.areaSqFt ?? 0} sq ft'),
             _ReviewTile('Priority', form.priority.label),
             _ReviewTile('Parking Type', form.parkingType.label),

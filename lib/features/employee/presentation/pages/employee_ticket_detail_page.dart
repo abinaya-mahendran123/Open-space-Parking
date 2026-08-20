@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
 import 'package:url_launcher/url_launcher.dart';
@@ -13,6 +14,7 @@ import 'package:open_space_parking/core/widgets/loading/app_loading_widget.dart'
 import 'package:open_space_parking/core/widgets/textfields/app_text_field.dart';
 import 'package:open_space_parking/features/authentication/presentation/providers/auth_state_provider.dart';
 import 'package:open_space_parking/features/employee/presentation/providers/employee_providers.dart';
+import 'package:open_space_parking/features/land_owner/domain/entities/land_details.dart';
 import 'package:open_space_parking/features/land_owner/domain/entities/land_owner_request.dart';
 import 'package:open_space_parking/features/land_owner/domain/entities/request_status.dart';
 
@@ -28,6 +30,7 @@ class EmployeeTicketDetailPage extends ConsumerStatefulWidget {
 
 class _EmployeeTicketDetailPageState
     extends ConsumerState<EmployeeTicketDetailPage> {
+  static final _dateFormat = DateFormat('dd MMM yyyy, hh:mm a');
   final _navNotesController = TextEditingController();
   final _quoteAmountController = TextEditingController();
   final _materialsController = TextEditingController();
@@ -68,7 +71,6 @@ class _EmployeeTicketDetailPageState
     final quotationAsync = ref.watch(ticketQuotationProvider(widget.ticketId));
     final progressAsync = ref.watch(progressHistoryProvider(widget.ticketId));
     final isLoading = ref.watch(employeeLoadingProvider);
-    final dateFormat = DateFormat('dd MMM yyyy, hh:mm a');
 
     return Scaffold(
       appBar: AppBar(title: Text(widget.ticketId)),
@@ -99,7 +101,7 @@ class _EmployeeTicketDetailPageState
                   _Row('Progress', '${ticket.constructionProgress}%'),
                   _Row(
                     'Submitted',
-                    dateFormat.format(ticket.submittedAt.toLocal()),
+                    _dateFormat.format(ticket.submittedAt.toLocal()),
                   ),
                 ],
               ),
@@ -110,30 +112,18 @@ class _EmployeeTicketDetailPageState
                   _Row('Email', ticket.ownerDetails.email),
                   _Row('Phone', ticket.ownerDetails.phone),
                   _Row('Address', ticket.ownerDetails.address),
-                  const SizedBox(height: 8),
-                  OutlinedButton.icon(
-                    onPressed: () => _openMaps(
-                      ticket.landDetails.gpsLatitude,
-                      ticket.landDetails.gpsLongitude,
-                    ),
-                    icon: const Icon(Icons.navigation),
-                    label: const Text('Open Navigation (GPS)'),
-                  ),
                 ],
               ),
+              _LandLocationCard(landDetails: ticket.landDetails),
               _Section(
                 title: 'Land Details',
                 children: [
-                  _Row(
-                    'GPS',
-                    '${ticket.landDetails.gpsLatitude}, ${ticket.landDetails.gpsLongitude}',
-                  ),
                   _Row('Area', '${ticket.landDetails.areaSqFt} sq ft'),
-                  _Row('Road Access', ticket.landDetails.roadAccess ? 'Y' : 'N'),
-                  _Row('Drainage', ticket.landDetails.drainage ? 'Y' : 'N'),
-                  _Row('Flood', ticket.landDetails.flood ? 'Y' : 'N'),
-                  _Row('Boundary', ticket.landDetails.boundary ? 'Y' : 'N'),
-                  _Row('CCTV', ticket.landDetails.cctv ? 'Y' : 'N'),
+                  _Row('Road Access', ticket.landDetails.roadAccess ? 'Yes' : 'No'),
+                  _Row('Drainage', ticket.landDetails.drainage ? 'Yes' : 'No'),
+                  _Row('Flood Risk', ticket.landDetails.flood ? 'Yes' : 'No'),
+                  _Row('Boundary', ticket.landDetails.boundary ? 'Yes' : 'No'),
+                  _Row('CCTV', ticket.landDetails.cctv ? 'Yes' : 'No'),
                 ],
               ),
               _Section(
@@ -288,7 +278,7 @@ class _EmployeeTicketDetailPageState
                                 leading: CircleAvatar(child: Text('${e.progressPercent}')),
                                 title: Text(e.notes),
                                 subtitle: Text(
-                                  dateFormat.format(e.createdAt.toLocal()),
+                                  _dateFormat.format(e.createdAt.toLocal()),
                                 ),
                               ),
                             )
@@ -304,16 +294,6 @@ class _EmployeeTicketDetailPageState
         },
       ),
     );
-  }
-
-  Future<void> _openMaps(double lat, double lng) async {
-    final uri = Uri.parse(
-      'https://www.google.com/maps/dir/?api=1&destination=$lat,$lng',
-    );
-    final launched = await launchUrl(uri, mode: LaunchMode.externalApplication);
-    if (!launched && mounted) {
-      ref.read(snackbarServiceProvider).showError('Could not open maps.');
-    }
   }
 
   Future<void> _saveNavigation(LandOwnerRequest ticket) async {
@@ -510,6 +490,142 @@ class _Row extends StatelessWidget {
           ),
           Expanded(child: Text(value)),
         ],
+      ),
+    );
+  }
+}
+
+class _LandLocationCard extends StatelessWidget {
+  const _LandLocationCard({required this.landDetails});
+
+  final LandDetails landDetails;
+
+  Future<void> _openMaps(BuildContext context) async {
+    final lat = landDetails.gpsLatitude;
+    final lng = landDetails.gpsLongitude;
+    final uri = Uri.parse(
+        'https://www.google.com/maps/search/?api=1&query=$lat,$lng');
+    if (!await launchUrl(uri, mode: LaunchMode.externalApplication)) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Could not open maps.')),
+        );
+      }
+    }
+  }
+
+  void _copyCoords(BuildContext context) {
+    final lat = landDetails.gpsLatitude;
+    final lng = landDetails.gpsLongitude;
+    Clipboard.setData(ClipboardData(text: '$lat, $lng'));
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('Coordinates copied to clipboard.')),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
+    final lat = landDetails.gpsLatitude;
+    final lng = landDetails.gpsLongitude;
+    final hasLocation = lat != 0 || lng != 0;
+    final locationName = landDetails.landAddress;
+
+    return Card(
+      margin: const EdgeInsets.only(bottom: 12),
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Icon(Icons.location_on, color: colorScheme.primary, size: 20),
+                const SizedBox(width: 8),
+                Text(
+                  'Land Location',
+                  style: Theme.of(context)
+                      .textTheme
+                      .titleSmall
+                      ?.copyWith(fontWeight: FontWeight.w700),
+                ),
+              ],
+            ),
+            const SizedBox(height: 12),
+            if (locationName != null && locationName.isNotEmpty) ...[
+              Text(
+                'Area / Address',
+                style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                      color: colorScheme.onSurfaceVariant,
+                    ),
+              ),
+              const SizedBox(height: 4),
+              Text(
+                locationName,
+                style: Theme.of(context)
+                    .textTheme
+                    .bodyMedium
+                    ?.copyWith(fontWeight: FontWeight.w500),
+              ),
+              const SizedBox(height: 12),
+            ],
+            if (hasLocation) ...[
+              Text(
+                'GPS Coordinates',
+                style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                      color: colorScheme.onSurfaceVariant,
+                    ),
+              ),
+              const SizedBox(height: 4),
+              Row(
+                children: [
+                  Expanded(
+                    child: Text(
+                      '${lat.toStringAsFixed(6)}, ${lng.toStringAsFixed(6)}',
+                      style: Theme.of(context)
+                          .textTheme
+                          .bodyMedium
+                          ?.copyWith(fontFamily: 'monospace'),
+                    ),
+                  ),
+                  IconButton(
+                    icon: const Icon(Icons.copy, size: 18),
+                    tooltip: 'Copy coordinates',
+                    visualDensity: VisualDensity.compact,
+                    onPressed: () => _copyCoords(context),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 10),
+              Row(
+                children: [
+                  Expanded(
+                    child: OutlinedButton.icon(
+                      onPressed: () => _openMaps(context),
+                      icon: const Icon(Icons.open_in_new, size: 16),
+                      label: const Text('Open in Google Maps'),
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: FilledButton.icon(
+                      onPressed: () => _openMaps(context),
+                      icon: const Icon(Icons.navigation, size: 16),
+                      label: const Text('Navigate'),
+                    ),
+                  ),
+                ],
+              ),
+            ] else
+              Text(
+                'Location not set',
+                style: Theme.of(context)
+                    .textTheme
+                    .bodySmall
+                    ?.copyWith(color: colorScheme.error),
+              ),
+          ],
+        ),
       ),
     );
   }

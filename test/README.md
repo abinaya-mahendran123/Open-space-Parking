@@ -20,9 +20,9 @@ flutter test test/authentication
 
 | Directory | Coverage |
 |-----------|----------|
-| `test/unit/` | Domain entities, validators, templates, session service |
-| `test/repository/` | Auth, notification, WhatsApp repositories/services |
-| `test/provider/` | Riverpod auth, notification, WhatsApp providers |
+| `test/unit/` | Domain entities, validators, session service |
+| `test/repository/` | Auth, notification repositories/services |
+| `test/provider/` | Riverpod auth, notification providers |
 | `test/widget/` | PrimaryButton, AppErrorWidget, AppStatCard, LoginPage |
 | `test/authentication/` | Auth flow integration (login, register, logout, session restore) |
 | `test/helpers/` | Mocks (mocktail), fixtures, pump utilities |

@@ -2,10 +2,6 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:mocktail/mocktail.dart';
 import 'package:open_space_parking/core/services/session_service.dart';
-import 'package:open_space_parking/core/whatsapp/data/services/whatsapp_service.dart';
-import 'package:open_space_parking/core/whatsapp/domain/entities/whatsapp_message.dart';
-import 'package:open_space_parking/core/whatsapp/domain/entities/whatsapp_provider_type.dart';
-import 'package:open_space_parking/core/whatsapp/presentation/providers/whatsapp_providers.dart';
 import 'package:open_space_parking/features/authentication/domain/entities/user_role.dart';
 import 'package:open_space_parking/features/authentication/presentation/providers/auth_state_provider.dart';
 import 'package:open_space_parking/features/notification/domain/entities/app_notification.dart';
@@ -15,8 +11,6 @@ import 'package:open_space_parking/features/notification/presentation/providers/
 import '../helpers/auth_fixtures.dart';
 import '../helpers/mocks.dart';
 import '../helpers/test_helpers.dart';
-
-class MockWhatsAppService extends Mock implements WhatsAppService {}
 
 void main() {
   setUpAll(() async {
@@ -186,51 +180,6 @@ void main() {
       );
 
       expect(result, notifications);
-    });
-  });
-
-  group('WhatsAppSendController', () {
-    late MockWhatsAppService whatsAppService;
-    late ProviderContainer container;
-
-    setUp(() {
-      whatsAppService = MockWhatsAppService();
-      container = ProviderContainer(
-        overrides: [
-          whatsAppServiceProvider.overrideWithValue(whatsAppService),
-        ],
-      );
-    });
-
-    tearDown(() => container.dispose());
-
-    test('sendEmployeeAssignment updates state with result', () async {
-      when(
-        () => whatsAppService.sendEmployeeAssignment(
-          employeePhone: any(named: 'employeePhone'),
-          employeeName: any(named: 'employeeName'),
-          ticketId: any(named: 'ticketId'),
-          location: any(named: 'location'),
-        ),
-      ).thenAnswer(
-        (_) async => WhatsAppSendResult.simulated(
-          provider: WhatsAppProviderType.none,
-        ),
-      );
-
-      final controller =
-          container.read(whatsAppSendControllerProvider.notifier);
-      final result = await controller.sendEmployeeAssignment(
-        employeePhone: '+911234567890',
-        employeeName: 'Alex',
-        ticketId: 'OSP-1',
-      );
-
-      expect(result?.success, isTrue);
-      expect(
-        container.read(whatsAppSendControllerProvider).value?.success,
-        isTrue,
-      );
     });
   });
 }

@@ -7,6 +7,8 @@ import 'package:intl/intl.dart';
 class RequestHistoryCard extends StatelessWidget {
   const RequestHistoryCard({super.key, required this.request});
 
+  static final _dateFormat = DateFormat('dd MMM yyyy, hh:mm a');
+
   final LandOwnerRequest request;
 
   Color _statusColor(RequestStatus status) {
@@ -28,8 +30,6 @@ class RequestHistoryCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final dateFormat = DateFormat('dd MMM yyyy, hh:mm a');
-
     return Card(
       margin: const EdgeInsets.only(bottom: 12),
       child: Padding(
@@ -63,7 +63,7 @@ class RequestHistoryCard extends StatelessWidget {
             ],
             const SizedBox(height: 8),
             Text(
-              dateFormat.format(request.submittedAt.toLocal()),
+              _dateFormat.format(request.submittedAt.toLocal()),
               style: Theme.of(context).textTheme.bodySmall,
             ),
           ],

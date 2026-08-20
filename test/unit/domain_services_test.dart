@@ -1,6 +1,4 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:open_space_parking/core/whatsapp/data/templates/whatsapp_templates.dart';
-import 'package:open_space_parking/core/whatsapp/domain/entities/whatsapp_template_id.dart';
 import 'package:open_space_parking/features/land_owner/domain/entities/land_owner_documents.dart';
 
 void main() {
@@ -55,44 +53,6 @@ void main() {
 
       final restored = LandOwnerDocuments.fromJson(docs.toJson());
       expect(restored, equals(docs));
-    });
-  });
-
-  group('WhatsAppTemplates', () {
-    test('employeeAssignment renders variables', () {
-      final message = WhatsAppTemplates.employeeAssignment.render({
-        'employeeName': 'Alex',
-        'ticketId': 'OSP-001',
-        'location': 'Chennai',
-      });
-
-      expect(message, contains('Alex'));
-      expect(message, contains('OSP-001'));
-      expect(message, contains('Chennai'));
-      expect(message, isNot(contains('{{')));
-    });
-
-    test('ownerAssignment renders variables', () {
-      final message = WhatsAppTemplates.ownerAssignment.render({
-        'ownerName': 'Priya',
-        'ticketId': 'OSP-002',
-        'employeeName': 'Field Team',
-      });
-
-      expect(message, contains('Priya'));
-      expect(message, contains('Field Team'));
-    });
-
-    test('resolve returns template for each id', () {
-      for (final id in WhatsAppTemplateId.values) {
-        final template = WhatsAppTemplates.resolve(id);
-        expect(template.id, id);
-        expect(template.body, isNotEmpty);
-      }
-    });
-
-    test('all exposes every template', () {
-      expect(WhatsAppTemplates.all.length, WhatsAppTemplateId.values.length);
     });
   });
 }
