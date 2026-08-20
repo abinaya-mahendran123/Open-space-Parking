@@ -84,11 +84,6 @@ class _SecurityScanPageState extends ConsumerState<SecurityScanPage> {
       _action = null;
     });
   }
-      _scanning = false;
-      _result = null;
-      _action = null;
-    });
-  }
 
   Future<void> _processCode(String raw) async {
     final code = raw.trim();

@@ -306,9 +306,13 @@ class AuthStateNotifier extends StateNotifier<AuthState> {
   }
 
   Future<void> logout() async {
-    await _sessionService.clearSession();
-    _authTokenProvider.clear();
+    // Clear auth state first so GoRouter cannot bounce security users
+    // back to the gate page while session storage is still clearing.
     state = const AuthState.unauthenticated();
+    _authTokenProvider.clear();
+    try {
+      await _sessionService.clearSession().timeout(const Duration(seconds: 2));
+    } catch (_) {}
 
     // Clear Google/Firebase in the background so the UI never blocks on sign-out.
     Future<void>(() async {

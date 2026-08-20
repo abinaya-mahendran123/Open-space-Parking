@@ -77,6 +77,22 @@ class _AuthPageState extends ConsumerState<AuthPage> {
   }
 
   @override
+  void initState() {
+    super.initState();
+    // After security/employee logout, clear leftover phone-step state so
+    // the welcome screen shows instead of the previous password form.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      if (ref.read(authStateProvider).status == AuthStatus.unauthenticated) {
+        _resetPhoneFlow();
+        if (_subview != _AuthSubview.picker) {
+          setState(() => _subview = _AuthSubview.picker);
+        }
+      }
+    });
+  }
+
+  @override
   void dispose() {
     _resendCooldownTimer?.cancel();
     _nameController.dispose();
