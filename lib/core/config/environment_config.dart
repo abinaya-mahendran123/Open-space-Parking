@@ -29,7 +29,7 @@ class EnvironmentConfig {
     );
     const hostLanIp = String.fromEnvironment(
       'HOST_LAN_IP',
-      defaultValue: '192.168.88.10',
+      defaultValue: '192.168.88.3',
     );
 
     _configuredApiUrl = configuredApiUrl;

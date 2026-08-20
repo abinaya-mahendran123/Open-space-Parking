@@ -27,8 +27,10 @@ class AppConstants {
   static const String documentsCollection = 'documents';
   static const String notificationsCollection = 'notifications';
 
-  /// Driver pays the full bill; 10% stays on the platform (media) Razorpay
+  /// Driver pays the full bill; 10% stays on the platform (company) Razorpay
   /// account and 90% is settled to the land owner payout account.
+  /// The company account ID is configured via RAZORPAY_COMPANY_ACCOUNT_ID
+  /// in backend/.env (not hardcoded here).
   static const int platformCommissionPercent = 10;
   static const String platformPayoutAccountName =
       'Media account (Open Space Parking)';

@@ -2,7 +2,19 @@
   "version": "2.0.0",
   "tasks": [
     {
+      "label": "Prepare Flutter Build",
+      "type": "shell",
+      "command": "powershell.exe -NoProfile -ExecutionPolicy Bypass -File \"${workspaceFolder}\\scripts\\prepare-flutter-build.ps1\"",
+      "problemMatcher": [],
+      "presentation": {
+        "reveal": "silent",
+        "panel": "shared",
+        "clear": true
+      }
+    },
+    {
       "label": "Prepare Android API",
+      "dependsOn": ["Prepare Flutter Build"],
       "type": "shell",
       "command": "powershell.exe -NoProfile -ExecutionPolicy Bypass -File \"${workspaceFolder}\\scripts\\prepare-android-api.ps1\"",
       "problemMatcher": [],
