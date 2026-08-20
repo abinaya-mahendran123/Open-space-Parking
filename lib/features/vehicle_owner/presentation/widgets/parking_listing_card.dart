@@ -12,10 +12,12 @@ class ParkingListingCard extends StatelessWidget {
     super.key,
     required this.listing,
     required this.onTap,
+    this.onNavigate,
   });
 
   final ParkingListing listing;
   final VoidCallback onTap;
+  final VoidCallback? onNavigate;
 
   static Color _statusColor(ParkingAvailabilityLevel level) {
     switch (level) {
@@ -25,17 +27,6 @@ class ParkingListingCard extends StatelessWidget {
         return const Color(0xFFEF6C00);
       case ParkingAvailabilityLevel.none:
         return const Color(0xFFC62828);
-    }
-  }
-
-  static String _statusLabel(ParkingAvailabilityLevel level, int free) {
-    switch (level) {
-      case ParkingAvailabilityLevel.high:
-        return '$free seats available';
-      case ParkingAvailabilityLevel.medium:
-        return '$free seats left';
-      case ParkingAvailabilityLevel.none:
-        return 'No seats available';
     }
   }
 
@@ -73,30 +64,45 @@ class ParkingListingCard extends StatelessWidget {
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
+                        if (listing.isBestMatch)
+                          Container(
+                            margin: const EdgeInsets.only(bottom: 8),
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 10,
+                              vertical: 4,
+                            ),
+                            decoration: BoxDecoration(
+                              color: theme.colorScheme.primaryContainer,
+                              borderRadius: BorderRadius.circular(999),
+                            ),
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Icon(
+                                  Icons.star_rounded,
+                                  size: 16,
+                                  color: theme.colorScheme.primary,
+                                ),
+                                const SizedBox(width: 4),
+                                Text(
+                                  'Best Match',
+                                  style: theme.textTheme.labelMedium?.copyWith(
+                                    color: theme.colorScheme.primary,
+                                    fontWeight: FontWeight.w700,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
                         Row(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
                             Expanded(
-                              child: Row(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Flexible(
-                                    child: Text(
-                                      listing.displayName,
-                                      style: theme.textTheme.titleMedium,
-                                      maxLines: 2,
-                                      overflow: TextOverflow.ellipsis,
-                                    ),
-                                  ),
-                                  if (listing.verifiedByEmployee) ...[
-                                    const SizedBox(width: 6),
-                                    const Icon(
-                                      Icons.verified,
-                                      size: 20,
-                                      color: Color(0xFF1B8A3E),
-                                    ),
-                                  ],
-                                ],
+                              child: Text(
+                                listing.displayName,
+                                style: theme.textTheme.titleMedium,
+                                maxLines: 2,
+                                overflow: TextOverflow.ellipsis,
                               ),
                             ),
                             if (listing.amountLabel != null)
@@ -116,59 +122,32 @@ class ParkingListingCard extends StatelessWidget {
                             color: theme.colorScheme.onSurfaceVariant,
                           ),
                         ),
-                        const SizedBox(height: 8),
-                        Container(
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 10,
-                            vertical: 6,
-                          ),
-                          decoration: BoxDecoration(
-                            color: statusColor.withValues(alpha: 0.12),
-                            borderRadius: BorderRadius.circular(8),
-                            border: Border.all(
-                              color: statusColor.withValues(alpha: 0.45),
-                            ),
-                          ),
-                          child: Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              Icon(
-                                Icons.event_seat,
-                                size: 16,
-                                color: statusColor,
-                              ),
-                              const SizedBox(width: 6),
-                              Text(
-                                _statusLabel(level, free),
-                                style: theme.textTheme.labelMedium?.copyWith(
-                                  color: statusColor,
-                                  fontWeight: FontWeight.w600,
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                        const SizedBox(height: 8),
+                        const SizedBox(height: 10),
                         Wrap(
                           spacing: 8,
-                          runSpacing: 4,
+                          runSpacing: 6,
                           children: [
-                            _InfoChip(
-                              icon: Icons.directions_car,
-                              label: '$free / ${listing.capacity} slots',
-                              color: statusColor,
-                            ),
-                            if (listing.amountLabel != null)
-                              _InfoChip(
-                                icon: Icons.currency_rupee,
-                                label: listing.amountLabel!,
-                              ),
-                            if (listing.distanceKm != null)
+                            if (listing.distanceLabel != null)
                               _InfoChip(
                                 icon: Icons.near_me,
-                                label:
-                                    '${listing.distanceKm!.toStringAsFixed(1)} km',
+                                label: listing.distanceLabel!,
                               ),
+                            _InfoChip(
+                              icon: Icons.directions_car_outlined,
+                              label: listing.compatibilityLabel,
+                              color: listing.isCompatible
+                                  ? const Color(0xFF2E7D32)
+                                  : theme.colorScheme.error,
+                            ),
+                            _InfoChip(
+                              icon: Icons.local_parking_outlined,
+                              label: '$free spaces available',
+                              color: statusColor,
+                            ),
+                            _InfoChip(
+                              icon: Icons.verified_outlined,
+                              label: listing.parkingStatusLabel,
+                            ),
                           ],
                         ),
                         if (listing.reviewCount > 0) ...[
@@ -180,6 +159,27 @@ class ParkingListingCard extends StatelessWidget {
                             reviewCount: listing.reviewCount,
                           ),
                         ],
+                        const SizedBox(height: 12),
+                        Row(
+                          children: [
+                            Expanded(
+                              child: OutlinedButton(
+                                onPressed: onTap,
+                                child: const Text('View Details'),
+                              ),
+                            ),
+                            if (onNavigate != null) ...[
+                              const SizedBox(width: 8),
+                              Expanded(
+                                child: FilledButton.icon(
+                                  onPressed: onNavigate,
+                                  icon: const Icon(Icons.navigation, size: 18),
+                                  label: const Text('Navigate'),
+                                ),
+                              ),
+                            ],
+                          ],
+                        ),
                       ],
                     ),
                   ),

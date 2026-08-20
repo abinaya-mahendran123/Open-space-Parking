@@ -7,10 +7,23 @@ const multer = require('multer');
 const { MongoClient, ObjectId } = require('mongodb');
 const { createPgDb } = require('./pg_store');
 const {
+  attachSessionToken,
+  requireAuth,
+  requireRole,
+  parseCorsOrigins,
+} = require('./auth_jwt');
+const {
+  startParkingSession,
+  scanParkingQr,
+  findBookingByQr,
+} = require('./booking_service');
+const {
   nearbyVerifiedListings,
   verifiedListingById,
   isEmployeeVerifiedListing,
+  isPublicParkingListing,
 } = require('./parking_listings');
+const { recommendNearbyParking } = require('./parking_recommendations');
 const { extractGovernmentIdDetails } = require('./government_id_ocr');
 const { handleAuthUrl, handleExchange, handleFetchDocument } = require('./digilocker');
 const { handleSendOtp, handleVerifyOtp, verifyOtpToken } = require('./otp_service');
@@ -43,7 +56,23 @@ const MONGO_URI =
   (DATABASE_URL ? '' : 'mongodb://127.0.0.1:27017/open_space_parking');
 
 const app = express();
-app.use(cors({ origin: true }));
+const corsOrigins = parseCorsOrigins();
+app.use(
+  cors(
+    corsOrigins
+      ? {
+          origin(origin, callback) {
+            if (!origin || corsOrigins.includes(origin)) {
+              callback(null, true);
+              return;
+            }
+            callback(new Error('Not allowed by CORS'));
+          },
+          credentials: true,
+        }
+      : { origin: true },
+  ),
+);
 app.use(express.json({ limit: '10mb' }));
 app.use((error, _req, res, next) => {
   if (error instanceof SyntaxError && error.status === 400 && 'body' in error) {
@@ -199,12 +228,12 @@ async function findEmployeeByPhone(phone) {
 }
 
 function employeeSessionPayload(employee) {
-  return {
+  return attachSessionToken({
     userId: asHexId(employee._id),
     email: employee.email || '',
     displayName: employee.fullName || employee.displayName || '',
     role: 'employee',
-  };
+  });
 }
 
 function sessionPayload(user) {
@@ -213,12 +242,12 @@ function sessionPayload(user) {
     role === 'vehicleOwner' ? 'vehicle_owner' :
     role === 'landOwner' ? 'land_owner' :
     role;
-  return {
+  return attachSessionToken({
     userId: asHexId(user._id),
     email: user.email,
     displayName: user.displayName || '',
     role: normalized,
-  };
+  });
 }
 
 async function authenticatePassword(email, password) {
@@ -378,6 +407,21 @@ async function ensureIndexes(database) {
         { keys: { email: 1 }, unique: true, name: 'idx_employees_email' },
       ],
     },
+    {
+      collection: 'bookings',
+      indexes: [
+        { keys: { parkingListingId: 1 }, name: 'idx_bookings_listing' },
+        { keys: { qrPayload: 1 }, name: 'idx_bookings_qr' },
+        { keys: { bookingRef: 1 }, name: 'idx_bookings_ref' },
+        { keys: { vehicleOwnerId: 1 }, name: 'idx_bookings_owner' },
+      ],
+    },
+    {
+      collection: 'notifications',
+      indexes: [
+        { keys: { recipientId: 1 }, name: 'idx_notifications_recipient' },
+      ],
+    },
   ];
 
   for (const spec of specs) {
@@ -486,6 +530,81 @@ app.post('/api/auth/app-login', async (req, res) => {
   }
 });
 
+app.post('/api/auth/register', async (req, res) => {
+  try {
+    const email = String(req.body?.email || '').trim().toLowerCase();
+    const password = String(req.body?.password || '');
+    const displayName = String(req.body?.displayName || '').trim();
+    let role = String(req.body?.role || 'vehicle_owner').trim();
+    if (role === 'vehicleOwner') role = 'vehicle_owner';
+    if (role === 'landOwner') role = 'land_owner';
+
+    if (!email || !password || !displayName) {
+      res.status(400).json({ error: 'Email, password, and display name are required.' });
+      return;
+    }
+    if (role === 'admin' || role === 'employee' || role === 'security') {
+      res.status(403).json({ error: 'This role cannot be self-registered.' });
+      return;
+    }
+    if (role !== 'vehicle_owner' && role !== 'land_owner') {
+      role = 'vehicle_owner';
+    }
+
+    const existing = await findActiveUserByEmail(email);
+    if (existing) {
+      res.status(409).json({ error: 'An account with this email already exists.' });
+      return;
+    }
+
+    const salt = generateSalt();
+    const hash = hashPassword(password, salt);
+    const now = new Date().toISOString();
+    const user = {
+      _id: new ObjectId(),
+      email,
+      displayName,
+      role,
+      passwordHash: hash,
+      passwordSalt: salt,
+      isDeleted: false,
+      createdAt: now,
+      updatedAt: now,
+    };
+    await db.collection('users').insertOne(user);
+
+    if (role === 'land_owner') {
+      await db.collection('land_owner_profiles').insertOne({
+        _id: new ObjectId(),
+        ownerId: asHexId(user._id),
+        ownerDetails: {
+          fullName: displayName,
+          phone: '',
+          email,
+          address: '',
+        },
+        createdAt: now,
+        updatedAt: now,
+        isDeleted: false,
+      });
+    } else {
+      await db.collection('vehicle_owner_profiles').insertOne({
+        _id: new ObjectId(),
+        vehicleOwnerId: asHexId(user._id),
+        fullName: displayName,
+        email,
+        createdAt: now,
+        updatedAt: now,
+        isDeleted: false,
+      });
+    }
+
+    res.json(sessionPayload(user));
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
 app.get('/api/health', (_req, res) => {
   res.json({
     ok: true,
@@ -521,15 +640,43 @@ app.post('/api/ocr/government-id', async (req, res) => {
   }
 });
 
-app.post('/api/parking/nearby', async (_req, res) => {
+async function handleParkingNearby(req, res) {
   try {
+    const query = { ...(req.query || {}), ...(req.body || {}) };
+    const latitude = Number(query.latitude);
+    const longitude = Number(query.longitude);
+    const radiusKm = Number(query.radius ?? query.radiusKm ?? 25);
+    const vehicleOwnerId = String(
+      query.vehicleOwnerId || query.vehicle_id || '',
+    ).trim();
+
+    const hasRecommendationParams =
+      Number.isFinite(latitude) &&
+      Number.isFinite(longitude) &&
+      !(latitude === 0 && longitude === 0);
+
+    if (hasRecommendationParams || vehicleOwnerId) {
+      const result = await recommendNearbyParking(db, {
+        latitude,
+        longitude,
+        radiusKm,
+        vehicleOwnerId: vehicleOwnerId || null,
+      });
+      res.json({
+        recommendations: result.recommendations,
+        vehicle: result.vehicle,
+        meta: result.meta,
+      });
+      return;
+    }
+
     if (!DATABASE_URL) {
       const docs = await db
         .collection('land_owner_requests')
         .find({ isDeleted: { $ne: true } })
         .toArray();
       res.json({
-        documents: docs.filter(isEmployeeVerifiedListing).map(serialize),
+        documents: docs.filter(isPublicParkingListing).map(serialize),
       });
       return;
     }
@@ -538,7 +685,10 @@ app.post('/api/parking/nearby', async (_req, res) => {
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
-});
+}
+
+app.get('/api/parking/nearby', handleParkingNearby);
+app.post('/api/parking/nearby', handleParkingNearby);
 
 app.post('/api/parking/listing', async (req, res) => {
   try {
@@ -553,7 +703,7 @@ app.post('/api/parking/listing', async (req, res) => {
         isDeleted: { $ne: true },
       });
       res.json({
-        document: doc && isEmployeeVerifiedListing(doc) ? serialize(doc) : null,
+        document: doc && isPublicParkingListing(doc) ? serialize(doc) : null,
       });
       return;
     }
@@ -842,7 +992,7 @@ app.post('/api/auth/google', async (req, res) => {
     const expectedAudience =
       process.env.GOOGLE_WEB_CLIENT_ID ||
       process.env.GOOGLE_SERVER_CLIENT_ID ||
-      '514956128372-a1aac5qlpe4s0i4ej0tqr6251m1uvb4k.apps.googleusercontent.com';
+      '794049298844-v8f8okbjfb4memdcjugcpqfd58tk71j0.apps.googleusercontent.com';
 
     const response = await fetch(
       `https://oauth2.googleapis.com/tokeninfo?id_token=${encodeURIComponent(idToken)}`,
@@ -994,7 +1144,7 @@ app.delete('/api/uploads/:fileName', (req, res) => {
 
 const { sendPushNotification, isConfigured: isFcmConfigured } = require('./fcm_push');
 
-app.post('/api/notifications/push', async (req, res) => {
+app.post('/api/notifications/push', requireAuth, async (req, res) => {
   try {
     const {
       recipientId,
@@ -1030,7 +1180,76 @@ app.post('/api/notifications/push', async (req, res) => {
   }
 });
 
-app.post('/api/mongo/find-one', async (req, res) => {
+app.post(
+  '/api/bookings/start-session',
+  requireAuth,
+  requireRole('vehicle_owner'),
+  async (req, res) => {
+    try {
+      const parkingListingId = String(req.body?.parkingListingId || '').trim();
+      const vehicleNumber = String(req.body?.vehicleNumber || '');
+      const vehicleModel = req.body?.vehicleModel;
+
+      if (!parkingListingId || !vehicleNumber.trim()) {
+        res.status(400).json({ error: 'parkingListingId and vehicleNumber are required.' });
+        return;
+      }
+
+      const document = await startParkingSession(db, {
+        vehicleOwnerId: req.auth.userId,
+        parkingListingId,
+        vehicleNumber,
+        vehicleModel,
+      });
+      res.json({ document: serialize(document) });
+    } catch (error) {
+      res.status(error.statusCode || 500).json({ error: error.message });
+    }
+  },
+);
+
+app.get(
+  '/api/security/booking-by-qr',
+  requireAuth,
+  requireRole('security'),
+  async (req, res) => {
+    try {
+      const qr = String(req.query?.qr || req.query?.code || '').trim();
+      if (!qr) {
+        res.status(400).json({ error: 'qr is required.' });
+        return;
+      }
+      const doc = await findBookingByQr(db, qr);
+      res.json({ document: doc ? serialize(doc) : null });
+    } catch (error) {
+      res.status(error.statusCode || 500).json({ error: error.message });
+    }
+  },
+);
+
+app.post(
+  '/api/security/scan-qr',
+  requireAuth,
+  requireRole('security'),
+  async (req, res) => {
+    try {
+      const qrPayload = String(req.body?.qrPayload || req.body?.qr || '').trim();
+      if (!qrPayload) {
+        res.status(400).json({ error: 'qrPayload is required.' });
+        return;
+      }
+      const document = await scanParkingQr(db, qrPayload);
+      res.json({ document: serialize(document) });
+    } catch (error) {
+      res.status(error.statusCode || 500).json({ error: error.message });
+    }
+  },
+);
+
+const mongoRouter = express.Router();
+mongoRouter.use(requireAuth);
+
+mongoRouter.post('/find-one', async (req, res) => {
   try {
     const { collection, selector, includeDeleted = false } = req.body;
     const filter = parseSelector(selector);
@@ -1044,7 +1263,7 @@ app.post('/api/mongo/find-one', async (req, res) => {
   }
 });
 
-app.post('/api/mongo/find-many', async (req, res) => {
+mongoRouter.post('/find-many', async (req, res) => {
   try {
     const { collection, selector, includeDeleted = false } = req.body;
     const filter = parseSelector(selector);
@@ -1058,7 +1277,7 @@ app.post('/api/mongo/find-many', async (req, res) => {
   }
 });
 
-app.post('/api/mongo/find-paginated', async (req, res) => {
+mongoRouter.post('/find-paginated', async (req, res) => {
   try {
     const { collection, query = {} } = req.body;
     const filter = buildSearchFilter(query);
@@ -1088,7 +1307,7 @@ app.post('/api/mongo/find-paginated', async (req, res) => {
   }
 });
 
-app.post('/api/mongo/count', async (req, res) => {
+mongoRouter.post('/count', async (req, res) => {
   try {
     const { collection, selector, includeDeleted = false } = req.body;
     const filter = parseSelector(selector);
@@ -1102,7 +1321,7 @@ app.post('/api/mongo/count', async (req, res) => {
   }
 });
 
-app.post('/api/mongo/insert-one', async (req, res) => {
+mongoRouter.post('/insert-one', async (req, res) => {
   try {
     const { collection, document } = req.body;
     const doc = revive(document);
@@ -1121,7 +1340,7 @@ app.post('/api/mongo/insert-one', async (req, res) => {
   }
 });
 
-app.post('/api/mongo/update-one', async (req, res) => {
+mongoRouter.post('/update-one', async (req, res) => {
   try {
     const { collection, selector, modifier } = req.body;
     const filter = parseSelector(selector);
@@ -1137,7 +1356,7 @@ app.post('/api/mongo/update-one', async (req, res) => {
   }
 });
 
-app.post('/api/mongo/update-by-id', async (req, res) => {
+mongoRouter.post('/update-by-id', async (req, res) => {
   try {
     const { collection, id, updates = {} } = req.body;
     const filter = { _id: new ObjectId(id), isDeleted: { $ne: true } };
@@ -1157,7 +1376,7 @@ app.post('/api/mongo/update-by-id', async (req, res) => {
   }
 });
 
-app.post('/api/mongo/soft-delete', async (req, res) => {
+mongoRouter.post('/soft-delete', async (req, res) => {
   try {
     const { collection, id } = req.body;
     const now = new Date().toISOString();
@@ -1180,7 +1399,7 @@ app.post('/api/mongo/soft-delete', async (req, res) => {
   }
 });
 
-app.post('/api/mongo/restore', async (req, res) => {
+mongoRouter.post('/restore', async (req, res) => {
   try {
     const { collection, id } = req.body;
     const now = new Date().toISOString();
@@ -1200,7 +1419,7 @@ app.post('/api/mongo/restore', async (req, res) => {
   }
 });
 
-app.post('/api/mongo/hard-delete', async (req, res) => {
+mongoRouter.post('/hard-delete', async (req, res) => {
   try {
     const { collection, id } = req.body;
     const result = await db
@@ -1212,7 +1431,7 @@ app.post('/api/mongo/hard-delete', async (req, res) => {
   }
 });
 
-app.post('/api/mongo/delete-one', async (req, res) => {
+mongoRouter.post('/delete-one', async (req, res) => {
   try {
     const { collection, selector } = req.body;
     const filter = parseSelector(selector);
@@ -1222,6 +1441,8 @@ app.post('/api/mongo/delete-one', async (req, res) => {
     res.status(500).json({ error: error.message });
   }
 });
+
+app.use('/api/mongo', mongoRouter);
 
 const RAZORPAY_KEY_ID = process.env.RAZORPAY_KEY_ID || '';
 const RAZORPAY_KEY_SECRET = process.env.RAZORPAY_KEY_SECRET || '';
@@ -1652,9 +1873,13 @@ async function start() {
     db = await createPgDb(DATABASE_URL);
     console.log('Database: Supabase PostgreSQL');
   } else {
-    client = new MongoClient(MONGO_URI);
+    client = new MongoClient(MONGO_URI, {
+      maxPoolSize: 20,
+      serverSelectionTimeoutMS: 5000,
+    });
     await client.connect();
     db = client.db();
+    db.pool = null;
     await ensureIndexes(db);
     console.log('Database: MongoDB');
   }

@@ -2,12 +2,13 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
-import 'package:open_space_parking/core/domain/domain_extensions.dart';
 import 'package:open_space_parking/core/common/exceptions/app_exception.dart';
 import 'package:open_space_parking/core/providers/core_providers.dart';
 import 'package:open_space_parking/core/routes/route_paths.dart';
 import 'package:open_space_parking/core/widgets/errors/app_error_widget.dart';
 import 'package:open_space_parking/core/widgets/loading/app_loading_widget.dart';
+import 'package:open_space_parking/features/maps/domain/entities/directions_request.dart';
+import 'package:open_space_parking/features/maps/domain/entities/location_permission_status.dart';
 import 'package:open_space_parking/features/maps/domain/entities/map_coordinate.dart';
 import 'package:open_space_parking/features/maps/domain/entities/map_marker_data.dart';
 import 'package:open_space_parking/features/maps/presentation/providers/maps_providers.dart';
@@ -31,6 +32,18 @@ class _ParkingSearchPageState extends ConsumerState<ParkingSearchPage> {
   final _searchController = TextEditingController();
   bool _locating = false;
   bool _showMap = true;
+  bool _requestedInitialLocation = false;
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!_requestedInitialLocation) {
+        _requestedInitialLocation = true;
+        _useMyLocation(showSuccessMessage: false);
+      }
+    });
+  }
 
   @override
   void dispose() {
@@ -38,7 +51,7 @@ class _ParkingSearchPageState extends ConsumerState<ParkingSearchPage> {
     super.dispose();
   }
 
-  Future<void> _useMyLocation() async {
+  Future<void> _useMyLocation({bool showSuccessMessage = true}) async {
     setState(() => _locating = true);
     try {
       final mapsRepo = ref.read(mapsRepositoryProvider);
@@ -70,7 +83,6 @@ class _ParkingSearchPageState extends ConsumerState<ParkingSearchPage> {
         return;
       }
 
-      // Keep filters + map in sync, then reload verified nearby listings.
       final current = ref.read(searchFiltersProvider);
       ref.read(searchFiltersProvider.notifier).state = current.copyWith(
         userLatitude: location.latitude,
@@ -79,9 +91,9 @@ class _ParkingSearchPageState extends ConsumerState<ParkingSearchPage> {
       ref.invalidate(locationPermissionProvider);
       ref.invalidate(parkingListingsProvider);
 
-      ref.read(snackbarServiceProvider).showSuccess(
-            'Location found. Showing employee-verified parking nearby.',
-          );
+      if (showSuccessMessage) {
+        ref.read(snackbarServiceProvider).showSuccess('Location found.');
+      }
     } on AppException catch (e) {
       ref.read(snackbarServiceProvider).showError(e.message);
     } catch (_) {
@@ -96,6 +108,19 @@ class _ParkingSearchPageState extends ConsumerState<ParkingSearchPage> {
   Future<void> _openParking(ParkingListing listing) async {
     if (!mounted) return;
     context.push(RoutePaths.vehicleOwnerParkingDetail(listing.id));
+  }
+
+  Future<void> _navigateTo(ParkingListing listing) async {
+    final origin = ref.read(mapSelectionProvider).currentLocation;
+    await ref.read(mapsRepositoryProvider).openNavigation(
+          DirectionsRequest(
+            destination: MapCoordinate(
+              latitude: listing.latitude,
+              longitude: listing.longitude,
+            ),
+            origin: origin,
+          ),
+        );
   }
 
   void _applySearch() {
@@ -127,14 +152,117 @@ class _ParkingSearchPageState extends ConsumerState<ParkingSearchPage> {
               longitude: listing.longitude,
             ),
             title: listing.displayName,
-            snippet: listing.amountLabel != null
-                ? '${listing.amountLabel} • ${listing.freeSlots}/${listing.capacity} slots'
-                : '${listing.freeSlots}/${listing.capacity} slots',
+            snippet: [
+              listing.distanceLabel,
+              listing.compatibilityLabel,
+              '${listing.freeSlots} spaces available',
+            ].whereType<String>().join(' • '),
             distanceKm: listing.distanceKm,
             payload: listing.id,
           ),
         )
         .toList();
+  }
+
+  Widget _buildResults(
+    BuildContext context,
+    List<ParkingListing> listings, {
+    required bool hasLocation,
+    bool isRefreshing = false,
+  }) {
+    if (listings.isEmpty) {
+      return Center(
+        child: Padding(
+          padding: const EdgeInsets.all(24),
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(
+                Icons.local_parking_outlined,
+                size: 56,
+                color: Theme.of(context).colorScheme.outline,
+              ),
+              const SizedBox(height: 16),
+              Text(
+                'No suitable parking found nearby.',
+                textAlign: TextAlign.center,
+                style: Theme.of(context).textTheme.titleMedium,
+              ),
+              const SizedBox(height: 8),
+              Text(
+                hasLocation
+                    ? "We couldn't find an approved parking space that is currently available and compatible with your vehicle.\n\nTry expanding your search area."
+                    : 'Allow location access or tap Current Location to find approved parking near you.',
+                textAlign: TextAlign.center,
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+
+    final markers = _listingMarkers(listings);
+
+    if (_showMap) {
+      return RefreshIndicator(
+        onRefresh: () async => ref.invalidate(parkingListingsProvider),
+        child: ListView(
+          padding: const EdgeInsets.symmetric(horizontal: 16),
+          children: [
+            if (isRefreshing)
+              const LinearProgressIndicator(minHeight: 2),
+            GoogleMapView(
+              height: 280,
+              markers: markers,
+              showCurrentLocation: true,
+              initialZoom: hasLocation ? 13 : 12,
+              onMarkerTap: (marker) {
+                final match =
+                    listings.where((l) => l.id == marker.payload).toList();
+                if (match.isNotEmpty) _openParking(match.first);
+              },
+            ),
+            const SizedBox(height: 16),
+            Text(
+              'Recommended for Your Vehicle',
+              style: Theme.of(context).textTheme.titleSmall,
+            ),
+            const SizedBox(height: 4),
+            Text(
+              '${listings.length} approved parking location${listings.length == 1 ? '' : 's'} found',
+              style: Theme.of(context).textTheme.bodySmall,
+            ),
+            const SizedBox(height: 8),
+            ...listings.map(
+              (listing) => ParkingListingCard(
+                listing: listing,
+                onTap: () => _openParking(listing),
+                onNavigate: () => _navigateTo(listing),
+              ),
+            ),
+          ],
+        ),
+      );
+    }
+
+    return RefreshIndicator(
+      onRefresh: () async => ref.invalidate(parkingListingsProvider),
+      child: ListView.builder(
+        padding: const EdgeInsets.symmetric(horizontal: 16),
+        itemCount: listings.length + (isRefreshing ? 1 : 0),
+        itemBuilder: (context, index) {
+          if (isRefreshing && index == 0) {
+            return const LinearProgressIndicator(minHeight: 2);
+          }
+          final listing = listings[isRefreshing ? index - 1 : index];
+          return ParkingListingCard(
+            listing: listing,
+            onTap: () => _openParking(listing),
+            onNavigate: () => _navigateTo(listing),
+          );
+        },
+      ),
+    );
   }
 
   @override
@@ -144,10 +272,15 @@ class _ParkingSearchPageState extends ConsumerState<ParkingSearchPage> {
     final mapState = ref.watch(mapSelectionProvider);
     final hasLocation =
         filters.userLatitude != null && filters.userLongitude != null;
+    final cachedListings = listingsAsync.valueOrNull;
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Nearby Parking'),
+        title: const Text('Find Nearby Parking'),
+        leading: IconButton(
+          icon: const Icon(Icons.arrow_back),
+          onPressed: () => context.go(RoutePaths.vehicleOwnerDashboard),
+        ),
         actions: [
           const VehicleOwnerLiveQrButton(),
           IconButton(
@@ -167,8 +300,21 @@ class _ParkingSearchPageState extends ConsumerState<ParkingSearchPage> {
           Padding(
             padding: const EdgeInsets.all(16),
             child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 const LocationPermissionBanner(),
+                Card(
+                  child: ListTile(
+                    leading: const Icon(Icons.my_location),
+                    title: const Text('Your Location'),
+                    subtitle: Text(
+                      hasLocation && mapState.currentLocation != null
+                          ? 'Current Location • ${mapState.currentLocation!.latitude.toStringAsFixed(4)}, ${mapState.currentLocation!.longitude.toStringAsFixed(4)}'
+                          : 'Location not available yet',
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 12),
                 SearchBar(
                   controller: _searchController,
                   hintText: 'Search by address or ticket ID',
@@ -189,7 +335,7 @@ class _ParkingSearchPageState extends ConsumerState<ParkingSearchPage> {
                   children: [
                     Expanded(
                       child: FilledButton.tonalIcon(
-                        onPressed: _locating ? null : _useMyLocation,
+                        onPressed: _locating ? null : () => _useMyLocation(),
                         icon: _locating
                             ? const SizedBox(
                                 width: 16,
@@ -214,102 +360,33 @@ class _ParkingSearchPageState extends ConsumerState<ParkingSearchPage> {
                     ),
                   ],
                 ),
-                if (hasLocation && mapState.currentLocation != null) ...[
-                  const SizedBox(height: 8),
-                  Align(
-                    alignment: Alignment.centerLeft,
-                    child: Text(
-                      'Near ${mapState.currentLocation!.latitude.toStringAsFixed(4)}, '
-                      '${mapState.currentLocation!.longitude.toStringAsFixed(4)}'
-                      '${filters.maxDistanceKm != null ? ' • within ${filters.maxDistanceKm!.toInt()} km' : ''}'
-                      ' • employee-verified only',
-                      style: Theme.of(context).textTheme.bodySmall,
-                    ),
-                  ),
-                ],
               ],
             ),
           ),
           Expanded(
             child: listingsAsync.when(
-              loading: () => const AppLoadingWidget(
-                message: 'Finding verified parking near you...',
-              ),
-              error: (_, __) => AppErrorWidget(
-                message: 'Search failed',
-                onRetry: () => ref.invalidate(parkingListingsProvider),
-              ),
-              data: (listings) {
-                if (listings.isEmpty) {
-                  return Center(
-                    child: Padding(
-                      padding: const EdgeInsets.all(24),
-                      child: Text(
-                        hasLocation
-                            ? 'No parking found near you yet. Verified sites with GPS will appear here.'
-                            : 'No parking listed yet. Verified parking with a location will show here. You can also tap Current Location to sort by distance.',
-                        textAlign: TextAlign.center,
-                      ),
-                    ),
+              loading: () {
+                if (cachedListings != null) {
+                  return _buildResults(
+                    context,
+                    cachedListings,
+                    hasLocation: hasLocation,
+                    isRefreshing: true,
                   );
                 }
-
-                final markers = _listingMarkers(listings);
-
-                if (_showMap) {
-                  return RefreshIndicator(
-                    onRefresh: () async =>
-                        ref.invalidate(parkingListingsProvider),
-                    child: ListView(
-                      padding: const EdgeInsets.symmetric(horizontal: 16),
-                      children: [
-                        GoogleMapView(
-                          height: 280,
-                          markers: markers,
-                          showCurrentLocation: true,
-                          initialZoom: hasLocation ? 13 : 12,
-                          onMarkerTap: (marker) {
-                            final match = listings
-                                .where((l) => l.id == marker.payload)
-                                .toList();
-                            if (match.isNotEmpty) {
-                              _openParking(match.first);
-                            }
-                          },
-                        ),
-                        const SizedBox(height: 16),
-                        Text(
-                          '${listings.length} verified parking space${listings.length == 1 ? '' : 's'} found',
-                          style: Theme.of(context).textTheme.titleSmall,
-                        ),
-                        const SizedBox(height: 8),
-                        ...listings.map(
-                          (listing) => ParkingListingCard(
-                            listing: listing,
-                            onTap: () => _openParking(listing),
-                          ),
-                        ),
-                      ],
-                    ),
-                  );
-                }
-
-                return RefreshIndicator(
-                  onRefresh: () async =>
-                      ref.invalidate(parkingListingsProvider),
-                  child: ListView.builder(
-                    padding: const EdgeInsets.symmetric(horizontal: 16),
-                    itemCount: listings.length,
-                    itemBuilder: (context, index) {
-                      final listing = listings[index];
-                      return ParkingListingCard(
-                        listing: listing,
-                        onTap: () => _openParking(listing),
-                      );
-                    },
-                  ),
+                return const AppLoadingWidget(
+                  message: 'Finding approved parking near you...',
                 );
               },
+              error: (_, __) => AppErrorWidget(
+                message: 'Could not load parking recommendations.',
+                onRetry: () => ref.invalidate(parkingListingsProvider),
+              ),
+              data: (listings) => _buildResults(
+                context,
+                listings,
+                hasLocation: hasLocation,
+              ),
             ),
           ),
         ],

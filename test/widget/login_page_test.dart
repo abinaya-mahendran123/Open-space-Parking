@@ -9,6 +9,7 @@ import 'package:mocktail/mocktail.dart';
 import 'package:open_space_parking/core/providers/core_providers.dart';
 
 import 'package:open_space_parking/core/services/session_service.dart';
+import 'package:open_space_parking/core/services/auth_token_provider.dart';
 
 import 'package:open_space_parking/core/services/snackbar_service.dart';
 
@@ -56,6 +57,7 @@ void main() {
             (ref) => AuthStateNotifier(
               authRepository: authRepository,
               sessionService: SessionService(secureStorage),
+              authTokenProvider: AuthTokenProvider(),
             ),
           ),
           authLoadingProvider.overrideWith((ref) => false),

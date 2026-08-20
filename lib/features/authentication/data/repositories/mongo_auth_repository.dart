@@ -240,6 +240,24 @@ class MongoAuthRepository implements AuthRepository {
       throw const AppException('This role cannot be self-registered.');
     }
 
+    final apiClient = _apiClient;
+    if (apiClient != null) {
+      try {
+        final response = await apiClient.post('/api/auth/register', {
+          'email': email.trim().toLowerCase(),
+          'password': password,
+          'displayName': displayName.trim(),
+          'role': role.value,
+        });
+        return _sessionFromApi(response, email);
+      } on NetworkException catch (e) {
+        final msg = e.message.toLowerCase();
+        if (!msg.contains('404') && !msg.contains('cannot post')) {
+          throw AppException(e.message);
+        }
+      }
+    }
+
     await _ensureConnected();
 
     final normalizedEmail = email.trim().toLowerCase();
@@ -705,6 +723,19 @@ class MongoAuthRepository implements AuthRepository {
             response['fullName'] as String? ??
             '')
         .trim();
+    final jwtToken = response['jwtToken'] as String? ?? '';
+    final expiresRaw = response['expiresAt'] as String?;
+    if (jwtToken.isNotEmpty && expiresRaw != null && expiresRaw.isNotEmpty) {
+      return AuthSession(
+        userId: MongoJson.objectIdHex(response['userId']),
+        email: response['email'] as String? ?? fallbackEmail.trim().toLowerCase(),
+        displayName: displayName,
+        role: UserRoleX.fromValue(response['role'] as String? ?? ''),
+        jwtToken: jwtToken,
+        expiresAt: DateTime.parse(expiresRaw),
+      );
+    }
+
     return _buildSession(
       userId: MongoJson.objectIdHex(response['userId']),
       email: response['email'] as String? ?? fallbackEmail.trim().toLowerCase(),

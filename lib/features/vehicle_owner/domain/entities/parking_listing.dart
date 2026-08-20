@@ -23,6 +23,9 @@ class ParkingListing extends Equatable {
     this.availableSlots,
     this.verifiedByEmployee = false,
     this.verifiedEmployeeName,
+    this.isCompatible = true,
+    this.isBestMatch = false,
+    this.parkingStatus = 'approved',
   });
 
   final String id;
@@ -46,6 +49,25 @@ class ParkingListing extends Equatable {
   final int? availableSlots;
   final bool verifiedByEmployee;
   final String? verifiedEmployeeName;
+  final bool isCompatible;
+  final bool isBestMatch;
+  final String parkingStatus;
+
+  String get parkingStatusLabel {
+    switch (parkingStatus) {
+      case 'approved':
+        return 'Approved';
+      case 'completed':
+        return 'Active';
+      default:
+        return parkingStatus.replaceAll('_', ' ');
+    }
+  }
+
+  String get compatibilityLabel => isCompatible ? 'Compatible' : 'Not compatible';
+
+  String? get distanceLabel =>
+      distanceKm != null ? '${distanceKm!.toStringAsFixed(1)} km away' : null;
 
   String get displayName {
     final name = parkingName?.trim();
@@ -91,6 +113,9 @@ class ParkingListing extends Equatable {
     double? averageRating,
     int? reviewCount,
     int? availableSlots,
+    bool? isCompatible,
+    bool? isBestMatch,
+    String? parkingStatus,
   }) {
     return ParkingListing(
       id: id,
@@ -112,6 +137,9 @@ class ParkingListing extends Equatable {
       availableSlots: availableSlots ?? this.availableSlots,
       verifiedByEmployee: verifiedByEmployee,
       verifiedEmployeeName: verifiedEmployeeName,
+      isCompatible: isCompatible ?? this.isCompatible,
+      isBestMatch: isBestMatch ?? this.isBestMatch,
+      parkingStatus: parkingStatus ?? this.parkingStatus,
     );
   }
 
@@ -136,6 +164,9 @@ class ParkingListing extends Equatable {
         availableSlots,
         verifiedByEmployee,
         verifiedEmployeeName,
+        isCompatible,
+        isBestMatch,
+        parkingStatus,
       ];
 }
 

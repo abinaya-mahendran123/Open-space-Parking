@@ -10,6 +10,8 @@ import 'package:open_space_parking/features/maps/presentation/providers/maps_pro
 import 'package:open_space_parking/features/maps/presentation/widgets/directions_bar.dart';
 import 'package:open_space_parking/features/maps/presentation/widgets/google_map_view.dart';
 import 'package:open_space_parking/features/maps/presentation/widgets/location_permission_banner.dart';
+import 'package:open_space_parking/features/vehicle_owner/domain/entities/parking_listing.dart';
+import 'package:open_space_parking/features/vehicle_owner/presentation/providers/vehicle_owner_providers.dart';
 
 class NearbyParkingMapPage extends ConsumerWidget {
   const NearbyParkingMapPage({super.key});
@@ -17,14 +19,28 @@ class NearbyParkingMapPage extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final markersAsync = ref.watch(nearbyParkingMarkersProvider);
+    final listingsAsync = ref.watch(parkingListingsProvider);
     final selected = ref.watch(selectedMarkerProvider);
 
     return Scaffold(
       appBar: AppBar(
         title: const Text('Nearby Parking Map'),
+        leading: IconButton(
+          icon: const Icon(Icons.arrow_back),
+          onPressed: () {
+            if (context.canPop()) {
+              context.pop();
+            } else {
+              context.go(RoutePaths.vehicleOwnerDashboard);
+            }
+          },
+        ),
         actions: [
           IconButton(
-            onPressed: () => ref.invalidate(nearbyParkingMarkersProvider),
+            onPressed: () {
+              ref.invalidate(nearbyParkingMarkersProvider);
+              ref.invalidate(parkingListingsProvider);
+            },
             icon: const Icon(Icons.refresh),
           ),
         ],
@@ -33,9 +49,20 @@ class NearbyParkingMapPage extends ConsumerWidget {
         loading: () => const AppLoadingWidget(message: 'Loading nearby parking...'),
         error: (_, __) => AppErrorWidget(
           message: 'Could not load parking markers',
-          onRetry: () => ref.invalidate(nearbyParkingMarkersProvider),
+          onRetry: () {
+            ref.invalidate(nearbyParkingMarkersProvider);
+            ref.invalidate(parkingListingsProvider);
+          },
         ),
         data: (markers) {
+          final listings = listingsAsync.valueOrNull ?? const <ParkingListing>[];
+          ParkingListing? selectedListing;
+          if (selected?.payload != null) {
+            final matches =
+                listings.where((item) => item.id == selected!.payload).toList();
+            if (matches.isNotEmpty) selectedListing = matches.first;
+          }
+
           return Column(
             children: [
               Padding(
@@ -47,7 +74,9 @@ class NearbyParkingMapPage extends ConsumerWidget {
                       const Card(
                         child: Padding(
                           padding: EdgeInsets.all(16),
-                          child: Text('No parking spaces found nearby.'),
+                          child: Text(
+                            'No suitable parking found nearby.\n\nWe could not find an approved parking space that is currently available and compatible with your vehicle.',
+                          ),
                         ),
                       ),
                   ],
@@ -68,7 +97,10 @@ class NearbyParkingMapPage extends ConsumerWidget {
                 ),
               ),
               if (selected != null)
-                _SelectedParkingPanel(marker: selected),
+                _SelectedParkingPanel(
+                  marker: selected,
+                  listing: selectedListing,
+                ),
             ],
           );
         },
@@ -78,9 +110,13 @@ class NearbyParkingMapPage extends ConsumerWidget {
 }
 
 class _SelectedParkingPanel extends ConsumerWidget {
-  const _SelectedParkingPanel({required this.marker});
+  const _SelectedParkingPanel({
+    required this.marker,
+    this.listing,
+  });
 
   final MapMarkerData marker;
+  final ParkingListing? listing;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -89,15 +125,20 @@ class _SelectedParkingPanel extends ConsumerWidget {
         padding: const EdgeInsets.all(16),
         child: Column(
           mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
             ListTile(
               contentPadding: EdgeInsets.zero,
               title: Text(marker.title),
               subtitle: Text(
                 [
+                  if (listing?.distanceLabel != null) listing!.distanceLabel,
+                  if (listing != null)
+                    '${listing!.freeSlots} spaces available',
+                  if (listing != null) listing!.compatibilityLabel,
+                  if (listing != null) listing!.parkingStatusLabel,
+                  if (listing?.address != null) listing!.address,
                   if (marker.snippet != null) marker.snippet,
-                  if (marker.distanceKm != null)
-                    '${marker.distanceKm!.toStringAsFixed(1)} km away',
                 ].whereType<String>().join(' • '),
               ),
             ),

@@ -3,13 +3,16 @@ import 'dart:math';
 import 'package:mongo_dart/mongo_dart.dart';
 
 import 'package:open_space_parking/core/common/exceptions/app_exception.dart';
+import 'package:open_space_parking/core/common/exceptions/network_exception.dart';
 import 'package:open_space_parking/core/config/app_constants.dart';
 import 'package:open_space_parking/core/integration/notification_helper.dart';
 import 'package:open_space_parking/core/services/api/api_client.dart';
 import 'package:open_space_parking/core/services/mongodb/mongo_collection_service.dart';
 import 'package:open_space_parking/core/services/mongodb/mongo_database_service.dart';
 import 'package:open_space_parking/core/utils/mongo_json.dart';
+import 'package:open_space_parking/core/services/api/parking_recommendation_service.dart';
 import 'package:open_space_parking/core/utils/geo_utils.dart';
+import 'package:open_space_parking/core/utils/vehicle_compatibility.dart';
 import 'package:open_space_parking/core/utils/profile_prefill.dart';
 import 'package:open_space_parking/core/utils/validators.dart';
 import 'package:open_space_parking/features/land_owner/domain/entities/land_details.dart';
@@ -48,35 +51,68 @@ class MongoVehicleOwnerRepository implements VehicleOwnerRepository {
   Future<List<ParkingListing>> searchParkingListings(SearchFilters filters) async {
     await _ensureConnected();
 
+    final hasLocation =
+        filters.userLatitude != null && filters.userLongitude != null;
+    final api = _apiClient;
+
+    if (api != null && hasLocation) {
+      try {
+        final service = ParkingRecommendationService(api);
+        var listings = await service.fetchRecommendations(
+          latitude: filters.userLatitude!,
+          longitude: filters.userLongitude!,
+          vehicleOwnerId: filters.vehicleOwnerId,
+          radiusKm: filters.maxDistanceKm ?? 25,
+        );
+        listings = await _applySearchFilters(listings, filters);
+        return await _enrichListings(listings, skipAvailability: true);
+      } catch (_) {
+        // Fall back to local filtering when recommendation API is unavailable.
+      }
+    }
+
+    return _searchParkingListingsLocally(filters);
+  }
+
+  Future<List<ParkingListing>> _searchParkingListingsLocally(
+    SearchFilters filters,
+  ) async {
     final results = await _loadVerifiedParkingDocs();
+    VehicleSpec? vehicleSpec;
+    if (filters.vehicleOwnerId != null && filters.vehicleOwnerId!.isNotEmpty) {
+      final profile = await getProfile(filters.vehicleOwnerId!);
+      if (profile != null) {
+        vehicleSpec = VehicleCompatibility.resolve(
+          vehicleBrand: profile.vehicleBrand,
+          vehicleModel: profile.vehicleModel,
+          vehicleParkingClass: profile.vehicleParkingClass,
+          vehicleLengthM: profile.vehicleLengthM,
+          vehicleWidthM: profile.vehicleWidthM,
+        );
+      }
+    }
+    vehicleSpec ??= VehicleCompatibility.resolve(
+      vehicleModel: filters.query,
+    );
 
     var listings = <ParkingListing>[];
     for (final doc in results) {
       try {
         if (!_isListableRequest(doc)) continue;
-        listings.add(_mapRequestToListing(doc));
-      } catch (_) {
-        // Skip a malformed ticket instead of hiding the whole nearby list.
-      }
+        final listing = _mapRequestToListing(doc);
+        if (!VehicleCompatibility.isCompatible(
+          vehicle: vehicleSpec,
+          parkingTypeValue: listing.parkingType.value,
+          areaSqFt: listing.areaSqFt,
+          capacity: listing.capacity,
+        )) {
+          continue;
+        }
+        listings.add(listing);
+      } catch (_) {}
     }
 
-    if (filters.parkingType != null) {
-      listings = listings
-          .where((l) => l.parkingType == filters.parkingType)
-          .toList();
-    }
-
-    if (filters.query != null && filters.query!.trim().isNotEmpty) {
-      final q = filters.query!.trim().toLowerCase();
-      listings = listings.where((l) {
-        return l.displayName.toLowerCase().contains(q) ||
-            l.displayTitle.toLowerCase().contains(q) ||
-            l.ticketId.toLowerCase().contains(q) ||
-            l.parkingType.label.toLowerCase().contains(q) ||
-            (l.address?.toLowerCase().contains(q) ?? false) ||
-            (l.verifiedEmployeeName?.toLowerCase().contains(q) ?? false);
-      }).toList();
-    }
+    listings = await _applySearchFilters(listings, filters);
 
     if (filters.userLatitude != null && filters.userLongitude != null) {
       listings = listings.map((listing) {
@@ -99,13 +135,67 @@ class MongoVehicleOwnerRepository implements VehicleOwnerRepository {
           .compareTo(b.distanceKm ?? double.infinity));
     }
 
-    return _enrichListings(listings);
+    listings = await _enrichListings(listings);
+    listings = listings.where((l) => l.isAvailableNow && l.isCompatible).toList();
+
+    if (listings.isNotEmpty) {
+      listings = [
+        listings.first.copyWith(isBestMatch: true),
+        ...listings.skip(1),
+      ];
+    }
+
+    return listings;
   }
 
-  Future<List<ParkingListing>> _enrichListings(List<ParkingListing> listings) async {
+  Future<List<ParkingListing>> _applySearchFilters(
+    List<ParkingListing> listings,
+    SearchFilters filters,
+  ) async {
+    var filtered = listings;
+
+    if (filters.parkingType != null) {
+      filtered = filtered
+          .where((l) => l.parkingType == filters.parkingType)
+          .toList();
+    }
+
+    if (filters.query != null && filters.query!.trim().isNotEmpty) {
+      final q = filters.query!.trim().toLowerCase();
+      filtered = filtered.where((l) {
+        return l.displayName.toLowerCase().contains(q) ||
+            l.displayTitle.toLowerCase().contains(q) ||
+            l.ticketId.toLowerCase().contains(q) ||
+            l.parkingType.label.toLowerCase().contains(q) ||
+            (l.address?.toLowerCase().contains(q) ?? false) ||
+            (l.verifiedEmployeeName?.toLowerCase().contains(q) ?? false);
+      }).toList();
+    }
+
+    if (filters.maxDistanceKm != null &&
+        filtered.any((l) => l.distanceKm != null)) {
+      filtered = filtered
+          .where((l) => (l.distanceKm ?? double.infinity) <= filters.maxDistanceKm!)
+          .toList();
+    }
+
+    return filtered;
+  }
+
+  Future<List<ParkingListing>> _enrichListings(
+    List<ParkingListing> listings, {
+    bool skipAvailability = false,
+  }) async {
     final enriched = <ParkingListing>[];
     for (final listing in listings) {
       final summary = await getRatingSummary(listing.id);
+      if (skipAvailability) {
+        enriched.add(listing.copyWith(
+          averageRating: summary.averageRating,
+          reviewCount: summary.reviewCount,
+        ));
+        continue;
+      }
       final availability =
           await _getCurrentAvailabilityRaw(listing.id, listing.capacity);
       enriched.add(listing.copyWith(
@@ -280,6 +370,23 @@ class MongoVehicleOwnerRepository implements VehicleOwnerRepository {
     required String vehicleNumber,
     String? vehicleModel,
   }) async {
+    final api = _apiClient;
+    if (api != null) {
+      try {
+        final response = await api.post('/api/bookings/start-session', {
+          'parkingListingId': _normalizeObjectId(parkingListingId),
+          'vehicleNumber': vehicleNumber,
+          if (vehicleModel != null) 'vehicleModel': vehicleModel,
+        });
+        final raw = response['document'];
+        if (raw is Map) {
+          return _mapBookingToEntity(MongoJson.asMap(raw)!);
+        }
+      } on NetworkException catch (e) {
+        throw AppException(e.message);
+      }
+    }
+
     await _ensureConnected();
 
     final plate = vehicleNumber.trim().toUpperCase();
@@ -352,6 +459,22 @@ class MongoVehicleOwnerRepository implements VehicleOwnerRepository {
 
   @override
   Future<Booking?> getBookingByQr(String qrPayload) async {
+    final api = _apiClient;
+    if (api != null) {
+      try {
+        final response = await api.get(
+          '/api/security/booking-by-qr?qr=${Uri.encodeComponent(qrPayload.trim())}',
+        );
+        final raw = response['document'];
+        if (raw == null) return null;
+        if (raw is Map) {
+          return _mapBookingToEntity(MongoJson.asMap(raw)!);
+        }
+      } on NetworkException catch (e) {
+        throw AppException(e.message);
+      }
+    }
+
     await _ensureConnected();
     final code = qrPayload.trim();
     if (code.isEmpty) return null;
@@ -372,6 +495,22 @@ class MongoVehicleOwnerRepository implements VehicleOwnerRepository {
 
   @override
   Future<Booking> scanParkingQr(String qrPayload) async {
+    final api = _apiClient;
+    if (api != null) {
+      try {
+        final response = await api.post('/api/security/scan-qr', {
+          'qrPayload': qrPayload.trim(),
+        });
+        final raw = response['document'];
+        if (raw is Map) {
+          return _mapBookingToEntity(MongoJson.asMap(raw)!);
+        }
+        throw const AppException('Could not load updated booking.');
+      } on NetworkException catch (e) {
+        throw AppException(e.message);
+      }
+    }
+
     await _ensureConnected();
 
     final booking = await getBookingByQr(qrPayload);
@@ -1050,15 +1189,21 @@ class MongoVehicleOwnerRepository implements VehicleOwnerRepository {
     return results.where(_isListableRequest).toList();
   }
 
-  /// Only employee-verified tickets with real GPS appear in nearby search.
+  /// Only admin-approved public parking with valid GPS appears in nearby search.
   bool _isListableRequest(Map<String, dynamic> doc) {
     final status = RequestStatusX.fromValue(doc['status'] as String? ?? '');
     if (status == RequestStatus.rejected ||
-        status == RequestStatus.submitted) {
+        status == RequestStatus.submitted ||
+        status == RequestStatus.underReview ||
+        status == RequestStatus.inProgress) {
+      return false;
+    }
+    if (status != RequestStatus.approved && status != RequestStatus.completed) {
       return false;
     }
 
     if (!MongoJson.asBool(doc['documentsVerified'])) return false;
+    if (doc['isActive'] == false) return false;
 
     final landDetails = MongoJson.asMap(doc['landDetails']);
     if (landDetails == null) return false;

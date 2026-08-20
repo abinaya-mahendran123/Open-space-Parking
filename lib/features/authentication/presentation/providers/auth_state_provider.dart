@@ -9,6 +9,7 @@ import 'package:open_space_parking/core/services/api/account_check_service.dart'
 import 'package:open_space_parking/core/services/api/backend_otp_service.dart';
 import 'package:open_space_parking/core/services/api/otp_auth_service.dart';
 import 'package:open_space_parking/core/services/session_service.dart';
+import 'package:open_space_parking/core/services/auth_token_provider.dart';
 import 'package:open_space_parking/features/authentication/presentation/providers/auth_form_providers.dart';
 import 'package:open_space_parking/features/authentication/domain/entities/auth_session.dart';
 import 'package:open_space_parking/features/authentication/domain/entities/user_role.dart';
@@ -48,27 +49,39 @@ class AuthStateNotifier extends StateNotifier<AuthState> {
   AuthStateNotifier({
     required AuthRepository authRepository,
     required SessionService sessionService,
+    required AuthTokenProvider authTokenProvider,
   })  : _authRepository = authRepository,
         _sessionService = sessionService,
+        _authTokenProvider = authTokenProvider,
         super(const AuthState.unknown()) {
     initialize();
   }
 
   final AuthRepository _authRepository;
   final SessionService _sessionService;
+  final AuthTokenProvider _authTokenProvider;
 
   Future<void> initialize() async {
     try {
       final session = await _sessionService.readSession();
       if (session == null || session.isExpired) {
         await _sessionService.clearSession();
+        _authTokenProvider.clear();
         state = const AuthState.unauthenticated();
         return;
       }
+      _authTokenProvider.setToken(session.jwtToken);
       state = AuthState.authenticated(session);
     } catch (_) {
+      _authTokenProvider.clear();
       state = const AuthState.unauthenticated();
     }
+  }
+
+  Future<void> _persistSession(AuthSession session) async {
+    await _sessionService.saveSession(session);
+    _authTokenProvider.setToken(session.jwtToken);
+    state = AuthState.authenticated(session);
   }
 
   void setSelectedRole(UserRole role) {
@@ -95,8 +108,7 @@ class AuthStateNotifier extends StateNotifier<AuthState> {
           email: email,
           password: password,
         );
-        await _sessionService.saveSession(session);
-        state = AuthState.authenticated(session);
+        await _persistSession(session);
         return;
       } on AppException catch (error) {
         lastError = error;
@@ -144,8 +156,7 @@ class AuthStateNotifier extends StateNotifier<AuthState> {
       email: email,
       password: password,
     );
-    await _sessionService.saveSession(session);
-    state = AuthState.authenticated(session);
+    await _persistSession(session);
   }
 
   Future<void> loginEmployee({
@@ -157,8 +168,7 @@ class AuthStateNotifier extends StateNotifier<AuthState> {
       phone: phone,
       password: password,
     );
-    await _sessionService.saveSession(session);
-    state = AuthState.authenticated(session);
+    await _persistSession(session);
   }
 
   Future<void> loginSecurity({
@@ -170,8 +180,7 @@ class AuthStateNotifier extends StateNotifier<AuthState> {
       email: email,
       password: password,
     );
-    await _sessionService.saveSession(session);
-    state = AuthState.authenticated(session);
+    await _persistSession(session);
   }
 
   Future<void> register({
@@ -186,8 +195,7 @@ class AuthStateNotifier extends StateNotifier<AuthState> {
       displayName: displayName,
       role: role,
     );
-    await _sessionService.saveSession(session);
-    state = AuthState.authenticated(session);
+    await _persistSession(session);
   }
 
   Future<void> forgotPassword(String email) {
@@ -246,18 +254,17 @@ class AuthStateNotifier extends StateNotifier<AuthState> {
         idToken: idToken,
         otpToken: otpToken,
       );
-      await _sessionService.saveSession(session);
-      state = AuthState.authenticated(session);
+      await _persistSession(session);
       return;
     }
 
-    final session = await _authRepository.loginWithPhone(
+    await _persistSession(
+      await _authRepository.loginWithPhone(
       phone: phone,
       idToken: idToken,
       otpToken: otpToken,
+      ),
     );
-    await _sessionService.saveSession(session);
-    state = AuthState.authenticated(session);
   }
 
   Future<void> signInWithGoogle() async {
@@ -265,13 +272,13 @@ class AuthStateNotifier extends StateNotifier<AuthState> {
     final profile = await sl<GoogleAuthService>().signInAndVerify(
       forceAccountPicker: true,
     );
-    final session = await _authRepository.loginWithGoogle(
-      email: profile.email,
-      googleId: profile.googleId,
-      displayName: profile.displayName,
+    await _persistSession(
+      await _authRepository.loginWithGoogle(
+        email: profile.email,
+        googleId: profile.googleId,
+        displayName: profile.displayName,
+      ),
     );
-    await _sessionService.saveSession(session);
-    state = AuthState.authenticated(session);
   }
 
   Future<void> signUpWithGoogle({
@@ -290,18 +297,19 @@ class AuthStateNotifier extends StateNotifier<AuthState> {
 
     // Existing Google/email users are signed in; new users are created with
     // the selected Vehicle Owner / Land Owner role only.
-    final session = await _authRepository.registerWithGoogle(
-      email: profile.email,
-      googleId: profile.googleId,
-      displayName: profile.displayName,
-      role: role,
+    await _persistSession(
+      await _authRepository.registerWithGoogle(
+        email: profile.email,
+        googleId: profile.googleId,
+        displayName: profile.displayName,
+        role: role,
+      ),
     );
-    await _sessionService.saveSession(session);
-    state = AuthState.authenticated(session);
   }
 
   Future<void> logout() async {
     await _sessionService.clearSession();
+    _authTokenProvider.clear();
     state = const AuthState.unauthenticated();
 
     // Clear Google/Firebase in the background so the UI never blocks on sign-out.
@@ -320,5 +328,6 @@ final authStateProvider = StateNotifierProvider<AuthStateNotifier, AuthState>(
   (ref) => AuthStateNotifier(
     authRepository: sl<AuthRepository>(),
     sessionService: sl<SessionService>(),
+    authTokenProvider: sl<AuthTokenProvider>(),
   ),
 );

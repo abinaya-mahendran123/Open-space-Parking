@@ -98,6 +98,63 @@ function matchValue(actual, expected) {
   return looseEq(actual, expected);
 }
 
+function jsonFieldExpr(key) {
+  if (!key.includes('.')) {
+    return `doc->>'${key.replace(/'/g, "''")}'`;
+  }
+  const parts = key.split('.');
+  const head = parts.slice(0, -1).join("'->'");
+  const tail = parts[parts.length - 1].replace(/'/g, "''");
+  return `doc->'${head}'->>'${tail}'`;
+}
+
+function isSimpleEqualityFilter(filter) {
+  if (!filter || typeof filter !== 'object') return false;
+  for (const [key, expected] of Object.entries(filter)) {
+    if (key.startsWith('$')) return false;
+    if (expected && typeof expected === 'object') {
+      if (expected.$oid) continue;
+      if (expected.$ne === true && key === 'isDeleted') continue;
+      return false;
+    }
+  }
+  return Object.keys(filter).length > 0;
+}
+
+function buildSimpleSqlWhere(filter, startIndex = 2) {
+  const conditions = [];
+  const params = [];
+  let index = startIndex;
+
+  for (const [key, expected] of Object.entries(filter)) {
+    if (key.startsWith('$')) continue;
+
+    if (key === 'isDeleted' && expected && expected.$ne === true) {
+      conditions.push(`(doc->>'isDeleted' is null or doc->>'isDeleted' = 'false')`);
+      continue;
+    }
+
+    const field = jsonFieldExpr(key);
+    if (expected && typeof expected === 'object' && expected.$oid) {
+      conditions.push(`${field} = $${index}`);
+      params.push(String(expected.$oid));
+      index += 1;
+      continue;
+    }
+
+    if (expected == null) {
+      conditions.push(`${field} is null`);
+      continue;
+    }
+
+    conditions.push(`${field} = $${index}`);
+    params.push(String(expected));
+    index += 1;
+  }
+
+  return { conditions, params };
+}
+
 function matchFilter(doc, filter) {
   if (!filter || typeof filter !== 'object') return true;
   if (filter.$and && !filter.$and.every((part) => matchFilter(doc, part))) {
@@ -228,15 +285,38 @@ class PgCollection {
     return stored;
   }
 
+  async _findManySql(filter = {}) {
+    if (this.name === 'land_owner_requests') return null;
+    if (!isSimpleEqualityFilter(filter)) return null;
+
+    const { conditions, params } = buildSimpleSqlWhere(filter);
+    if (!conditions.length) return null;
+
+    const result = await this.pool.query(
+      `select doc from mongo_documents
+       where collection = $1 and ${conditions.join(' and ')}`,
+      [this.name, ...params],
+    );
+    return result.rows.map((row) => row.doc);
+  }
+
   async findOne(filter = {}) {
+    const sqlDocs = await this._findManySql(filter);
+    if (sqlDocs) {
+      return sqlDocs[0] || null;
+    }
     const docs = await this._all();
     return docs.find((doc) => matchFilter(doc, filter)) || null;
   }
 
   find(filter = {}) {
-    const promise = this._all().then(
-      (docs) => docs.filter((doc) => matchFilter(doc, filter)),
-    );
+    const sqlPromise = this._findManySql(filter);
+    const promise = sqlPromise.then((sqlDocs) => {
+      if (sqlDocs) return sqlDocs;
+      return this._all().then((docs) =>
+        docs.filter((doc) => matchFilter(doc, filter)),
+      );
+    });
     const cursor = {
       _p: promise,
       sort() {
@@ -259,6 +339,8 @@ class PgCollection {
   }
 
   async countDocuments(filter = {}) {
+    const sqlDocs = await this._findManySql(filter);
+    if (sqlDocs) return sqlDocs.length;
     const docs = await this._all();
     return docs.filter((doc) => matchFilter(doc, filter)).length;
   }
@@ -307,8 +389,22 @@ class PgCollection {
     return { deletedCount: 1 };
   }
 
-  async createIndex() {
-    return `${this.name}_noop`;
+  async createIndex(spec = {}) {
+    const keys = spec.keys || spec;
+    if (!keys || typeof keys !== 'object') {
+      return `${this.name}_noop`;
+    }
+    const entries = Object.entries(keys);
+    if (entries.length !== 1) return `${this.name}_noop`;
+    const [field] = entries[0][0].split('.');
+    const safeField = field.replace(/[^a-zA-Z0-9_]/g, '_');
+    const indexName = spec.name || `idx_${this.name}_${safeField}`;
+    await this.pool.query(
+      `create index if not exists ${indexName}
+       on mongo_documents (collection, (doc->>'${field.replace(/'/g, "''")}'))
+       where collection = '${this.name.replace(/'/g, "''")}'`,
+    );
+    return indexName;
   }
 }
 
@@ -316,6 +412,10 @@ class PgDb {
   constructor(pool) {
     this.pool = pool;
     this._cache = new Map();
+  }
+
+  get rawPool() {
+    return this.pool;
   }
 
   collection(name) {
@@ -344,11 +444,27 @@ async function createPgDb(connectionString) {
     );
     create index if not exists idx_mongo_documents_collection
       on mongo_documents (collection);
+    create index if not exists idx_mongo_documents_doc_gin
+      on mongo_documents using gin (doc jsonb_path_ops);
+    create index if not exists idx_mongo_documents_users_email
+      on mongo_documents ((doc->>'email'))
+      where collection = 'users';
+    create index if not exists idx_mongo_documents_bookings_listing
+      on mongo_documents ((doc->>'parkingListingId'))
+      where collection = 'bookings';
+    create index if not exists idx_mongo_documents_bookings_qr
+      on mongo_documents ((doc->>'qrPayload'))
+      where collection = 'bookings';
+    create index if not exists idx_mongo_documents_bookings_ref
+      on mongo_documents ((doc->>'bookingRef'))
+      where collection = 'bookings';
     alter table mongo_documents disable row level security;
   `);
 
   await backfillNamedTables(pool);
-  return new PgDb(pool);
+  const pgDb = new PgDb(pool);
+  pgDb.pool = pool;
+  return pgDb;
 }
 
 module.exports = { createPgDb, PgCursor };

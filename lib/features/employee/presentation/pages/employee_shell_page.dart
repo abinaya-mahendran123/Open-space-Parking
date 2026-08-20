@@ -48,6 +48,16 @@ class _EmployeeShellPageState extends ConsumerState<EmployeeShellPage> {
 
   void _onSelect(int index) {
     ref.read(employeeShellTabProvider.notifier).state = index;
+    switch (index) {
+      case 0:
+        context.go(RoutePaths.employeeDashboard);
+      case 1:
+        context.go(RoutePaths.employeeAssigned);
+      case 2:
+        context.go(RoutePaths.employeeCompleted);
+      case 3:
+        context.go(RoutePaths.employeeNotifications);
+    }
   }
 
   Future<void> _logout() async {
@@ -55,6 +65,18 @@ class _EmployeeShellPageState extends ConsumerState<EmployeeShellPage> {
     await ref.read(authStateProvider.notifier).logout();
     if (!mounted) return;
     context.go(RoutePaths.authEntry);
+  }
+
+  Widget _wrapBackHandling({required int currentIndex, required Widget child}) {
+    final atHome = currentIndex == 0;
+    return PopScope(
+      canPop: atHome,
+      onPopInvokedWithResult: (didPop, _) {
+        if (didPop || atHome) return;
+        _onSelect(0);
+      },
+      child: child,
+    );
   }
 
   @override
@@ -74,40 +96,43 @@ class _EmployeeShellPageState extends ConsumerState<EmployeeShellPage> {
     );
 
     if (isWide) {
-      return Scaffold(
-        appBar: appBar,
-        body: Row(
-          children: [
-            NavigationRail(
-              selectedIndex: currentIndex,
-              onDestinationSelected: _onSelect,
-              labelType: NavigationRailLabelType.all,
-              destinations: const [
-                NavigationRailDestination(
-                  icon: Icon(Icons.dashboard_outlined),
-                  selectedIcon: Icon(Icons.dashboard),
-                  label: Text('Dashboard'),
-                ),
-                NavigationRailDestination(
-                  icon: Icon(Icons.assignment_outlined),
-                  selectedIcon: Icon(Icons.assignment),
-                  label: Text('Assigned'),
-                ),
-                NavigationRailDestination(
-                  icon: Icon(Icons.task_alt_outlined),
-                  selectedIcon: Icon(Icons.task_alt),
-                  label: Text('Completed'),
-                ),
-                NavigationRailDestination(
-                  icon: Icon(Icons.notifications_outlined),
-                  selectedIcon: Icon(Icons.notifications),
-                  label: Text('Alerts'),
-                ),
-              ],
-            ),
-            const VerticalDivider(width: 1),
-            Expanded(child: _pages[currentIndex]),
-          ],
+      return _wrapBackHandling(
+        currentIndex: currentIndex,
+        child: Scaffold(
+          appBar: appBar,
+          body: Row(
+            children: [
+              NavigationRail(
+                selectedIndex: currentIndex,
+                onDestinationSelected: _onSelect,
+                labelType: NavigationRailLabelType.all,
+                destinations: const [
+                  NavigationRailDestination(
+                    icon: Icon(Icons.dashboard_outlined),
+                    selectedIcon: Icon(Icons.dashboard),
+                    label: Text('Dashboard'),
+                  ),
+                  NavigationRailDestination(
+                    icon: Icon(Icons.assignment_outlined),
+                    selectedIcon: Icon(Icons.assignment),
+                    label: Text('Assigned'),
+                  ),
+                  NavigationRailDestination(
+                    icon: Icon(Icons.task_alt_outlined),
+                    selectedIcon: Icon(Icons.task_alt),
+                    label: Text('Completed'),
+                  ),
+                  NavigationRailDestination(
+                    icon: Icon(Icons.notifications_outlined),
+                    selectedIcon: Icon(Icons.notifications),
+                    label: Text('Alerts'),
+                  ),
+                ],
+              ),
+              const VerticalDivider(width: 1),
+              Expanded(child: _pages[currentIndex]),
+            ],
+          ),
         ),
       );
     }

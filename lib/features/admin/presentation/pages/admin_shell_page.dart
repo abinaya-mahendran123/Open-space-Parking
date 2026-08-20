@@ -130,51 +130,65 @@ class _AdminShellPageState extends ConsumerState<AdminShellPage> {
     ];
 
     final body = pages[_currentIndex];
+    final atHome = _currentIndex == 0;
+
+    Widget wrap(Widget child) {
+      return PopScope(
+        canPop: atHome,
+        onPopInvokedWithResult: (didPop, _) {
+          if (didPop || atHome) return;
+          _onSelect(0);
+        },
+        child: child,
+      );
+    }
 
     if (isWide) {
-      return Scaffold(
-        appBar: AppBar(
-          title: const Text('Admin Portal'),
-          actions: [
-            IconButton(
-              tooltip: 'Logout',
-              onPressed: () => ref.read(authStateProvider.notifier).logout(),
-              icon: const Icon(Icons.logout),
-            ),
-          ],
-        ),
-        body: Row(
-          children: [
-            NavigationRail(
-              selectedIndex: _currentIndex,
-              onDestinationSelected: _onSelect,
-              labelType: NavigationRailLabelType.all,
-              destinations: const [
-                NavigationRailDestination(
-                  icon: Icon(Icons.dashboard_outlined),
-                  selectedIcon: Icon(Icons.dashboard),
-                  label: Text('Dashboard'),
-                ),
-                NavigationRailDestination(
-                  icon: Icon(Icons.confirmation_number_outlined),
-                  selectedIcon: Icon(Icons.confirmation_number),
-                  label: Text('Tickets'),
-                ),
-                NavigationRailDestination(
-                  icon: Icon(Icons.badge_outlined),
-                  selectedIcon: Icon(Icons.badge),
-                  label: Text('Employees'),
-                ),
-                NavigationRailDestination(
-                  icon: Icon(Icons.bar_chart_outlined),
-                  selectedIcon: Icon(Icons.bar_chart),
-                  label: Text('Statistics'),
-                ),
-              ],
-            ),
-            const VerticalDivider(width: 1),
-            Expanded(child: body),
-          ],
+      return wrap(
+        Scaffold(
+          appBar: AppBar(
+            title: const Text('Admin Portal'),
+            actions: [
+              IconButton(
+                tooltip: 'Logout',
+                onPressed: () => ref.read(authStateProvider.notifier).logout(),
+                icon: const Icon(Icons.logout),
+              ),
+            ],
+          ),
+          body: Row(
+            children: [
+              NavigationRail(
+                selectedIndex: _currentIndex,
+                onDestinationSelected: _onSelect,
+                labelType: NavigationRailLabelType.all,
+                destinations: const [
+                  NavigationRailDestination(
+                    icon: Icon(Icons.dashboard_outlined),
+                    selectedIcon: Icon(Icons.dashboard),
+                    label: Text('Dashboard'),
+                  ),
+                  NavigationRailDestination(
+                    icon: Icon(Icons.confirmation_number_outlined),
+                    selectedIcon: Icon(Icons.confirmation_number),
+                    label: Text('Tickets'),
+                  ),
+                  NavigationRailDestination(
+                    icon: Icon(Icons.badge_outlined),
+                    selectedIcon: Icon(Icons.badge),
+                    label: Text('Employees'),
+                  ),
+                  NavigationRailDestination(
+                    icon: Icon(Icons.bar_chart_outlined),
+                    selectedIcon: Icon(Icons.bar_chart),
+                    label: Text('Statistics'),
+                  ),
+                ],
+              ),
+              const VerticalDivider(width: 1),
+              Expanded(child: body),
+            ],
+          ),
         ),
       );
     }

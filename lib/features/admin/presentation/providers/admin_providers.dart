@@ -92,7 +92,7 @@ final adminTicketsProvider = FutureProvider<List<LandOwnerRequest>>((ref) async 
 });
 
 final adminTicketDetailProvider =
-    FutureProvider.family<LandOwnerRequest?, String>((ref, ticketId) async {
+    FutureProvider.autoDispose.family<LandOwnerRequest?, String>((ref, ticketId) async {
   return ref.read(adminRepositoryProvider).getTicketById(ticketId);
 });
 
@@ -102,7 +102,7 @@ final adminEmployeesProvider = FutureProvider<List<Employee>>((ref) async {
 });
 
 final adminEmployeeTicketsProvider =
-    FutureProvider.family<List<LandOwnerRequest>, String>((ref, employeeId) {
+    FutureProvider.autoDispose.family<List<LandOwnerRequest>, String>((ref, employeeId) {
   return ref
       .read(adminRepositoryProvider)
       .getEmployeeAssignedTickets(employeeId);

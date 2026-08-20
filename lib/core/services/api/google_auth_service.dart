@@ -39,14 +39,23 @@ class GoogleAuthService {
   static GoogleSignIn _createGoogleSignIn() {
     final webClientId = EnvironmentConfig.googleWebClientId.trim();
     final serverClientId = EnvironmentConfig.googleServerClientId.trim();
+    final effectiveServerId =
+        serverClientId.isNotEmpty ? serverClientId : webClientId;
 
+    // Web needs the browser OAuth client ID.
+    if (kIsWeb) {
+      return GoogleSignIn(
+        clientId: webClientId.isEmpty ? null : webClientId,
+        scopes: const <String>['email', 'profile', 'openid'],
+      );
+    }
+
+    // Android/iOS: never set [clientId] to a Web OAuth client — that causes
+    // ApiException:10 (DEVELOPER_ERROR) on Android. Mobile clients come from
+    // google-services.json / GoogleService-Info.plist. Pass the Web client only
+    // as [serverClientId] so Google returns an ID token for backend verify.
     return GoogleSignIn(
-      // Web OAuth client ID (also used by google_sign_in_web).
-      clientId: webClientId.isEmpty ? null : webClientId,
-      // Required on Android/iOS so Google returns a usable ID token.
-      serverClientId: serverClientId.isEmpty
-          ? (webClientId.isEmpty ? null : webClientId)
-          : serverClientId,
+      serverClientId: effectiveServerId.isEmpty ? null : effectiveServerId,
       scopes: const <String>['email', 'profile', 'openid'],
     );
   }
@@ -238,8 +247,10 @@ class GoogleAuthService {
         message.contains('10:') ||
         message.contains('developer_error') ||
         message.contains('api_not_available')) {
-      return 'Google sign-in configuration error. '
-          'Check OAuth client IDs and authorized origins.';
+      return 'Google sign-in is not set up for this app yet. '
+          'In Firebase Console → Project settings → Your Android app, '
+          'add SHA-1 fingerprint, enable Google Sign-In, then download a new '
+          'google-services.json. Package: com.example.open_space_parking';
     }
     if (message.contains('sign_in_failed') || message.contains('12500')) {
       return 'Google sign-in failed. Please try again.';

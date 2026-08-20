@@ -10,6 +10,7 @@ import 'package:open_space_parking/features/vehicle_owner/domain/entities/search
 import 'package:open_space_parking/features/vehicle_owner/domain/entities/vehicle_owner_notification.dart';
 import 'package:open_space_parking/features/vehicle_owner/domain/entities/vehicle_owner_profile.dart';
 import 'package:open_space_parking/features/vehicle_owner/domain/repositories/vehicle_owner_repository.dart';
+import 'package:open_space_parking/features/authentication/presentation/providers/auth_state_provider.dart';
 import 'package:open_space_parking/features/notification/domain/entities/notification_recipient_type.dart';
 import 'package:open_space_parking/features/notification/presentation/providers/notification_providers.dart';
 
@@ -28,7 +29,14 @@ final searchFiltersProvider = StateProvider<SearchFilters>(
 
 final parkingListingsProvider = FutureProvider<List<ParkingListing>>((ref) async {
   final filters = ref.watch(searchFiltersProvider);
-  return ref.read(vehicleOwnerRepositoryProvider).searchParkingListings(filters);
+  final ownerId = ref.watch(
+    authStateProvider.select((state) => state.session?.userId ?? ''),
+  );
+  return ref.read(vehicleOwnerRepositoryProvider).searchParkingListings(
+        filters.copyWith(
+          vehicleOwnerId: ownerId.isEmpty ? null : ownerId,
+        ),
+      );
 });
 
 final parkingListingProvider =

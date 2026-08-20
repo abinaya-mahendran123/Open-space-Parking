@@ -10,6 +10,7 @@ import 'package:open_space_parking/features/maps/domain/entities/map_marker_data
 import 'package:open_space_parking/features/maps/domain/entities/saved_coordinate.dart';
 import 'package:open_space_parking/features/maps/domain/repositories/maps_repository.dart';
 import 'package:open_space_parking/features/vehicle_owner/domain/entities/parking_listing.dart';
+import 'package:open_space_parking/features/authentication/presentation/providers/auth_state_provider.dart';
 import 'package:open_space_parking/features/vehicle_owner/domain/entities/search_filters.dart';
 import 'package:open_space_parking/features/vehicle_owner/presentation/providers/vehicle_owner_providers.dart';
 
@@ -157,13 +158,18 @@ final mapSelectionProvider =
 final nearbyParkingMarkersProvider =
     FutureProvider<List<MapMarkerData>>((ref) async {
   final location = await ref.watch(currentLocationProvider.future);
+  final ownerId = ref.watch(
+    authStateProvider.select((state) => state.session?.userId ?? ''),
+  );
   final filters = SearchFilters(
     userLatitude: location?.latitude,
     userLongitude: location?.longitude,
+    vehicleOwnerId: ownerId.isEmpty ? null : ownerId,
   );
 
-  final listings =
-      await ref.read(vehicleOwnerRepositoryProvider).searchParkingListings(filters);
+  final listings = await ref
+      .read(vehicleOwnerRepositoryProvider)
+      .searchParkingListings(filters);
   final mapsRepo = ref.read(mapsRepositoryProvider);
 
   final markers = listings.map(_listingToMarker).toList();

@@ -91,12 +91,6 @@ class VehicleOwnerDashboardPage extends ConsumerWidget {
                   subtitle: 'Full-screen map with directions and navigation.',
                   onTap: () => context.push(RoutePaths.nearbyParkingMap),
                 ),
-                AppActionCard(
-                  icon: Icons.bookmark_rounded,
-                  title: 'Saved Coordinates',
-                  subtitle: 'View and manage saved map locations.',
-                  onTap: () => context.push(RoutePaths.savedCoordinates),
-                ),
               ],
             ),
             const SizedBox(height: AppSpacing.sectionGap),

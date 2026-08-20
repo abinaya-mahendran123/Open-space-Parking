@@ -9,6 +9,7 @@ class SearchFilters extends Equatable {
     this.maxDistanceKm,
     this.userLatitude,
     this.userLongitude,
+    this.vehicleOwnerId,
   });
 
   final String? query;
@@ -16,6 +17,7 @@ class SearchFilters extends Equatable {
   final double? maxDistanceKm;
   final double? userLatitude;
   final double? userLongitude;
+  final String? vehicleOwnerId;
 
   SearchFilters copyWith({
     String? query,
@@ -23,6 +25,7 @@ class SearchFilters extends Equatable {
     double? maxDistanceKm,
     double? userLatitude,
     double? userLongitude,
+    String? vehicleOwnerId,
     bool clearQuery = false,
     bool clearParkingType = false,
     bool clearMaxDistance = false,
@@ -33,6 +36,7 @@ class SearchFilters extends Equatable {
       maxDistanceKm: clearMaxDistance ? null : (maxDistanceKm ?? this.maxDistanceKm),
       userLatitude: userLatitude ?? this.userLatitude,
       userLongitude: userLongitude ?? this.userLongitude,
+      vehicleOwnerId: vehicleOwnerId ?? this.vehicleOwnerId,
     );
   }
 
@@ -46,5 +50,6 @@ class SearchFilters extends Equatable {
         maxDistanceKm,
         userLatitude,
         userLongitude,
+        vehicleOwnerId,
       ];
 }

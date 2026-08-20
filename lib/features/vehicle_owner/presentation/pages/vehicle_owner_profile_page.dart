@@ -31,6 +31,10 @@ class _VehicleOwnerProfilePageState extends ConsumerState<VehicleOwnerProfilePag
   late final TextEditingController _addressController;
   late final TextEditingController _vehicleNumberController;
   late final TextEditingController _vehicleModelController;
+  late final TextEditingController _vehicleBrandController;
+  late final TextEditingController _vehicleLengthController;
+  late final TextEditingController _vehicleWidthController;
+  late final TextEditingController _vehicleParkingClassController;
   bool _editing = false;
   bool _saving = false;
 
@@ -43,6 +47,10 @@ class _VehicleOwnerProfilePageState extends ConsumerState<VehicleOwnerProfilePag
     _addressController = TextEditingController();
     _vehicleNumberController = TextEditingController();
     _vehicleModelController = TextEditingController();
+    _vehicleBrandController = TextEditingController();
+    _vehicleLengthController = TextEditingController();
+    _vehicleWidthController = TextEditingController();
+    _vehicleParkingClassController = TextEditingController();
   }
 
   @override
@@ -53,6 +61,10 @@ class _VehicleOwnerProfilePageState extends ConsumerState<VehicleOwnerProfilePag
     _addressController.dispose();
     _vehicleNumberController.dispose();
     _vehicleModelController.dispose();
+    _vehicleBrandController.dispose();
+    _vehicleLengthController.dispose();
+    _vehicleWidthController.dispose();
+    _vehicleParkingClassController.dispose();
     super.dispose();
   }
 
@@ -70,6 +82,11 @@ class _VehicleOwnerProfilePageState extends ConsumerState<VehicleOwnerProfilePag
     _addressController.text = merged.address ?? '';
     _vehicleNumberController.text = merged.vehicleNumber ?? '';
     _vehicleModelController.text = merged.vehicleModel ?? '';
+    _vehicleBrandController.text = merged.vehicleBrand ?? '';
+    _vehicleLengthController.text =
+        merged.vehicleLengthM?.toString() ?? '';
+    _vehicleWidthController.text = merged.vehicleWidthM?.toString() ?? '';
+    _vehicleParkingClassController.text = merged.vehicleParkingClass ?? '';
   }
 
   void _startEditing() {
@@ -101,6 +118,15 @@ class _VehicleOwnerProfilePageState extends ConsumerState<VehicleOwnerProfilePag
               vehicleModel: _vehicleModelController.text.trim().isEmpty
                   ? null
                   : _vehicleModelController.text.trim(),
+              vehicleBrand: _vehicleBrandController.text.trim().isEmpty
+                  ? null
+                  : _vehicleBrandController.text.trim(),
+              vehicleLengthM: double.tryParse(_vehicleLengthController.text.trim()),
+              vehicleWidthM: double.tryParse(_vehicleWidthController.text.trim()),
+              vehicleParkingClass:
+                  _vehicleParkingClassController.text.trim().isEmpty
+                      ? null
+                      : _vehicleParkingClassController.text.trim(),
             ),
           );
       ref.invalidate(vehicleOwnerProfileProvider(vehicleOwnerId));
@@ -290,6 +316,30 @@ class _VehicleOwnerProfilePageState extends ConsumerState<VehicleOwnerProfilePag
                 value: _vehicleModelController.text,
                 emptyHint: 'Add vehicle model',
               ),
+              _detailRow(
+                context,
+                icon: Icons.factory_outlined,
+                label: 'Vehicle brand',
+                value: _vehicleBrandController.text,
+                emptyHint: 'Add vehicle brand',
+              ),
+              _detailRow(
+                context,
+                icon: Icons.straighten,
+                label: 'Vehicle size (L x W m)',
+                value: _vehicleLengthController.text.isNotEmpty ||
+                        _vehicleWidthController.text.isNotEmpty
+                    ? '${_vehicleLengthController.text} x ${_vehicleWidthController.text}'
+                    : '',
+                emptyHint: 'Add vehicle length and width',
+              ),
+              _detailRow(
+                context,
+                icon: Icons.category_outlined,
+                label: 'Parking class',
+                value: _vehicleParkingClassController.text,
+                emptyHint: 'sedan / suv / compact / commercial',
+              ),
             ],
           ),
         ),
@@ -415,6 +465,29 @@ class _VehicleOwnerProfilePageState extends ConsumerState<VehicleOwnerProfilePag
           AppTextField(
             controller: _vehicleModelController,
             label: 'Vehicle Model',
+          ),
+          const SizedBox(height: AppSpacing.md),
+          AppTextField(
+            controller: _vehicleBrandController,
+            label: 'Vehicle Brand',
+          ),
+          const SizedBox(height: AppSpacing.md),
+          AppTextField(
+            controller: _vehicleLengthController,
+            label: 'Vehicle Length (m)',
+            keyboardType: const TextInputType.numberWithOptions(decimal: true),
+          ),
+          const SizedBox(height: AppSpacing.md),
+          AppTextField(
+            controller: _vehicleWidthController,
+            label: 'Vehicle Width (m)',
+            keyboardType: const TextInputType.numberWithOptions(decimal: true),
+          ),
+          const SizedBox(height: AppSpacing.md),
+          AppTextField(
+            controller: _vehicleParkingClassController,
+            label: 'Parking Class',
+            hint: 'sedan, suv, compact, two_wheeler, commercial',
           ),
           const SizedBox(height: AppSpacing.lg),
           PrimaryButton(

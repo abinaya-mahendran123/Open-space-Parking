@@ -112,6 +112,10 @@ class ProfilePrefill {
       address: saved?.address,
       vehicleNumber: saved?.vehicleNumber,
       vehicleModel: saved?.vehicleModel,
+      vehicleBrand: saved?.vehicleBrand,
+      vehicleLengthM: saved?.vehicleLengthM,
+      vehicleWidthM: saved?.vehicleWidthM,
+      vehicleParkingClass: saved?.vehicleParkingClass,
     );
   }
 

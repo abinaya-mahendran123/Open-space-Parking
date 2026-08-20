@@ -80,9 +80,20 @@ Web also reads the client ID from `web/index.html`:
 
 **Android:**
 
-1. Create an OAuth Android client with package `com.example.open_space_parking` and your debug/release SHA-1
-2. Keep the Web client ID for `serverClientId` so ID tokens are returned
-3. Internet permission is declared in `AndroidManifest.xml`
+1. Firebase Console → Project **open-space-parking** → Project settings → Your apps → Android (`com.example.open_space_parking`)
+2. Add **SHA-1** (debug keystore):
+   ```
+   13:2F:78:D3:A7:FA:52:92:F6:70:C4:93:A1:94:49:C9:F4:75:47:6B
+   ```
+   Print yours anytime:
+   ```powershell
+   keytool -list -v -alias androiddebugkey -keystore $env:USERPROFILE\.android\debug.keystore -storepass android -keypass android
+   ```
+3. Authentication → Sign-in method → enable **Google**
+4. Download a fresh `google-services.json` and replace `android/app/google-services.json`  
+   (`oauth_client` must not be empty)
+5. Use a **Web** OAuth client ID from the **same** Firebase/Google Cloud project as `GOOGLE_WEB_CLIENT_ID` / `GOOGLE_SERVER_CLIENT_ID` (and in `web/index.html`)
+6. Hot restart / reinstall the app after replacing `google-services.json`
 
 **iOS:**
 

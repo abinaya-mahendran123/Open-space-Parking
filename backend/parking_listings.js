@@ -31,16 +31,36 @@ function namedRequestToDoc(row) {
   };
 }
 
+/** Legacy name kept for existing imports. */
 function isEmployeeVerifiedListing(doc) {
+  return isPublicParkingListing(doc);
+}
+
+/**
+ * Parking visible to vehicle owners in nearby search.
+ * Admin-approved, verified, active, with valid GPS and capacity.
+ */
+function isPublicParkingListing(doc) {
   if (!doc || doc.isDeleted) return false;
   if (doc.documentsVerified !== true) return false;
+  if (doc.isActive === false) return false;
+
   const status = String(doc.status || '');
-  if (status === 'rejected' || status === 'submitted') return false;
+  const blockedStatuses = new Set([
+    'rejected',
+    'submitted',
+    'under_review',
+    'in_progress',
+  ]);
+  if (blockedStatuses.has(status)) return false;
+  if (status !== 'approved' && status !== 'completed') return false;
+
   const land = doc.landDetails || {};
   const lat = Number(land.gpsLatitude);
   const lng = Number(land.gpsLongitude);
   if (!Number.isFinite(lat) || !Number.isFinite(lng)) return false;
   if (lat === 0 && lng === 0) return false;
+
   const cars = Number(
     (doc.parkingPreferences && doc.parkingPreferences.numberOfCars) ??
       doc.capacity ??
@@ -76,6 +96,7 @@ async function verifiedListingById(pool, id) {
 module.exports = {
   namedRequestToDoc,
   isEmployeeVerifiedListing,
+  isPublicParkingListing,
   loadNamedRequests,
   nearbyVerifiedListings,
   verifiedListingById,

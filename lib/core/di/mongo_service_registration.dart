@@ -2,6 +2,7 @@ import 'package:flutter/foundation.dart';
 import 'package:get_it/get_it.dart';
 
 import 'package:open_space_parking/core/services/api/api_client.dart';
+import 'package:open_space_parking/core/services/auth_token_provider.dart';
 import 'package:open_space_parking/core/services/api/http_mongo_collection_service.dart';
 import 'package:open_space_parking/core/services/api/http_mongo_data_service.dart';
 import 'package:open_space_parking/core/services/api/http_mongo_database_service.dart';
@@ -22,8 +23,14 @@ bool get _useHttpMongoApi {
 void registerMongoServices(GetIt sl) {
   if (sl.isRegistered<MongoDatabaseService>()) return;
 
+  if (!sl.isRegistered<AuthTokenProvider>()) {
+    sl.registerLazySingleton<AuthTokenProvider>(AuthTokenProvider.new);
+  }
+
   if (_useHttpMongoApi) {
-    sl.registerLazySingleton<ApiClient>(ApiClient.new);
+    sl.registerLazySingleton<ApiClient>(
+      () => ApiClient(sl<AuthTokenProvider>()),
+    );
     sl.registerLazySingleton<MongoDatabaseService>(
       () => HttpMongoDatabaseService(sl<ApiClient>()),
     );

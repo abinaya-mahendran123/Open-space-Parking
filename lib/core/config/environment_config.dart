@@ -80,7 +80,7 @@ class EnvironmentConfig {
     );
     firebaseAndroidAppId = const String.fromEnvironment(
       'FIREBASE_ANDROID_APP_ID',
-      defaultValue: '1:794049298844:android:6763c9ecfb6b7a3ab68859',
+      defaultValue: '1:794049298844:android:6763c9ecf56b7a3ab68859',
     );
     firebaseMessagingSenderId = const String.fromEnvironment(
       'FIREBASE_MESSAGING_SENDER_ID',
@@ -102,14 +102,14 @@ class EnvironmentConfig {
     googleWebClientId = const String.fromEnvironment(
       'GOOGLE_WEB_CLIENT_ID',
       defaultValue:
-          '514956128372-a1aac5qlpe4s0i4ej0tqr6251m1uvb4k.apps.googleusercontent.com',
+          '794049298844-v8f8okbjfb4memdcjugcpqfd58tk71j0.apps.googleusercontent.com',
     );
 
     // Web client ID used as serverClientId on Android/iOS so ID tokens are issued.
     googleServerClientId = const String.fromEnvironment(
       'GOOGLE_SERVER_CLIENT_ID',
       defaultValue:
-          '514956128372-a1aac5qlpe4s0i4ej0tqr6251m1uvb4k.apps.googleusercontent.com',
+          '794049298844-v8f8okbjfb4memdcjugcpqfd58tk71j0.apps.googleusercontent.com',
     );
   }
 

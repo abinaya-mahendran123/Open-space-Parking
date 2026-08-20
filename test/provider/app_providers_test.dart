@@ -2,6 +2,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:mocktail/mocktail.dart';
 import 'package:open_space_parking/core/services/session_service.dart';
+import 'package:open_space_parking/core/services/auth_token_provider.dart';
 import 'package:open_space_parking/features/authentication/domain/entities/user_role.dart';
 import 'package:open_space_parking/features/authentication/presentation/providers/auth_state_provider.dart';
 import 'package:open_space_parking/features/notification/domain/entities/app_notification.dart';
@@ -37,6 +38,7 @@ void main() {
             (ref) => AuthStateNotifier(
               authRepository: authRepository,
               sessionService: SessionService(secureStorage),
+              authTokenProvider: AuthTokenProvider(),
             ),
           ),
         ],

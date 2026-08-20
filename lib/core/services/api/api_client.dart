@@ -7,14 +7,31 @@ import 'package:open_space_parking/core/common/exceptions/network_exception.dart
 import 'package:open_space_parking/core/config/app_constants.dart';
 import 'package:open_space_parking/core/config/environment_config.dart';
 import 'package:open_space_parking/core/services/api/mongo_http_codec.dart';
+import 'package:open_space_parking/core/services/auth_token_provider.dart';
 
 class ApiClient {
-  ApiClient({http.Client? httpClient}) : _httpClient = httpClient ?? http.Client();
+  ApiClient([AuthTokenProvider? authTokenProvider, http.Client? httpClient])
+      : _authTokenProvider = authTokenProvider ?? AuthTokenProvider(),
+        _httpClient = httpClient ?? http.Client();
+
+  final AuthTokenProvider _authTokenProvider;
   final http.Client _httpClient;
 
   String get _baseUrl => EnvironmentConfig.baseApiUrl;
 
   Uri _uri(String path) => Uri.parse('$_baseUrl$path');
+
+  Map<String, String> _headers({bool jsonBody = false}) {
+    final headers = <String, String>{};
+    if (jsonBody) {
+      headers['Content-Type'] = 'application/json';
+    }
+    final token = _authTokenProvider.token;
+    if (token != null && token.isNotEmpty) {
+      headers['Authorization'] = 'Bearer $token';
+    }
+    return headers;
+  }
 
   Future<void> checkHealth() async {
     Future<bool> ping() async {
@@ -38,7 +55,7 @@ class ApiClient {
   Future<Map<String, dynamic>> get(String path) async {
     Future<http.Response> send() {
       return _httpClient
-          .get(_uri(path))
+          .get(_uri(path), headers: _headers())
           .timeout(AppConstants.requestTimeout);
     }
 
@@ -55,31 +72,14 @@ class ApiClient {
       }
     }
 
-    Map<String, dynamic> payload;
-    try {
-      payload = Map<String, dynamic>.from(
-        MongoHttpCodec.decode(jsonDecode(response.body)) as Map,
-      );
-    } catch (_) {
-      throw NetworkException(
-        'Invalid API response (HTTP ${response.statusCode}).',
-      );
-    }
-
-    if (response.statusCode >= 400) {
-      throw NetworkException(
-        payload['error']?.toString() ??
-            'API request failed (HTTP ${response.statusCode}).',
-      );
-    }
-
-    return payload;
+    return _decodeResponse(response);
   }
 
   Future<Map<String, dynamic>> post(
     String path,
     Map<String, dynamic> body, {
     Duration? timeout,
+    bool authenticated = true,
   }) async {
     final effectiveTimeout = timeout ?? AppConstants.requestTimeout;
 
@@ -87,7 +87,7 @@ class ApiClient {
       return _httpClient
           .post(
             _uri(path),
-            headers: const {'Content-Type': 'application/json'},
+            headers: _headers(jsonBody: true),
             body: jsonEncode(MongoHttpCodec.encode(body)),
           )
           .timeout(effectiveTimeout);
@@ -97,9 +97,6 @@ class ApiClient {
     try {
       response = await send();
     } catch (error) {
-      // A TimeoutException means the server IS reachable but the request took
-      // too long — rethrow directly so the caller sees a meaningful error
-      // (not "Cannot reach the server").
       if (error is TimeoutException) rethrow;
       if (!_isTransportFailure(error)) rethrow;
       await EnvironmentConfig.refreshReachableApiUrl();
@@ -111,6 +108,13 @@ class ApiClient {
       }
     }
 
+    return _decodeResponse(response, authenticated: authenticated);
+  }
+
+  Map<String, dynamic> _decodeResponse(
+    http.Response response, {
+    bool authenticated = true,
+  }) {
     Map<String, dynamic> payload;
     try {
       payload = Map<String, dynamic>.from(
@@ -123,10 +127,12 @@ class ApiClient {
     }
 
     if (response.statusCode >= 400) {
-      throw NetworkException(
-        payload['error']?.toString() ??
-            'API request failed (HTTP ${response.statusCode}).',
-      );
+      final message = payload['error']?.toString() ??
+          'API request failed (HTTP ${response.statusCode}).';
+      if (authenticated && response.statusCode == 401) {
+        throw NetworkException('Session expired. Please sign in again.');
+      }
+      throw NetworkException(message);
     }
 
     return payload;

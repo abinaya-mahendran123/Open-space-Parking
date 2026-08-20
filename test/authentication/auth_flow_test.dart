@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:mocktail/mocktail.dart';
 import 'package:open_space_parking/core/common/exceptions/app_exception.dart';
+import 'package:open_space_parking/core/services/auth_token_provider.dart';
 import 'package:open_space_parking/core/services/session_service.dart';
 import 'package:open_space_parking/features/authentication/domain/entities/auth_session.dart';
 import 'package:open_space_parking/features/authentication/domain/entities/user_role.dart';
@@ -37,6 +38,7 @@ void main() {
       final notifier = AuthStateNotifier(
         authRepository: authRepository,
         sessionService: SessionService(secureStorage),
+        authTokenProvider: AuthTokenProvider(),
       );
       await Future<void>.delayed(Duration.zero);
       await Future<void>.delayed(Duration.zero);

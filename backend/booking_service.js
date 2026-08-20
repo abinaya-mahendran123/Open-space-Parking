@@ -1,0 +1,380 @@
+const crypto = require('crypto');
+const { ObjectId } = require('mongodb');
+const { sendPushNotification } = require('./fcm_push');
+const {
+  verifiedListingById,
+  isPublicParkingListing,
+} = require('./parking_listings');
+
+const ACTIVE_SLOT_STATUSES = ['confirmed', 'active'];
+const listingLocks = new Map();
+
+function generateBookingRef() {
+  const now = new Date();
+  const datePart = [
+    now.getUTCFullYear(),
+    String(now.getUTCMonth() + 1).padStart(2, '0'),
+    String(now.getUTCDate()).padStart(2, '0'),
+  ].join('');
+  const random = Math.floor(Math.random() * 9000) + 1000;
+  return `BK-${datePart}-${random}`;
+}
+
+function generateSessionId() {
+  const now = new Date();
+  const datePart = [
+    now.getUTCFullYear(),
+    String(now.getUTCMonth() + 1).padStart(2, '0'),
+    String(now.getUTCDate()).padStart(2, '0'),
+  ].join('');
+  const random = Math.floor(Math.random() * 9000) + 1000;
+  return `PS-${datePart}-${random}`;
+}
+
+function normalizePlate(plate) {
+  return String(plate || '').trim().toUpperCase();
+}
+
+function isValidPlate(plate) {
+  if (!plate) return false;
+  return /^[A-Z]{2}\s?\d{1,2}\s?[A-Z]{1,3}\s?\d{1,4}$/.test(plate);
+}
+
+async function withListingLock(db, parkingListingId, fn) {
+  const pool = db.pool;
+  if (pool) {
+    const client = await pool.connect();
+    try {
+      await client.query('BEGIN');
+      await client.query('SELECT pg_advisory_xact_lock(hashtext($1))', [
+        parkingListingId,
+      ]);
+      const result = await fn();
+      await client.query('COMMIT');
+      return result;
+    } catch (error) {
+      await client.query('ROLLBACK');
+      throw error;
+    } finally {
+      client.release();
+    }
+  }
+
+  const previous = listingLocks.get(parkingListingId) || Promise.resolve();
+  let release;
+  const gate = new Promise((resolve) => {
+    release = resolve;
+  });
+  const chain = previous.then(() => gate);
+  listingLocks.set(parkingListingId, chain);
+  try {
+    return await fn();
+  } finally {
+    release();
+    if (listingLocks.get(parkingListingId) === chain) {
+      listingLocks.delete(parkingListingId);
+    }
+  }
+}
+
+async function getListing(db, listingId) {
+  const id = String(listingId || '').trim();
+  if (!id) return null;
+
+  if (db.pool) {
+    const doc = await verifiedListingById(db.pool, id);
+    return doc && isPublicParkingListing(doc) ? doc : null;
+  }
+
+  const doc = await db.collection('land_owner_requests').findOne({
+    _id: new ObjectId(id),
+    isDeleted: { $ne: true },
+  });
+  return doc && isPublicParkingListing(doc) ? doc : null;
+}
+
+function listingCapacity(listing) {
+  const prefs = listing.parkingPreferences || {};
+  const cars = Number(prefs.numberOfCars || prefs.numberOfSlots || 0);
+  if (Number.isFinite(cars) && cars > 0) return cars;
+  return 10;
+}
+
+function listingHourlyRate(listing) {
+  const rate = Number(listing.hourlyRate ?? listing.verifiedHourlyRate ?? 0);
+  return Number.isFinite(rate) ? rate : 0;
+}
+
+function listingDisplayName(listing) {
+  return (
+    listing.parkingName ||
+    listing.landDetails?.landAddress ||
+    listing.landAddress ||
+    'Parking'
+  );
+}
+
+async function countActiveBookings(db, parkingListingId) {
+  const bookings = await db
+    .collection('bookings')
+    .find({
+      parkingListingId: String(parkingListingId),
+      isDeleted: { $ne: true },
+    })
+    .toArray();
+
+  return bookings.filter((doc) =>
+    ACTIVE_SLOT_STATUSES.includes(String(doc.status || '')),
+  ).length;
+}
+
+async function allocateNextSlot(db, parkingListingId, capacity) {
+  const bookings = await db
+    .collection('bookings')
+    .find({
+      parkingListingId: String(parkingListingId),
+      isDeleted: { $ne: true },
+    })
+    .toArray();
+
+  const used = new Set();
+  for (const doc of bookings) {
+    const status = String(doc.status || '');
+    if (!ACTIVE_SLOT_STATUSES.includes(status)) continue;
+    const slot = Number(doc.assignedSlot);
+    if (Number.isFinite(slot) && slot > 0) used.add(slot);
+  }
+
+  for (let slot = 1; slot <= capacity; slot += 1) {
+    if (!used.has(slot)) return slot;
+  }
+  const error = new Error('No parking slots available right now.');
+  error.statusCode = 409;
+  throw error;
+}
+
+async function insertNotification(db, { recipientId, recipientType, title, message }) {
+  const now = new Date().toISOString();
+  await db.collection('notifications').insertOne({
+    _id: new ObjectId(),
+    recipientId: String(recipientId),
+    recipientType,
+    title,
+    message,
+    isRead: false,
+    createdAt: now,
+    updatedAt: now,
+  });
+
+  await sendPushNotification({
+    db,
+    recipientId: String(recipientId),
+    recipientType,
+    title,
+    body: message,
+  }).catch(() => {});
+}
+
+async function findBookingByQr(db, qrPayload) {
+  const code = String(qrPayload || '').trim();
+  if (!code) return null;
+
+  let doc = await db.collection('bookings').findOne({
+    qrPayload: code,
+    isDeleted: { $ne: true },
+  });
+  if (!doc) {
+    doc = await db.collection('bookings').findOne({
+      bookingRef: code,
+      isDeleted: { $ne: true },
+    });
+  }
+  return doc;
+}
+
+async function startParkingSession(db, { vehicleOwnerId, parkingListingId, vehicleNumber, vehicleModel }) {
+  const plate = normalizePlate(vehicleNumber);
+  if (!isValidPlate(plate)) {
+    const error = new Error('Enter a valid vehicle number (e.g. TN 09 AB 1234).');
+    error.statusCode = 400;
+    throw error;
+  }
+
+  const listing = await getListing(db, parkingListingId);
+  if (!listing) {
+    const error = new Error('Parking space is no longer available.');
+    error.statusCode = 404;
+    throw error;
+  }
+
+  const capacity = listingCapacity(listing);
+
+  return withListingLock(db, String(parkingListingId), async () => {
+    const activeCount = await countActiveBookings(db, parkingListingId);
+    if (activeCount >= capacity) {
+      const error = new Error('No slots available at this parking.');
+      error.statusCode = 409;
+      throw error;
+    }
+
+    const slot = await allocateNextSlot(db, parkingListingId, capacity);
+    const bookingRef = generateBookingRef();
+    const now = new Date().toISOString();
+    const placeholderEnd = new Date(Date.now() + 12 * 60 * 60 * 1000).toISOString();
+    const hourlyRate = listingHourlyRate(listing);
+    const parkingName = listingDisplayName(listing);
+
+    const document = {
+      _id: new ObjectId(),
+      bookingRef,
+      vehicleOwnerId: String(vehicleOwnerId),
+      parkingListingId: String(parkingListingId),
+      ticketId: String(listing.ticketId || listing._id?.$oid || listing._id || ''),
+      parkingType: String(listing.parkingPreferences?.parkingType || listing.parkingType || ''),
+      vehicleNumber: plate,
+      vehicleModel: vehicleModel ? String(vehicleModel).trim() : null,
+      startDateTime: now,
+      endDateTime: placeholderEnd,
+      durationHours: 12,
+      hourlyRate,
+      totalPrice: 0,
+      status: 'confirmed',
+      parkingAddress: listing.landDetails?.landAddress || listing.landAddress || null,
+      parkingName,
+      assignedSlot: slot,
+      qrPayload: bookingRef,
+      createdAt: now,
+      updatedAt: now,
+      isDeleted: false,
+    };
+
+    await db.collection('bookings').insertOne(document);
+
+    await insertNotification(db, {
+      recipientId: vehicleOwnerId,
+      recipientType: 'vehicle_owner',
+      title: 'Slot Assigned',
+      message: `Slot ${slot} assigned (FCFS). Show QR (${bookingRef}) to security to start parking.`,
+    });
+
+    return document;
+  });
+}
+
+async function scanParkingQr(db, qrPayload) {
+  const booking = await findBookingByQr(db, qrPayload);
+  if (!booking) {
+    const error = new Error('QR / booking not found.');
+    error.statusCode = 404;
+    throw error;
+  }
+
+  const status = String(booking.status || '');
+  if (status === 'completed') {
+    const error = new Error('This parking session is already completed.');
+    error.statusCode = 400;
+    throw error;
+  }
+  if (status === 'cancelled') {
+    const error = new Error('This booking was cancelled.');
+    error.statusCode = 400;
+    throw error;
+  }
+
+  if (booking.checkedOutAt && booking.amountDue != null) {
+    return booking;
+  }
+
+  const listing = await getListing(db, booking.parkingListingId);
+  const parkingName =
+    String(booking.parkingName || '').trim() ||
+    (listing ? listingDisplayName(listing) : 'Parking');
+  const hourlyRate =
+    Number(booking.hourlyRate) > 0
+      ? Number(booking.hourlyRate)
+      : listing
+        ? listingHourlyRate(listing)
+        : 0;
+  const now = new Date();
+  const nowIso = now.toISOString();
+
+  if (!booking.checkedInAt) {
+    if (!ACTIVE_SLOT_STATUSES.includes(status) && status !== 'confirmed') {
+      const error = new Error(`Booking is ${status} and cannot start.`);
+      error.statusCode = 400;
+      throw error;
+    }
+
+    const sessionId =
+      String(booking.sessionId || '').trim() || generateSessionId();
+
+    await db.collection('bookings').updateOne(
+      { _id: booking._id },
+      {
+        $set: {
+          status: 'active',
+          checkedInAt: nowIso,
+          startDateTime: nowIso,
+          sessionId,
+          parkingName,
+          hourlyRate,
+          updatedAt: nowIso,
+        },
+      },
+    );
+
+    await insertNotification(db, {
+      recipientId: booking.vehicleOwnerId,
+      recipientType: 'vehicle_owner',
+      title: 'Parking Started',
+      message: `Session ${sessionId} started at ${parkingName}, slot ${booking.assignedSlot ?? '-'}.`,
+    });
+
+    return db.collection('bookings').findOne({ _id: booking._id });
+  }
+
+  if (status !== 'active') {
+    const error = new Error(`Booking is ${status}, not an active park session.`);
+    error.statusCode = 400;
+    throw error;
+  }
+
+  const checkedIn = new Date(booking.checkedInAt);
+  let minutes = Math.floor((now.getTime() - checkedIn.getTime()) / 60000);
+  if (minutes < 1) minutes = 1;
+  let billedHours = Math.ceil((minutes / 60) * 100) / 100;
+  if (billedHours < 0.25) billedHours = 0.25;
+  const amountDue = Math.ceil(billedHours * hourlyRate * 100) / 100;
+
+  await db.collection('bookings').updateOne(
+    { _id: booking._id },
+    {
+      $set: {
+        checkedOutAt: nowIso,
+        endDateTime: nowIso,
+        actualDurationHours: billedHours,
+        durationHours: billedHours,
+        hourlyRate,
+        parkingName,
+        amountDue,
+        totalPrice: amountDue,
+        updatedAt: nowIso,
+      },
+    },
+  );
+
+  await insertNotification(db, {
+    recipientId: booking.vehicleOwnerId,
+    recipientType: 'vehicle_owner',
+    title: 'Ready to Pay',
+    message: `Session stopped after ${billedHours.toFixed(2)} hrs at ${parkingName}. Pay ₹${amountDue.toFixed(0)} via Razorpay.`,
+  });
+
+  return db.collection('bookings').findOne({ _id: booking._id });
+}
+
+module.exports = {
+  startParkingSession,
+  scanParkingQr,
+  findBookingByQr,
+};
