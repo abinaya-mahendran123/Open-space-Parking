@@ -172,7 +172,9 @@ class GoogleAuthService {
     try {
       body = jsonDecode(response.body) as Map<String, dynamic>;
     } catch (_) {
-      throw const AppException('Invalid response from Google auth server.');
+      throw AppException(
+        'Google login failed: ${EnvironmentConfig.baseApiUrl} did not return JSON.',
+      );
     }
 
     if (response.statusCode < 200 || response.statusCode >= 300) {

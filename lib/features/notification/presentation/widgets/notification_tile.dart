@@ -11,12 +11,20 @@ class NotificationTile extends StatelessWidget {
     super.key,
     required this.notification,
     required this.onTap,
+    this.onDelete,
+    this.onLongPress,
+    this.selectionMode = false,
+    this.selected = false,
   });
 
   static final _dateFormat = DateFormat('dd MMM yyyy, hh:mm a');
 
   final AppNotification notification;
   final VoidCallback onTap;
+  final VoidCallback? onDelete;
+  final VoidCallback? onLongPress;
+  final bool selectionMode;
+  final bool selected;
 
   @override
   Widget build(BuildContext context) {
@@ -25,32 +33,48 @@ class NotificationTile extends StatelessWidget {
     return AppFadeSlide(
       child: AppCard(
         onTap: onTap,
+        onLongPress: onLongPress,
         padding: const EdgeInsets.all(AppSpacing.md),
-        color: notification.isRead
-            ? null
-            : colorScheme.primaryContainer.withValues(alpha: 0.25),
+        color: selected
+            ? colorScheme.primaryContainer.withValues(alpha: 0.45)
+            : notification.isRead
+                ? null
+                : colorScheme.primaryContainer.withValues(alpha: 0.25),
         child: Row(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Container(
-              width: 44,
-              height: 44,
-              decoration: BoxDecoration(
-                color: notification.isRead
-                    ? colorScheme.surfaceContainerHighest
-                    : colorScheme.primary.withValues(alpha: 0.15),
-                borderRadius: BorderRadius.circular(12),
+            if (selectionMode) ...[
+              Padding(
+                padding: const EdgeInsets.only(right: AppSpacing.sm, top: 8),
+                child: Icon(
+                  selected
+                      ? Icons.check_circle
+                      : Icons.radio_button_unchecked,
+                  color: selected
+                      ? colorScheme.primary
+                      : colorScheme.onSurfaceVariant,
+                ),
               ),
-              child: Icon(
-                notification.isRead
-                    ? Icons.notifications_none_outlined
-                    : Icons.notifications_active_outlined,
-                color: notification.isRead
-                    ? colorScheme.onSurfaceVariant
-                    : colorScheme.primary,
+            ] else
+              Container(
+                width: 44,
+                height: 44,
+                decoration: BoxDecoration(
+                  color: notification.isRead
+                      ? colorScheme.surfaceContainerHighest
+                      : colorScheme.primary.withValues(alpha: 0.15),
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: Icon(
+                  notification.isRead
+                      ? Icons.notifications_none_outlined
+                      : Icons.notifications_active_outlined,
+                  color: notification.isRead
+                      ? colorScheme.onSurfaceVariant
+                      : colorScheme.primary,
+                ),
               ),
-            ),
-            const SizedBox(width: AppSpacing.md),
+            if (!selectionMode) const SizedBox(width: AppSpacing.md),
             Expanded(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -66,7 +90,7 @@ class NotificationTile extends StatelessWidget {
                                   ),
                         ),
                       ),
-                      if (!notification.isRead)
+                      if (!notification.isRead && !selectionMode)
                         Container(
                           width: 8,
                           height: 8,
@@ -92,6 +116,15 @@ class NotificationTile extends StatelessWidget {
                 ],
               ),
             ),
+            if (!selectionMode && onDelete != null)
+              IconButton(
+                tooltip: 'Delete',
+                onPressed: onDelete,
+                icon: Icon(
+                  Icons.delete_outline,
+                  color: colorScheme.onSurfaceVariant,
+                ),
+              ),
           ],
         ),
       ),

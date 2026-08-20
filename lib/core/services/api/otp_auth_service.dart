@@ -13,10 +13,14 @@ class OtpSendResult {
   const OtpSendResult({
     required this.phone,
     this.autoVerified = false,
+    this.devMode = false,
+    this.message,
   });
 
   final String phone;
   final bool autoVerified;
+  final bool devMode;
+  final String? message;
 }
 
 class OtpVerifyResult {

@@ -64,15 +64,33 @@ class FcmService {
       provisional: false,
     );
 
-    return settings.authorizationStatus == AuthorizationStatus.authorized ||
-        settings.authorizationStatus == AuthorizationStatus.provisional;
+    final granted =
+        settings.authorizationStatus == AuthorizationStatus.authorized ||
+            settings.authorizationStatus == AuthorizationStatus.provisional;
+    if (!granted) {
+      AppLogger.i(
+        'Notification permission ${settings.authorizationStatus.name} — push alerts disabled.',
+      );
+    }
+    return granted;
   }
 
   Future<String?> getToken() async {
     if (!_initialized || _messaging == null) return null;
     try {
+      final settings = await _messaging!.getNotificationSettings();
+      if (settings.authorizationStatus == AuthorizationStatus.denied) {
+        // Expected when the user blocked notifications — not an app failure.
+        return null;
+      }
       return await _messaging!.getToken().timeout(const Duration(seconds: 3));
     } catch (e) {
+      final text = e.toString().toLowerCase();
+      if (text.contains('permission-blocked') ||
+          text.contains('permission-denied') ||
+          text.contains('not granted')) {
+        return null;
+      }
       AppLogger.w('Failed to get FCM token: $e');
       return null;
     }

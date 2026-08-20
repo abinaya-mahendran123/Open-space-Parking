@@ -33,6 +33,13 @@ class PhoneUtils {
     return digits.length >= 10;
   }
 
+  /// Last 4 digits of a phone number (security gate password).
+  static String lastFourDigits(String phone) {
+    final digits = digitsOnly(phone);
+    if (digits.length < 4) return '';
+    return digits.substring(digits.length - 4);
+  }
+
   static bool isGateSecurityPhone(String phone) {
     final digits = digitsOnly(phone);
     final lastTen =

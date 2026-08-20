@@ -121,9 +121,7 @@ class ApiClient {
         MongoHttpCodec.decode(jsonDecode(response.body)) as Map,
       );
     } catch (_) {
-      throw NetworkException(
-        'Invalid API response (HTTP ${response.statusCode}).',
-      );
+      throw NetworkException(_invalidResponseMessage(response));
     }
 
     if (response.statusCode >= 400) {
@@ -136,6 +134,17 @@ class ApiClient {
     }
 
     return payload;
+  }
+
+  String _invalidResponseMessage(http.Response response) {
+    final preview = response.body.trim();
+    if (preview.startsWith('<') ||
+        preview.contains('Cannot POST') ||
+        preview.contains('Cannot GET')) {
+      return 'The hosted API is missing this endpoint. '
+          'Redeploy the latest backend to Render, then try again.';
+    }
+    return 'Invalid API response (HTTP ${response.statusCode}).';
   }
 
   bool _isTransportFailure(Object error) {

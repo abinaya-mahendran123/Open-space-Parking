@@ -3,9 +3,9 @@ import 'package:open_space_parking/core/common/exceptions/network_exception.dart
 import 'package:open_space_parking/core/services/api/api_client.dart';
 import 'package:open_space_parking/core/utils/phone_utils.dart';
 
-enum PhoneAccountType { employee, user }
+enum PhoneAccountType { employee, security, user }
 
-/// Resolves whether a phone number belongs to an employee or a normal user.
+/// Resolves whether a phone number belongs to an employee, security, or user.
 class AccountCheckService {
   AccountCheckService({ApiClient? apiClient}) : _apiClient = apiClient ?? ApiClient();
 
@@ -17,15 +17,25 @@ class AccountCheckService {
       throw const AppException('Please enter a valid mobile number.');
     }
 
+    // Local fallback when backend is old / unreachable for this check.
+    if (PhoneUtils.isGateSecurityPhone(phone)) {
+      return PhoneAccountType.security;
+    }
+
     try {
       final response = await _apiClient.post('/api/auth/check-account', {
         'phone': normalized,
       });
       final accountType = response['accountType'] as String? ?? 'user';
-      return accountType == 'employee'
-          ? PhoneAccountType.employee
-          : PhoneAccountType.user;
+      return switch (accountType) {
+        'employee' => PhoneAccountType.employee,
+        'security' => PhoneAccountType.security,
+        _ => PhoneAccountType.user,
+      };
     } on NetworkException catch (error) {
+      if (PhoneUtils.isGateSecurityPhone(phone)) {
+        return PhoneAccountType.security;
+      }
       throw AppException(
         error.message.contains('internet') || error.message.contains('reach')
             ? 'Unable to connect. Please check your internet connection and try again.'

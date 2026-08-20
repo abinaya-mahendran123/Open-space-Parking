@@ -5,6 +5,7 @@ Future<void> showSlotBookedDialog(
   required int slot,
   required String parkingName,
 }) {
+  final hasSlot = slot > 0;
   return showDialog<void>(
     context: context,
     barrierDismissible: false,
@@ -16,10 +17,13 @@ Future<void> showSlotBookedDialog(
           color: theme.colorScheme.primary,
           size: 48,
         ),
-        title: Text('Slot $slot is booked'),
+        title: Text(hasSlot ? 'Slot $slot is booked' : 'Slot booked'),
         content: Text(
-          'Assigned first come, first served at $parkingName.\n'
-          'Show the QR to security when you enter.',
+          hasSlot
+              ? 'Slot $slot assigned first come, first served at $parkingName.\n'
+                  'Show the QR to security when you enter.'
+              : 'Your slot was assigned first come, first served at $parkingName.\n'
+                  'Show the QR to security when you enter.',
         ),
         actions: [
           FilledButton(

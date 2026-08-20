@@ -42,10 +42,10 @@ class AppConstants {
   static const String defaultAdminDisplayName = 'Admin';
 
   /// Default gate security login (dev/local).
+  /// Password is always the last 4 digits of [defaultSecurityPhone].
   static const String defaultSecurityEmail = 'security@openspace.local';
-  static const String defaultSecurityPassword = 'Security@1234';
   static const String defaultSecurityDisplayName = 'Gate Security';
 
-  /// Sign-in phone number that opens the gate scanner with no OTP.
+  /// Security sign-in phone. Password = last 4 digits (`9999`).
   static const String defaultSecurityPhone = '9999999999';
 }

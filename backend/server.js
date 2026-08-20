@@ -206,6 +206,12 @@ function phoneKey(phone) {
   return phoneDigits(phone).slice(-10);
 }
 
+function phoneLastFour(phone) {
+  const digits = phoneDigits(phone);
+  if (digits.length < 4) return '';
+  return digits.slice(-4);
+}
+
 async function findActiveUserByPhone(phone) {
   const lastTen = phoneKey(phone);
   if (!lastTen) return null;
@@ -309,11 +315,12 @@ async function seedDefaultSecurity(database) {
   const email = (process.env.DEFAULT_SECURITY_EMAIL || 'security@openspace.local')
     .trim()
     .toLowerCase();
-  const password = process.env.DEFAULT_SECURITY_PASSWORD || 'Security@1234';
   const name = process.env.DEFAULT_SECURITY_NAME || 'Gate Security';
   const phone = normalizePhoneNumber(
     process.env.DEFAULT_SECURITY_PHONE || '9999999999',
   );
+  // Password rule: last 4 digits of the security phone number.
+  const password = phoneLastFour(phone);
   const now = new Date().toISOString();
   const salt = generateSalt();
   const hash = hashPassword(password, salt);
@@ -337,7 +344,7 @@ async function seedDefaultSecurity(database) {
     },
     { upsert: true },
   );
-  console.log(`Default security ready: ${email}`);
+  console.log(`Default security ready: ${email} / phone ${phone}`);
 }
 
 async function seedDemoParkingIfEmpty(database) {
@@ -435,39 +442,56 @@ async function ensureIndexes(database) {
 
 app.post('/api/auth/security-login', async (req, res) => {
   try {
-    const email = String(req.body?.email || '').trim().toLowerCase();
+    const phone = normalizePhoneNumber(req.body?.phone || req.body?.email);
     const password = String(req.body?.password || '');
-    if (!email || !password) {
-      res.status(400).json({ error: 'Invalid credentials.' });
+    if (!phone || !password) {
+      res.status(400).json({ error: 'Enter mobile number and password.' });
       return;
     }
 
-    const defaultEmail = (
-      process.env.DEFAULT_SECURITY_EMAIL || 'security@openspace.local'
-    )
-      .trim()
-      .toLowerCase();
-    if (email === defaultEmail) {
+    const expectedPassword = phoneLastFour(phone);
+    if (!expectedPassword || password !== expectedPassword) {
+      res.status(401).json({ error: 'Invalid credentials.' });
+      return;
+    }
+
+    const defaultPhone = normalizePhoneNumber(
+      process.env.DEFAULT_SECURITY_PHONE || '9999999999',
+    );
+    if (phoneKey(phone) === phoneKey(defaultPhone)) {
       await seedDefaultSecurity(db);
     }
 
-    const user = await db.collection('users').findOne({
-      email,
-      isDeleted: { $ne: true },
-    });
-    if (!user || !user.passwordSalt || !user.passwordHash) {
-      res.status(401).json({ error: 'Invalid credentials.' });
+    const user = await findActiveUserByPhone(phone);
+    if (!user || user.role !== 'security') {
+      res.status(403).json({
+        error: 'Only registered security staff can open the gate scanner.',
+      });
       return;
     }
 
-    const computed = hashPassword(password, user.passwordSalt);
-    if (computed !== user.passwordHash) {
-      res.status(401).json({ error: 'Invalid credentials.' });
-      return;
-    }
-    if (user.role !== 'security') {
-      res.status(403).json({ error: 'Only security staff can open the gate scanner.' });
-      return;
+    // Keep stored hash in sync with the last-4 rule.
+    const salt = user.passwordSalt || generateSalt();
+    const hash = hashPassword(expectedPassword, salt);
+    if (
+      !user.passwordSalt ||
+      !user.passwordHash ||
+      user.passwordHash !== hash
+    ) {
+      await db.collection('users').updateOne(
+        { _id: user._id },
+        {
+          $set: {
+            passwordHash: hash,
+            passwordSalt: salt,
+            phone,
+            updatedAt: new Date().toISOString(),
+          },
+        },
+      );
+      user.passwordHash = hash;
+      user.passwordSalt = salt;
+      user.phone = phone;
     }
 
     res.json(sessionPayload(user));
@@ -819,6 +843,21 @@ app.post('/api/auth/check-account', async (req, res) => {
         return;
       }
       res.json({ accountType: 'employee' });
+      return;
+    }
+
+    const defaultSecurityPhone = normalizePhoneNumber(
+      process.env.DEFAULT_SECURITY_PHONE || '9999999999',
+    );
+    if (phoneKey(normalizedPhone) === phoneKey(defaultSecurityPhone)) {
+      await seedDefaultSecurity(db);
+      res.json({ accountType: 'security' });
+      return;
+    }
+
+    const user = await findActiveUserByPhone(normalizedPhone);
+    if (user?.role === 'security') {
+      res.json({ accountType: 'security' });
       return;
     }
 

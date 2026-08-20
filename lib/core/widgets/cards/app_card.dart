@@ -8,6 +8,7 @@ class AppCard extends StatelessWidget {
     required this.child,
     this.padding = const EdgeInsets.all(AppSpacing.cardPadding),
     this.onTap,
+    this.onLongPress,
     this.margin,
     this.color,
   });
@@ -15,6 +16,7 @@ class AppCard extends StatelessWidget {
   final Widget child;
   final EdgeInsets padding;
   final VoidCallback? onTap;
+  final VoidCallback? onLongPress;
   final EdgeInsets? margin;
   final Color? color;
 
@@ -22,11 +24,15 @@ class AppCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final content = Padding(padding: padding, child: child);
 
-    if (onTap != null) {
+    if (onTap != null || onLongPress != null) {
       return Card(
         margin: margin ?? EdgeInsets.zero,
         color: color,
-        child: InkWell(onTap: onTap, child: content),
+        child: InkWell(
+          onTap: onTap,
+          onLongPress: onLongPress,
+          child: content,
+        ),
       );
     }
 

@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -8,11 +10,14 @@ import 'package:open_space_parking/core/common/exceptions/app_exception.dart';
 import 'package:open_space_parking/core/di/service_locator.dart';
 import 'package:open_space_parking/core/providers/core_providers.dart';
 import 'package:open_space_parking/core/routes/route_paths.dart';
+import 'package:open_space_parking/features/authentication/presentation/providers/auth_form_providers.dart';
 import 'package:open_space_parking/features/authentication/presentation/providers/auth_state_provider.dart';
 import 'package:open_space_parking/features/vehicle_owner/domain/entities/booking.dart';
 import 'package:open_space_parking/features/vehicle_owner/domain/repositories/vehicle_owner_repository.dart';
 
-/// Gate desk: first QR scan starts session; second scan stops and bills.
+enum _SecurityView { desk, scanner }
+
+/// Gate desk: stay signed in; open scanner only when needed; back returns to desk.
 class SecurityScanPage extends ConsumerStatefulWidget {
   const SecurityScanPage({super.key});
 
@@ -22,8 +27,9 @@ class SecurityScanPage extends ConsumerStatefulWidget {
 
 class _SecurityScanPageState extends ConsumerState<SecurityScanPage> {
   late MobileScannerController _scannerController;
+  _SecurityView _view = _SecurityView.desk;
   bool _scanning = false;
-  bool _cameraPaused = false;
+  bool _cameraPaused = true;
   Booking? _result;
   String? _action;
 
@@ -38,6 +44,7 @@ class _SecurityScanPageState extends ConsumerState<SecurityScanPage> {
       detectionSpeed: DetectionSpeed.noDuplicates,
       facing: CameraFacing.back,
       formats: const [BarcodeFormat.qrCode],
+      autoStart: false,
     );
   }
 
@@ -45,6 +52,42 @@ class _SecurityScanPageState extends ConsumerState<SecurityScanPage> {
   void dispose() {
     _scannerController.dispose();
     super.dispose();
+  }
+
+  Future<void> _openScanner() async {
+    setState(() {
+      _view = _SecurityView.scanner;
+      _result = null;
+      _action = null;
+      _cameraPaused = false;
+      _scanning = false;
+    });
+    try {
+      await _scannerController.start();
+    } catch (_) {
+      if (mounted) {
+        ref.read(snackbarServiceProvider).showError(
+              'Camera could not start. Check camera permission and try again.',
+            );
+      }
+    }
+  }
+
+  Future<void> _returnToDesk() async {
+    unawaited(_stopScannerQuietly());
+    if (!mounted) return;
+    setState(() {
+      _view = _SecurityView.desk;
+      _cameraPaused = true;
+      _scanning = false;
+      _result = null;
+      _action = null;
+    });
+  }
+      _scanning = false;
+      _result = null;
+      _action = null;
+    });
   }
 
   Future<void> _processCode(String raw) async {
@@ -91,7 +134,9 @@ class _SecurityScanPageState extends ConsumerState<SecurityScanPage> {
   }
 
   Future<void> _pauseCamera() async {
-    await _scannerController.stop();
+    try {
+      await _scannerController.stop();
+    } catch (_) {}
     if (mounted) setState(() => _cameraPaused = true);
   }
 
@@ -101,7 +146,15 @@ class _SecurityScanPageState extends ConsumerState<SecurityScanPage> {
       _action = null;
       _cameraPaused = false;
     });
-    await _scannerController.start();
+    try {
+      await _scannerController.start();
+    } catch (_) {
+      if (mounted) {
+        ref.read(snackbarServiceProvider).showError(
+              'Camera could not start. Check camera permission and try again.',
+            );
+      }
+    }
   }
 
   Future<void> _retryCamera() async {
@@ -112,10 +165,13 @@ class _SecurityScanPageState extends ConsumerState<SecurityScanPage> {
       _result = null;
       _action = null;
     });
+    try {
+      await _scannerController.start();
+    } catch (_) {}
   }
 
   void _onDetect(BarcodeCapture capture) {
-    if (_scanning || _cameraPaused) return;
+    if (_scanning || _cameraPaused || _view != _SecurityView.scanner) return;
     for (final barcode in capture.barcodes) {
       final value = barcode.rawValue;
       if (value != null && value.trim().isNotEmpty) {
@@ -125,137 +181,232 @@ class _SecurityScanPageState extends ConsumerState<SecurityScanPage> {
     }
   }
 
+  Future<void> _stopScannerQuietly() async {
+    try {
+      await _scannerController.stop().timeout(const Duration(seconds: 1));
+    } catch (_) {}
+  }
+
   Future<void> _logout() async {
+    if (_view == _SecurityView.scanner) {
+      setState(() {
+        _view = _SecurityView.desk;
+        _cameraPaused = true;
+        _scanning = false;
+      });
+    }
+    // Never block sign-out on camera teardown (common hang on web).
+    unawaited(_stopScannerQuietly());
+
+    ref.read(phoneAuthStepProvider.notifier).state = PhoneAuthStep.enterPhone;
+    ref.read(verifiedPhoneProvider.notifier).state = null;
+    ref.read(authLoadingProvider.notifier).state = false;
+
     await ref.read(authStateProvider.notifier).logout();
     if (!mounted) return;
     context.go(RoutePaths.authEntry);
+  }
+
+  Future<void> _onSystemBack() async {
+    if (_view == _SecurityView.scanner) {
+      await _returnToDesk();
+      return;
+    }
+    await _logout();
   }
 
   @override
   Widget build(BuildContext context) {
     final result = _result;
     final name = ref.watch(authStateProvider).session?.displayName ?? 'Security';
+    final onScanner = _view == _SecurityView.scanner;
 
-    return Scaffold(
-      backgroundColor: Colors.black,
-      appBar: AppBar(
-        title: const Text('Scan parking QR'),
-        leading: IconButton(
-          tooltip: 'Sign out',
-          onPressed: _logout,
-          icon: const Icon(Icons.arrow_back),
+    return PopScope(
+      canPop: false,
+      onPopInvokedWithResult: (didPop, _) async {
+        if (didPop) return;
+        await _onSystemBack();
+      },
+      child: Scaffold(
+        backgroundColor: onScanner ? Colors.black : null,
+        appBar: AppBar(
+          title: Text(onScanner ? 'Scan parking QR' : 'Security gate'),
+          leading: IconButton(
+            tooltip: onScanner ? 'Back to gate desk' : 'Sign out',
+            onPressed: onScanner ? _returnToDesk : _logout,
+            icon: Icon(onScanner ? Icons.arrow_back : Icons.logout),
+          ),
+          actions: [
+            if (onScanner)
+              IconButton(
+                tooltip: 'Sign out',
+                onPressed: _logout,
+                icon: const Icon(Icons.logout),
+              ),
+          ],
         ),
-        actions: [
-          IconButton(
-            tooltip: 'Sign out',
-            onPressed: _logout,
-            icon: const Icon(Icons.logout),
-          ),
-        ],
+        body: onScanner
+            ? _buildScannerBody(context, name, result)
+            : _buildDeskBody(context, name),
       ),
-      body: Column(
-        children: [
-          Padding(
-            padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
-            child: Text(
-              'Gate desk — $name\nPoint the camera at the driver QR. '
-              'First scan starts the session. Same QR again stops and bills.',
-              style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                    color: Colors.white,
-                  ),
+    );
+  }
+
+  Widget _buildDeskBody(BuildContext context, String name) {
+    final colorScheme = Theme.of(context).colorScheme;
+    return SafeArea(
+      child: Padding(
+        padding: const EdgeInsets.all(24),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            const Spacer(),
+            Icon(
+              Icons.security,
+              size: 72,
+              color: colorScheme.primary,
+            ),
+            const SizedBox(height: 20),
+            Text(
+              'Security login',
               textAlign: TextAlign.center,
+              style: Theme.of(context).textTheme.headlineSmall,
             ),
-          ),
-          Expanded(
-            child: Stack(
-              fit: StackFit.expand,
-              children: [
-                if (_cameraPaused)
-                  ColoredBox(
-                    color: Colors.black,
-                    child: Center(
-                      child: result == null
-                          ? TextButton.icon(
-                              onPressed: _resumeCamera,
-                              icon: const Icon(Icons.qr_code_scanner),
-                              label: const Text('Scan next vehicle'),
-                            )
-                          : const SizedBox.shrink(),
-                    ),
-                  )
-                else
-                  MobileScanner(
-                    key: ObjectKey(_scannerController),
-                    controller: _scannerController,
-                    onDetect: _onDetect,
-                    fit: BoxFit.cover,
-                    errorBuilder: (context, error, _) {
-                      final permissionDenied =
-                          error.errorCode == MobileScannerErrorCode.permissionDenied;
-                      return ColoredBox(
-                        color: Colors.black,
-                        child: Padding(
-                          padding: const EdgeInsets.all(24),
-                          child: Column(
-                            mainAxisAlignment: MainAxisAlignment.center,
-                            children: [
-                              const Icon(
-                                Icons.photo_camera_outlined,
-                                color: Colors.white,
-                                size: 56,
-                              ),
-                              const SizedBox(height: 16),
-                              Text(
-                                permissionDenied
-                                    ? 'Allow camera access to scan the parking QR.'
-                                    : 'Camera could not start. Check camera permission and try again.',
-                                style: const TextStyle(color: Colors.white),
-                                textAlign: TextAlign.center,
-                              ),
-                              const SizedBox(height: 20),
-                              FilledButton.icon(
-                                onPressed: _retryCamera,
-                                icon: const Icon(Icons.camera_alt),
-                                label: const Text('Open camera'),
-                              ),
-                            ],
-                          ),
-                        ),
-                      );
-                    },
-                    overlayBuilder: (context, constraints) {
-                      final size = constraints.biggest.shortestSide * 0.7;
-                      return Center(
-                        child: Container(
-                          width: size,
-                          height: size,
-                          decoration: BoxDecoration(
-                            border: Border.all(color: Colors.white, width: 3),
-                            borderRadius: BorderRadius.circular(20),
-                          ),
-                        ),
-                      );
-                    },
+            const SizedBox(height: 8),
+            Text(
+              'Signed in as $name\n'
+              'Scan a driver QR to start or stop a parking session.',
+              textAlign: TextAlign.center,
+              style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                    color: colorScheme.onSurfaceVariant,
                   ),
-                if (_scanning)
-                  const ColoredBox(
-                    color: Color(0x66000000),
-                    child: Center(child: CircularProgressIndicator()),
-                  ),
-                if (result != null)
-                  Align(
-                    alignment: Alignment.bottomCenter,
-                    child: _ScanResultCard(
-                      booking: result,
-                      action: _action,
-                      onScanNext: _resumeCamera,
-                    ),
-                  ),
-              ],
             ),
-          ),
-        ],
+            const Spacer(),
+            FilledButton.icon(
+              onPressed: _openScanner,
+              icon: const Icon(Icons.qr_code_scanner),
+              label: const Text('Scan next vehicle'),
+            ),
+            const SizedBox(height: 12),
+            OutlinedButton.icon(
+              onPressed: _logout,
+              icon: const Icon(Icons.logout),
+              label: const Text('Sign out'),
+            ),
+          ],
+        ),
       ),
+    );
+  }
+
+  Widget _buildScannerBody(
+    BuildContext context,
+    String name,
+    Booking? result,
+  ) {
+    return Column(
+      children: [
+        Padding(
+          padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
+          child: Text(
+            'Gate desk — $name\nPoint the camera at the driver QR. '
+            'First scan starts the session. Same QR again stops and bills.',
+            style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                  color: Colors.white,
+                ),
+            textAlign: TextAlign.center,
+          ),
+        ),
+        Expanded(
+          child: Stack(
+            fit: StackFit.expand,
+            children: [
+              if (_cameraPaused)
+                ColoredBox(
+                  color: Colors.black,
+                  child: Center(
+                    child: result == null
+                        ? TextButton.icon(
+                            onPressed: _resumeCamera,
+                            icon: const Icon(Icons.qr_code_scanner),
+                            label: const Text('Scan next vehicle'),
+                          )
+                        : const SizedBox.shrink(),
+                  ),
+                )
+              else
+                MobileScanner(
+                  key: ObjectKey(_scannerController),
+                  controller: _scannerController,
+                  onDetect: _onDetect,
+                  fit: BoxFit.cover,
+                  errorBuilder: (context, error, _) {
+                    final permissionDenied = error.errorCode ==
+                        MobileScannerErrorCode.permissionDenied;
+                    return ColoredBox(
+                      color: Colors.black,
+                      child: Padding(
+                        padding: const EdgeInsets.all(24),
+                        child: Column(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            const Icon(
+                              Icons.photo_camera_outlined,
+                              color: Colors.white,
+                              size: 56,
+                            ),
+                            const SizedBox(height: 16),
+                            Text(
+                              permissionDenied
+                                  ? 'Allow camera access to scan the parking QR.'
+                                  : 'Camera could not start. Check camera permission and try again.',
+                              style: const TextStyle(color: Colors.white),
+                              textAlign: TextAlign.center,
+                            ),
+                            const SizedBox(height: 20),
+                            FilledButton.icon(
+                              onPressed: _retryCamera,
+                              icon: const Icon(Icons.camera_alt),
+                              label: const Text('Open camera'),
+                            ),
+                          ],
+                        ),
+                      ),
+                    );
+                  },
+                  overlayBuilder: (context, constraints) {
+                    final size = constraints.biggest.shortestSide * 0.7;
+                    return Center(
+                      child: Container(
+                        width: size,
+                        height: size,
+                        decoration: BoxDecoration(
+                          border: Border.all(color: Colors.white, width: 3),
+                          borderRadius: BorderRadius.circular(20),
+                        ),
+                      ),
+                    );
+                  },
+                ),
+              if (_scanning)
+                const ColoredBox(
+                  color: Color(0x66000000),
+                  child: Center(child: CircularProgressIndicator()),
+                ),
+              if (result != null)
+                Align(
+                  alignment: Alignment.bottomCenter,
+                  child: _ScanResultCard(
+                    booking: result,
+                    action: _action,
+                    onScanNext: _resumeCamera,
+                    onBackToDesk: _returnToDesk,
+                  ),
+                ),
+            ],
+          ),
+        ),
+      ],
     );
   }
 }
@@ -265,11 +416,13 @@ class _ScanResultCard extends StatelessWidget {
     required this.booking,
     required this.action,
     required this.onScanNext,
+    required this.onBackToDesk,
   });
 
   final Booking booking;
   final String? action;
   final VoidCallback onScanNext;
+  final VoidCallback onBackToDesk;
 
   @override
   Widget build(BuildContext context) {
@@ -322,6 +475,14 @@ class _ScanResultCard extends StatelessWidget {
                 onPressed: onScanNext,
                 icon: const Icon(Icons.qr_code_scanner),
                 label: const Text('Scan next vehicle'),
+              ),
+            ),
+            const SizedBox(height: 8),
+            SizedBox(
+              width: double.infinity,
+              child: OutlinedButton(
+                onPressed: onBackToDesk,
+                child: const Text('Back to gate desk'),
               ),
             ),
           ],

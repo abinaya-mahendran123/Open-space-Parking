@@ -24,7 +24,7 @@ class EnvironmentConfig {
     // `adb reverse` is set, so we also probe 127.0.0.1, emulator, and LAN IP.
     const configuredApiUrl = String.fromEnvironment(
       'BASE_API_URL',
-      defaultValue: 'http://localhost:3000',
+      defaultValue: 'https://open-space-parking.onrender.com',
     );
     const hostLanIp = String.fromEnvironment(
       'HOST_LAN_IP',
@@ -139,17 +139,24 @@ class EnvironmentConfig {
       candidates.add(normalized);
     }
 
-    add('http://127.0.0.1:3000');
-    add('http://localhost:3000');
-    // USB reverse makes 127.0.0.1 on the phone reach this PC. Try that first.
-    // Keep the explicit configured value early as well in case the launch config
-    // points to a custom backend host/port.
-    add(configured);
-    add('http://10.0.2.2:3000');
-    // LAN IP is a fallback when the cable is unplugged (must be the PC's current IP).
-    if (lanIp.trim().isNotEmpty) {
-      final value = lanIp.trim();
-      add(value.startsWith('http') ? value : 'http://$value:3000');
+    final configuredTrimmed = configured.trim().replaceAll(RegExp(r'/+$'), '');
+    final preferHosted = configuredTrimmed.startsWith('https://');
+
+    // When an explicit hosted API is configured (Render), do NOT race localhost.
+    // USB `adb reverse` makes 127.0.0.1 "healthy" first and steals OTP traffic.
+    if (preferHosted) {
+      add(configuredTrimmed);
+      add('https://open-space-parking.onrender.com');
+    } else {
+      add('http://127.0.0.1:3000');
+      add('http://localhost:3000');
+      add(configuredTrimmed);
+      add('https://open-space-parking.onrender.com');
+      add('http://10.0.2.2:3000');
+      if (lanIp.trim().isNotEmpty) {
+        final value = lanIp.trim();
+        add(value.startsWith('http') ? value : 'http://$value:3000');
+      }
     }
 
     final client = http.Client();
@@ -167,7 +174,7 @@ class EnvironmentConfig {
     // If nothing answered yet, keep the explicitly configured base URL instead of
     // forcing a possibly stale LAN IP. A later retry can still switch to LAN once
     // the backend is reachable.
-    return configured;
+    return configuredTrimmed.isNotEmpty ? configuredTrimmed : configured;
   }
 
   static const String phoneUnreachableMessage =

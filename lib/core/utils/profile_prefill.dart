@@ -104,12 +104,6 @@ class ProfilePrefill {
           sessionEmail: session?.email,
         ),
       ]),
-      email: firstNonEmpty([
-        realEmail(saved?.email),
-        realEmail(accountEmail),
-        realEmail(session?.email),
-      ]),
-      address: saved?.address,
       vehicleNumber: saved?.vehicleNumber,
       vehicleModel: saved?.vehicleModel,
       vehicleBrand: saved?.vehicleBrand,
@@ -129,9 +123,8 @@ class ProfilePrefill {
   static bool hasAnyVehicleProfile(VehicleOwnerProfile profile) {
     return profile.fullName.isNotEmpty ||
         profile.phone.isNotEmpty ||
-        profile.email.isNotEmpty ||
-        (profile.address?.isNotEmpty ?? false) ||
         (profile.vehicleNumber?.isNotEmpty ?? false) ||
-        (profile.vehicleModel?.isNotEmpty ?? false);
+        (profile.vehicleModel?.isNotEmpty ?? false) ||
+        (profile.vehicleBrand?.isNotEmpty ?? false);
   }
 }

@@ -17,6 +17,16 @@ rootProject.layout.buildDirectory.set(androidBuildRoot)
 subprojects {
     project.layout.buildDirectory.set(java.io.File(androidBuildRoot, project.name))
 }
+
+// Apply NDK version as soon as each Android plugin is applied (before configure fails).
+subprojects {
+    pluginManager.withPlugin("com.android.library") {
+        extensions.configure<com.android.build.gradle.LibraryExtension>("android") {
+            ndkVersion = "28.2.13676358"
+        }
+    }
+}
+
 subprojects {
     project.evaluationDependsOn(":app")
 }

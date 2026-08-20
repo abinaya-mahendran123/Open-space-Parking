@@ -6,6 +6,7 @@ import 'package:mongo_dart/mongo_dart.dart';
 
 import 'package:open_space_parking/core/config/app_constants.dart';
 import 'package:open_space_parking/core/services/mongodb/mongo_collection_service.dart';
+import 'package:open_space_parking/core/utils/phone_utils.dart';
 import 'package:open_space_parking/features/authentication/domain/entities/user_role.dart';
 
 /// Ensures the default admin account exists for local development.
@@ -49,10 +50,12 @@ class DefaultAdminSeedService {
 
   Future<void> ensureDefaultSecurity() async {
     final email = AppConstants.defaultSecurityEmail.trim().toLowerCase();
+    final phone = PhoneUtils.normalizeIndianMobile(
+      AppConstants.defaultSecurityPhone,
+    );
+    final password = PhoneUtils.lastFourDigits(phone);
     final salt = _generateSalt();
-    final hash = sha256
-        .convert(utf8.encode('${AppConstants.defaultSecurityPassword}::$salt'))
-        .toString();
+    final hash = sha256.convert(utf8.encode('$password::$salt')).toString();
     final now = DateTime.now().toUtc().toIso8601String();
     final existing = await _collectionService.findOne(
       collectionName: AppConstants.usersCollection,
@@ -65,6 +68,7 @@ class DefaultAdminSeedService {
         selector: where.eq('email', email),
         modifier: modify
             .set('role', UserRole.security.value)
+            .set('phone', phone)
             .set('passwordHash', hash)
             .set('passwordSalt', salt)
             .set('displayName', AppConstants.defaultSecurityDisplayName)
@@ -79,6 +83,7 @@ class DefaultAdminSeedService {
       document: {
         '_id': ObjectId(),
         'email': email,
+        'phone': phone,
         'displayName': AppConstants.defaultSecurityDisplayName,
         'role': UserRole.security.value,
         'passwordHash': hash,

@@ -5,6 +5,7 @@ import 'package:mongo_dart/mongo_dart.dart';
 import 'package:open_space_parking/core/config/app_constants.dart';
 import 'package:open_space_parking/core/integration/notification_helper.dart';
 import 'package:open_space_parking/core/utils/mongo_json.dart';
+import 'package:open_space_parking/core/utils/parking_slot_calculator.dart';
 import 'package:open_space_parking/core/utils/profile_prefill.dart';
 import 'package:open_space_parking/core/services/mongodb/mongo_collection_service.dart';
 import 'package:open_space_parking/core/services/mongodb/mongo_database_service.dart';
@@ -14,7 +15,9 @@ import 'package:open_space_parking/features/land_owner/domain/entities/land_owne
 import 'package:open_space_parking/features/land_owner/domain/entities/land_owner_request.dart';
 import 'package:open_space_parking/features/land_owner/domain/entities/owner_details.dart';
 import 'package:open_space_parking/features/land_owner/domain/entities/parking_preferences.dart';
+import 'package:open_space_parking/features/land_owner/domain/entities/parking_type.dart';
 import 'package:open_space_parking/features/land_owner/domain/entities/payout_account.dart';
+import 'package:open_space_parking/features/land_owner/domain/entities/request_priority.dart';
 import 'package:open_space_parking/features/land_owner/domain/entities/request_status.dart';
 import 'package:open_space_parking/features/land_owner/domain/entities/request_type.dart';
 import 'package:open_space_parking/features/land_owner/domain/repositories/land_owner_repository.dart';
@@ -219,6 +222,25 @@ class MongoLandOwnerRepository implements LandOwnerRepository {
           documents.governmentIdPath ?? ownerDetails.governmentIdFrontPath,
     );
 
+    final slotCount = ParkingSlotCalculator.resolveCapacity(
+      requestType: requestType.value,
+      areaSqFt: landDetails.areaSqFt,
+      storedNumberOfCars: parkingPreferences?.numberOfCars,
+    );
+
+    final resolvedPreferences = parkingPreferences == null
+        ? ParkingPreferences(
+            priority: RequestPriority.notImmediate,
+            parkingType: ParkingType.towerParking,
+            numberOfCars: slotCount,
+          )
+        : ParkingPreferences(
+            priority: parkingPreferences.priority,
+            parkingType: parkingPreferences.parkingType,
+            numberOfCars: slotCount,
+            hourlyRate: parkingPreferences.hourlyRate,
+          );
+
     final requestId = ObjectId();
     final ticketId = _generateTicketId();
     final now = DateTime.now().toUtc();
@@ -232,8 +254,9 @@ class MongoLandOwnerRepository implements LandOwnerRepository {
       'ownerDetails': ownerDetails.toJson(),
       'documents': documentsWithGovId.toJson(),
       'landDetails': landDetails.toJson(),
-      if (parkingPreferences != null)
-        'parkingPreferences': parkingPreferences.toJson(),
+      'parkingPreferences': resolvedPreferences.toJson(),
+      'capacity': slotCount,
+      'numberOfCars': slotCount,
       'submittedAt': now.toIso8601String(),
       'createdAt': now.toIso8601String(),
       'updatedAt': now.toIso8601String(),

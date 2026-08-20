@@ -172,12 +172,12 @@ class AuthStateNotifier extends StateNotifier<AuthState> {
   }
 
   Future<void> loginSecurity({
-    required String email,
+    required String phone,
     required String password,
   }) async {
     await _ensureApiReady();
     final session = await _authRepository.loginSecurity(
-      email: email,
+      phone: phone,
       password: password,
     );
     await _persistSession(session);
@@ -208,13 +208,21 @@ class AuthStateNotifier extends StateNotifier<AuthState> {
   }
 
   Future<OtpSendResult> sendPhoneOtp(String phone) async {
-    // Try backend OTP first (no Firebase billing required)
+    await _ensureApiReady();
     try {
       final result = await BackendOtpService().sendOtp(phone);
-      return OtpSendResult(phone: result.phone, autoVerified: false);
-    } catch (_) {
-      // Fall back to Firebase OTP if backend fails
-      return sl<OtpAuthService>().sendOtp(phone);
+      return OtpSendResult(
+        phone: result.phone,
+        autoVerified: false,
+        devMode: result.isDev,
+        message: result.message,
+      );
+    } on AppException catch (e) {
+      throw AppException('${e.message} [API ${EnvironmentConfig.baseApiUrl}]');
+    } catch (e) {
+      throw AppException(
+        'OTP send failed: $e [API ${EnvironmentConfig.baseApiUrl}]',
+      );
     }
   }
 
@@ -227,20 +235,10 @@ class AuthStateNotifier extends StateNotifier<AuthState> {
   }) async {
     await _ensureApiReady();
 
-    String? otpToken;
-    String? idToken;
-
-    // Try backend OTP verification first
-    try {
-      final verified = await BackendOtpService().verifyOtp(phone: phone, otp: otp);
-      otpToken = verified.otpToken;
-      phone = verified.phone;
-    } catch (_) {
-      // Fall back to Firebase OTP
-      final verified = await sl<OtpAuthService>().verifyOtp(phone: phone, otp: otp);
-      idToken = verified.idToken;
-      phone = verified.phone;
-    }
+    final verified = await BackendOtpService().verifyOtp(phone: phone, otp: otp);
+    final otpToken = verified.otpToken;
+    phone = verified.phone;
+    const String? idToken = null;
 
     if (mode == AuthFormMode.signUp) {
       if (displayName == null || displayName.trim().isEmpty) {

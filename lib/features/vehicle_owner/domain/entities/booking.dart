@@ -120,6 +120,23 @@ class Booking extends Equatable {
   }
 
   String get billedDurationLabel {
+    if (checkedInAt != null && checkedOutAt != null) {
+      var seconds = checkedOutAt!.difference(checkedInAt!).inSeconds;
+      if (seconds < 0) seconds = 0;
+      final h = seconds ~/ 3600;
+      final m = (seconds % 3600) ~/ 60;
+      final s = seconds % 60;
+      if (h > 0) {
+        if (m == 0) return '$h hr';
+        return '$h hr $m min';
+      }
+      if (m > 0) {
+        if (s == 0) return '$m min';
+        return '$m min $s sec';
+      }
+      return '$s sec';
+    }
+
     final hours = actualDurationHours;
     if (hours == null) return elapsedClock();
     final totalMinutes = (hours * 60).round();

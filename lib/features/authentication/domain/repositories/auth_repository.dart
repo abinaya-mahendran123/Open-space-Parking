@@ -18,7 +18,7 @@ abstract class AuthRepository {
   });
 
   Future<AuthSession> loginSecurity({
-    required String email,
+    required String phone,
     required String password,
   });
 

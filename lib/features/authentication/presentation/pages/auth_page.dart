@@ -6,7 +6,6 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import 'package:open_space_parking/core/bootstrap/app_bootstrap.dart';
-import 'package:open_space_parking/core/config/app_constants.dart';
 import 'package:open_space_parking/core/common/exceptions/app_exception.dart';
 import 'package:open_space_parking/core/services/api/account_check_service.dart';
 import 'package:open_space_parking/core/providers/core_providers.dart';
@@ -139,33 +138,15 @@ class _AuthPageState extends ConsumerState<AuthPage> {
   }
 
   Future<void> _openSecurityFromPhone() async {
-    final loading = ref.read(authLoadingProvider.notifier);
-    final snackbar = ref.read(snackbarServiceProvider);
-
-    loading.state = true;
-    try {
-      await ref.read(authStateProvider.notifier).loginSecurity(
-            email: AppConstants.defaultSecurityEmail,
-            password: AppConstants.defaultSecurityPassword,
-          );
-      if (!mounted) return;
-      await _completeAuthenticatedFlow();
-    } on AppException catch (e) {
-      snackbar.showError(e.message);
-    } catch (_) {
-      snackbar.showError('Security sign-in failed.');
-    } finally {
-      loading.state = false;
-    }
+    ref.read(phoneAuthStepProvider.notifier).state =
+        PhoneAuthStep.enterSecurityPassword;
+    ref.read(verifiedPhoneProvider.notifier).state =
+        PhoneUtils.normalizeIndianMobile(_phoneController.text.trim());
+    _employeePasswordController.clear();
   }
 
   Future<void> _continueWithPhone() async {
     if (!_formKey.currentState!.validate()) return;
-
-    if (PhoneUtils.isGateSecurityPhone(_phoneController.text)) {
-      await _openSecurityFromPhone();
-      return;
-    }
 
     final loading = ref.read(authLoadingProvider.notifier);
     final snackbar = ref.read(snackbarServiceProvider);
@@ -176,6 +157,11 @@ class _AuthPageState extends ConsumerState<AuthPage> {
       final accountType = await ref
           .read(authStateProvider.notifier)
           .checkPhoneAccount(_phoneController.text.trim());
+
+      if (accountType == PhoneAccountType.security) {
+        await _openSecurityFromPhone();
+        return;
+      }
 
       if (accountType == PhoneAccountType.employee) {
         ref.read(phoneAuthStepProvider.notifier).state =
@@ -196,6 +182,37 @@ class _AuthPageState extends ConsumerState<AuthPage> {
       if (mounted) {
         setState(() => _checkingAccountLabel = null);
       }
+      loading.state = false;
+    }
+  }
+
+  Future<void> _submitSecurityPassword() async {
+    final phone = _phoneController.text.trim();
+    final password = _employeePasswordController.text.trim();
+    final expected = PhoneUtils.lastFourDigits(phone);
+    if (password.length != 4 || password != expected) {
+      ref.read(snackbarServiceProvider).showError(
+            'Enter the last 4 digits of this mobile number.',
+          );
+      return;
+    }
+
+    final loading = ref.read(authLoadingProvider.notifier);
+    final snackbar = ref.read(snackbarServiceProvider);
+
+    loading.state = true;
+    try {
+      await ref.read(authStateProvider.notifier).loginSecurity(
+            phone: phone,
+            password: password,
+          );
+      if (!mounted) return;
+      await _completeAuthenticatedFlow();
+    } on AppException catch (e) {
+      snackbar.showError(e.message);
+    } catch (_) {
+      snackbar.showError('Security sign-in failed.');
+    } finally {
       loading.state = false;
     }
   }
@@ -243,7 +260,11 @@ class _AuthPageState extends ConsumerState<AuthPage> {
       return;
     }
 
-    snackbar.showSuccess('OTP sent to ${_formattedPhone(result.phone)}');
+    snackbar.showSuccess(
+      result.message?.trim().isNotEmpty == true
+          ? result.message!
+          : 'OTP sent to ${_formattedPhone(result.phone)}',
+    );
     _startResendCooldown();
   }
 
@@ -602,6 +623,45 @@ class _AuthPageState extends ConsumerState<AuthPage> {
                   label: 'Sign In',
                   isLoading: isLoading,
                   onPressed: _submitEmployeePassword,
+                ),
+              ] else if (phoneStep == PhoneAuthStep.enterSecurityPassword) ...[
+                Text(
+                  'Security Sign In',
+                  style: Theme.of(context).textTheme.titleMedium,
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  'Password is the last 4 digits of this mobile number.',
+                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                        color: colorScheme.onSurfaceVariant,
+                      ),
+                ),
+                const SizedBox(height: 16),
+                Text(
+                  'Mobile Number',
+                  style: Theme.of(context).textTheme.labelLarge,
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  _formattedPhone(_phoneController.text.trim()),
+                  style: Theme.of(context).textTheme.bodyLarge,
+                ),
+                const SizedBox(height: 16),
+                AppPasswordField(
+                  controller: _employeePasswordController,
+                  label: 'Password (last 4 digits)',
+                  validator: (value) {
+                    if (value == null || value.trim().length != 4) {
+                      return 'Enter the last 4 digits';
+                    }
+                    return null;
+                  },
+                ),
+                const SizedBox(height: 20),
+                PrimaryButton(
+                  label: 'Sign In',
+                  isLoading: isLoading,
+                  onPressed: _submitSecurityPassword,
                 ),
               ] else ...[
                 Text(

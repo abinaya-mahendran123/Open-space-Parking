@@ -6,7 +6,12 @@ enum AuthFormMode { signIn, signUp }
 
 enum AuthMethod { phone, emailGoogle }
 
-enum PhoneAuthStep { enterPhone, enterEmployeePassword, enterOtp }
+enum PhoneAuthStep {
+  enterPhone,
+  enterEmployeePassword,
+  enterSecurityPassword,
+  enterOtp,
+}
 
 final authFormModeProvider = StateProvider<AuthFormMode>(
   (ref) => AuthFormMode.signIn,

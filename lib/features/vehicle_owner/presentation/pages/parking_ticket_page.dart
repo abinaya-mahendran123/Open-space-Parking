@@ -47,25 +47,30 @@ class _ParkingTicketPageState extends ConsumerState<ParkingTicketPage> {
   }
 
   String _headline(Booking booking) {
-    if (booking.isAwaitingPayment) return 'Parking ended — pay now';
-    if (booking.isParked) return 'You are parked in this slot';
-    if (booking.isAwaitingEntry) return 'This slot is booked';
+    final slot = booking.assignedSlot;
+    final slotLabel = slot != null && slot > 0 ? 'Slot $slot' : 'Your slot';
+    if (booking.isAwaitingPayment) return '$slotLabel — pay now';
+    if (booking.isParked) return 'You are parked in $slotLabel';
+    if (booking.isAwaitingEntry) return '$slotLabel is booked';
     if (booking.status == BookingStatus.completed) return 'Payment complete';
     return booking.status.label;
   }
 
   String _statusMessage(Booking booking) {
+    final slot = booking.assignedSlot;
+    final slotText = slot != null && slot > 0 ? 'Slot $slot' : 'Your slot';
     if (booking.isAwaitingPayment) {
-      return 'Security scanned your exit QR. Pay this bill to release your slot.';
+      return 'Security scanned your exit QR. Pay this bill to release $slotText.';
     }
     if (booking.isParked) {
-      return 'Session is running. Show this same QR to security when you leave.';
+      return 'Session is running in $slotText. Show this same QR to security when you leave.';
     }
     if (booking.isAwaitingEntry) {
-      return 'Show this QR to security to start your parking session.';
+      return '$slotText was assigned first come, first served. '
+          'Show this QR to security to start your parking session.';
     }
     if (booking.status == BookingStatus.completed) {
-      return 'Payment complete. Slot released.';
+      return 'Payment complete. $slotText released.';
     }
     return 'Show this QR to security.';
   }
@@ -110,11 +115,19 @@ class _ParkingTicketPageState extends ConsumerState<ParkingTicketPage> {
                       ),
                       const SizedBox(height: 8),
                       Text(
-                        'SLOT ${booking.assignedSlot ?? '-'}',
+                        booking.assignedSlot != null && booking.assignedSlot! > 0
+                            ? 'SLOT ${booking.assignedSlot}'
+                            : 'SLOT PENDING',
                         style: Theme.of(context).textTheme.displaySmall?.copyWith(
                               fontWeight: FontWeight.bold,
                               color: Theme.of(context).colorScheme.primary,
                             ),
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        'Assigned by first come, first served',
+                        textAlign: TextAlign.center,
+                        style: Theme.of(context).textTheme.bodySmall,
                       ),
                       const SizedBox(height: 8),
                       Text(
@@ -133,7 +146,12 @@ class _ParkingTicketPageState extends ConsumerState<ParkingTicketPage> {
                   child: Column(
                     children: [
                       _infoRow('Parking', booking.displayParkingName),
-                      _infoRow('Slot no', '${booking.assignedSlot ?? '-'}'),
+                      _infoRow(
+                        'Slot no',
+                        booking.assignedSlot != null && booking.assignedSlot! > 0
+                            ? '${booking.assignedSlot} (FCFS)'
+                            : 'Pending',
+                      ),
                       if (booking.checkedInAt != null) ...[
                         _infoRow('Session ID', booking.displaySessionId),
                         _infoRow(

@@ -202,12 +202,14 @@ class _BookingFlowPageState extends ConsumerState<BookingFlowPage> {
         profile: VehicleOwnerProfile(
           fullName: saved?.fullName ?? '',
           phone: saved?.phone ?? '',
-          email: saved?.email ?? '',
-          address: saved?.address,
           vehicleNumber: vehicleNumber.trim().toUpperCase(),
           vehicleModel: vehicleModel.trim().isEmpty
               ? saved?.vehicleModel
               : vehicleModel.trim(),
+          vehicleBrand: saved?.vehicleBrand,
+          vehicleLengthM: saved?.vehicleLengthM,
+          vehicleWidthM: saved?.vehicleWidthM,
+          vehicleParkingClass: saved?.vehicleParkingClass,
         ),
       );
       ref.invalidate(vehicleOwnerProfileProvider(vehicleOwnerId));

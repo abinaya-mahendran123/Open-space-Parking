@@ -22,6 +22,15 @@ abstract class NotificationRepository {
     required NotificationRecipientType recipientType,
   });
 
+  Future<void> deleteNotification(String notificationId);
+
+  Future<void> deleteMany(List<String> notificationIds);
+
+  Future<void> deleteAll({
+    required String recipientId,
+    required NotificationRecipientType recipientType,
+  });
+
   Future<void> saveDeviceToken({
     required String userId,
     required String token,

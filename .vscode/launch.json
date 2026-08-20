@@ -55,7 +55,7 @@
       "program": "lib/main.dart",
       "preLaunchTask": "Prepare Android API",
       "toolArgs": [
-        "--dart-define=BASE_API_URL=http://127.0.0.1:3000",
+        "--dart-define=BASE_API_URL=https://open-space-parking.onrender.com",
         "--dart-define=HOST_LAN_IP=192.168.88.3",
         "--dart-define=GOOGLE_WEB_CLIENT_ID=794049298844-v8f8okbjfb4memdcjugcpqfd58tk71j0.apps.googleusercontent.com",
         "--dart-define=GOOGLE_SERVER_CLIENT_ID=794049298844-v8f8okbjfb4memdcjugcpqfd58tk71j0.apps.googleusercontent.com",

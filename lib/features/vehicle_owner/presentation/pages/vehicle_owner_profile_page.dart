@@ -27,14 +27,7 @@ class _VehicleOwnerProfilePageState extends ConsumerState<VehicleOwnerProfilePag
   final _formKey = GlobalKey<FormState>();
   late final TextEditingController _nameController;
   late final TextEditingController _phoneController;
-  late final TextEditingController _emailController;
-  late final TextEditingController _addressController;
-  late final TextEditingController _vehicleNumberController;
-  late final TextEditingController _vehicleModelController;
-  late final TextEditingController _vehicleBrandController;
-  late final TextEditingController _vehicleLengthController;
-  late final TextEditingController _vehicleWidthController;
-  late final TextEditingController _vehicleParkingClassController;
+  VehicleOwnerProfile? _savedProfile;
   bool _editing = false;
   bool _saving = false;
 
@@ -43,33 +36,18 @@ class _VehicleOwnerProfilePageState extends ConsumerState<VehicleOwnerProfilePag
     super.initState();
     _nameController = TextEditingController();
     _phoneController = TextEditingController();
-    _emailController = TextEditingController();
-    _addressController = TextEditingController();
-    _vehicleNumberController = TextEditingController();
-    _vehicleModelController = TextEditingController();
-    _vehicleBrandController = TextEditingController();
-    _vehicleLengthController = TextEditingController();
-    _vehicleWidthController = TextEditingController();
-    _vehicleParkingClassController = TextEditingController();
   }
 
   @override
   void dispose() {
     _nameController.dispose();
     _phoneController.dispose();
-    _emailController.dispose();
-    _addressController.dispose();
-    _vehicleNumberController.dispose();
-    _vehicleModelController.dispose();
-    _vehicleBrandController.dispose();
-    _vehicleLengthController.dispose();
-    _vehicleWidthController.dispose();
-    _vehicleParkingClassController.dispose();
     super.dispose();
   }
 
   void _fill(VehicleOwnerProfile? profile, AuthSession? session) {
     if (_editing) return;
+    _savedProfile = profile;
     final merged = ProfilePrefill.mergeVehicleProfile(
       saved: profile,
       accountDisplayName: session?.displayName,
@@ -78,15 +56,6 @@ class _VehicleOwnerProfilePageState extends ConsumerState<VehicleOwnerProfilePag
     );
     _nameController.text = merged.fullName;
     _phoneController.text = merged.phone;
-    _emailController.text = merged.email;
-    _addressController.text = merged.address ?? '';
-    _vehicleNumberController.text = merged.vehicleNumber ?? '';
-    _vehicleModelController.text = merged.vehicleModel ?? '';
-    _vehicleBrandController.text = merged.vehicleBrand ?? '';
-    _vehicleLengthController.text =
-        merged.vehicleLengthM?.toString() ?? '';
-    _vehicleWidthController.text = merged.vehicleWidthM?.toString() ?? '';
-    _vehicleParkingClassController.text = merged.vehicleParkingClass ?? '';
   }
 
   void _startEditing() {
@@ -103,30 +72,19 @@ class _VehicleOwnerProfilePageState extends ConsumerState<VehicleOwnerProfilePag
 
     setState(() => _saving = true);
     try {
+      final existing = _savedProfile;
       await ref.read(vehicleOwnerRepositoryProvider).updateProfile(
             vehicleOwnerId: vehicleOwnerId,
             profile: VehicleOwnerProfile(
               fullName: _nameController.text.trim(),
               phone: _phoneController.text.trim(),
-              email: _emailController.text.trim(),
-              address: _addressController.text.trim().isEmpty
-                  ? null
-                  : _addressController.text.trim(),
-              vehicleNumber: _vehicleNumberController.text.trim().isEmpty
-                  ? null
-                  : _vehicleNumberController.text.trim().toUpperCase(),
-              vehicleModel: _vehicleModelController.text.trim().isEmpty
-                  ? null
-                  : _vehicleModelController.text.trim(),
-              vehicleBrand: _vehicleBrandController.text.trim().isEmpty
-                  ? null
-                  : _vehicleBrandController.text.trim(),
-              vehicleLengthM: double.tryParse(_vehicleLengthController.text.trim()),
-              vehicleWidthM: double.tryParse(_vehicleWidthController.text.trim()),
-              vehicleParkingClass:
-                  _vehicleParkingClassController.text.trim().isEmpty
-                      ? null
-                      : _vehicleParkingClassController.text.trim(),
+              // Keep previously stored vehicle fields; only name/phone are edited.
+              vehicleNumber: existing?.vehicleNumber,
+              vehicleModel: existing?.vehicleModel,
+              vehicleBrand: existing?.vehicleBrand,
+              vehicleLengthM: existing?.vehicleLengthM,
+              vehicleWidthM: existing?.vehicleWidthM,
+              vehicleParkingClass: existing?.vehicleParkingClass,
             ),
           );
       ref.invalidate(vehicleOwnerProfileProvider(vehicleOwnerId));
@@ -139,11 +97,6 @@ class _VehicleOwnerProfilePageState extends ConsumerState<VehicleOwnerProfilePag
     } finally {
       if (mounted) setState(() => _saving = false);
     }
-  }
-
-  bool get _needsDetails {
-    return _emailController.text.trim().isEmpty ||
-        _addressController.text.trim().isEmpty;
   }
 
   @override
@@ -170,7 +123,7 @@ class _VehicleOwnerProfilePageState extends ConsumerState<VehicleOwnerProfilePag
             TextButton.icon(
               onPressed: _startEditing,
               icon: const Icon(Icons.edit_outlined),
-              label: Text(_needsDetails ? 'Add details' : 'Edit'),
+              label: const Text('Edit'),
             ),
           const VehicleOwnerAppBarActions(),
         ],
@@ -190,10 +143,7 @@ class _VehicleOwnerProfilePageState extends ConsumerState<VehicleOwnerProfilePag
         },
         data: (profile) {
           _fill(profile, auth.session);
-          return _body(
-            context,
-            vehicleOwnerId,
-          );
+          return _body(context, vehicleOwnerId);
         },
       ),
     );
@@ -231,7 +181,7 @@ class _VehicleOwnerProfilePageState extends ConsumerState<VehicleOwnerProfilePag
       children: [
         if (showLoadError) ...[
           Text(
-            'Could not refresh saved profile. You can still add your details.',
+            'Could not refresh saved profile. You can still edit your details.',
             style: theme.textTheme.bodySmall,
             textAlign: TextAlign.center,
           ),
@@ -245,13 +195,6 @@ class _VehicleOwnerProfilePageState extends ConsumerState<VehicleOwnerProfilePag
         CircleAvatar(
           radius: 40,
           child: Text(initial, style: const TextStyle(fontSize: 32)),
-        ),
-        const SizedBox(height: AppSpacing.md),
-        Text(
-          _nameController.text.isEmpty
-              ? 'Vehicle owner'
-              : _nameController.text,
-          style: theme.textTheme.titleLarge,
         ),
         const SizedBox(height: AppSpacing.lg),
         AppCard(
@@ -275,77 +218,12 @@ class _VehicleOwnerProfilePageState extends ConsumerState<VehicleOwnerProfilePag
                 label: 'Phone',
                 value: _phoneController.text,
               ),
-              _detailRow(
-                context,
-                icon: Icons.email_outlined,
-                label: 'Email',
-                value: _emailController.text,
-                emptyHint: 'Add your email',
-              ),
-              _detailRow(
-                context,
-                icon: Icons.home_outlined,
-                label: 'Address',
-                value: _addressController.text,
-                emptyHint: 'Add your address',
-              ),
-            ],
-          ),
-        ),
-        const SizedBox(height: AppSpacing.md),
-        AppCard(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                'Default vehicle',
-                style: theme.textTheme.titleMedium,
-              ),
-              const SizedBox(height: AppSpacing.sm),
-              _detailRow(
-                context,
-                icon: Icons.directions_car_outlined,
-                label: 'Vehicle number',
-                value: _vehicleNumberController.text,
-                emptyHint: 'Add vehicle number',
-              ),
-              _detailRow(
-                context,
-                icon: Icons.directions_car_filled_outlined,
-                label: 'Vehicle model',
-                value: _vehicleModelController.text,
-                emptyHint: 'Add vehicle model',
-              ),
-              _detailRow(
-                context,
-                icon: Icons.factory_outlined,
-                label: 'Vehicle brand',
-                value: _vehicleBrandController.text,
-                emptyHint: 'Add vehicle brand',
-              ),
-              _detailRow(
-                context,
-                icon: Icons.straighten,
-                label: 'Vehicle size (L x W m)',
-                value: _vehicleLengthController.text.isNotEmpty ||
-                        _vehicleWidthController.text.isNotEmpty
-                    ? '${_vehicleLengthController.text} x ${_vehicleWidthController.text}'
-                    : '',
-                emptyHint: 'Add vehicle length and width',
-              ),
-              _detailRow(
-                context,
-                icon: Icons.category_outlined,
-                label: 'Parking class',
-                value: _vehicleParkingClassController.text,
-                emptyHint: 'sedan / suv / compact / commercial',
-              ),
             ],
           ),
         ),
         const SizedBox(height: AppSpacing.lg),
         PrimaryButton(
-          label: _needsDetails ? 'Add details' : 'Edit details',
+          label: 'Edit details',
           icon: Icons.edit_outlined,
           onPressed: _startEditing,
         ),
@@ -372,10 +250,12 @@ class _VehicleOwnerProfilePageState extends ConsumerState<VehicleOwnerProfilePag
       leading: Icon(icon),
       title: Text(label),
       subtitle: Text(
-        hasValue ? value.trim() : emptyHint,
-        style: hasValue
-            ? null
-            : TextStyle(color: Theme.of(context).hintColor),
+        hasValue ? value : emptyHint,
+        style: TextStyle(
+          color: hasValue
+              ? null
+              : Theme.of(context).colorScheme.onSurfaceVariant,
+        ),
       ),
     );
   }
@@ -391,14 +271,9 @@ class _VehicleOwnerProfilePageState extends ConsumerState<VehicleOwnerProfilePag
         children: [
           if (showLoadError) ...[
             Text(
-              'Could not refresh saved profile. You can still edit and save.',
+              'Could not refresh saved profile. You can still edit your details.',
               style: Theme.of(context).textTheme.bodySmall,
               textAlign: TextAlign.center,
-            ),
-            TextButton(
-              onPressed: () =>
-                  ref.invalidate(vehicleOwnerProfileProvider(vehicleOwnerId)),
-              child: const Text('Retry'),
             ),
             const SizedBox(height: AppSpacing.md),
           ],
@@ -424,70 +299,6 @@ class _VehicleOwnerProfilePageState extends ConsumerState<VehicleOwnerProfilePag
             label: 'Phone',
             keyboardType: TextInputType.phone,
             validator: (v) => Validators.requiredField(v, fieldName: 'Phone'),
-          ),
-          const SizedBox(height: AppSpacing.md),
-          AppTextField(
-            controller: _emailController,
-            label: 'Email',
-            hint: 'name@example.com',
-            keyboardType: TextInputType.emailAddress,
-            validator: Validators.email,
-          ),
-          const SizedBox(height: AppSpacing.md),
-          AppTextField(
-            controller: _addressController,
-            label: 'Address',
-            hint: 'House, street, area, city',
-            keyboardType: TextInputType.streetAddress,
-            maxLines: 3,
-            validator: (v) =>
-                Validators.requiredField(v, fieldName: 'Address'),
-          ),
-          const SizedBox(height: AppSpacing.lg),
-          Align(
-            alignment: Alignment.centerLeft,
-            child: Text(
-              'Default Vehicle',
-              style: Theme.of(context).textTheme.titleMedium,
-            ),
-          ),
-          const SizedBox(height: AppSpacing.md),
-          AppTextField(
-            controller: _vehicleNumberController,
-            label: 'Vehicle Number',
-            hint: 'TN 09 AB 1234',
-            textCapitalization: TextCapitalization.characters,
-            inputFormatters: Validators.vehicleNumberFormatters,
-            validator: (value) =>
-                Validators.vehicleNumber(value, required: false),
-          ),
-          const SizedBox(height: AppSpacing.md),
-          AppTextField(
-            controller: _vehicleModelController,
-            label: 'Vehicle Model',
-          ),
-          const SizedBox(height: AppSpacing.md),
-          AppTextField(
-            controller: _vehicleBrandController,
-            label: 'Vehicle Brand',
-          ),
-          const SizedBox(height: AppSpacing.md),
-          AppTextField(
-            controller: _vehicleLengthController,
-            label: 'Vehicle Length (m)',
-            keyboardType: const TextInputType.numberWithOptions(decimal: true),
-          ),
-          const SizedBox(height: AppSpacing.md),
-          AppTextField(
-            controller: _vehicleWidthController,
-            label: 'Vehicle Width (m)',
-            keyboardType: const TextInputType.numberWithOptions(decimal: true),
-          ),
-          const SizedBox(height: AppSpacing.md),
-          AppTextField(
-            controller: _vehicleParkingClassController,
-            label: 'Parking Class',
-            hint: 'sedan, suv, compact, two_wheeler, commercial',
           ),
           const SizedBox(height: AppSpacing.lg),
           PrimaryButton(

@@ -13,6 +13,7 @@ import 'package:open_space_parking/core/utils/mongo_json.dart';
 import 'package:open_space_parking/core/services/api/parking_recommendation_service.dart';
 import 'package:open_space_parking/core/utils/geo_utils.dart';
 import 'package:open_space_parking/core/utils/vehicle_compatibility.dart';
+import 'package:open_space_parking/core/utils/parking_slot_calculator.dart';
 import 'package:open_space_parking/core/utils/profile_prefill.dart';
 import 'package:open_space_parking/core/utils/validators.dart';
 import 'package:open_space_parking/features/land_owner/domain/entities/land_details.dart';
@@ -400,6 +401,11 @@ class MongoVehicleOwnerRepository implements VehicleOwnerRepository {
     if (listing == null) {
       throw const AppException('Parking space is no longer available.');
     }
+    if (!listing.hasVerifiedAmount) {
+      throw const AppException(
+        'This parking has no hourly amount on its verified ticket yet.',
+      );
+    }
 
     final availability =
         await _getCurrentAvailabilityRaw(parkingListingId, listing.capacity);
@@ -415,8 +421,6 @@ class MongoVehicleOwnerRepository implements VehicleOwnerRepository {
     final bookingId = ObjectId();
     final bookingRef = _generateBookingRef();
     final now = DateTime.now().toUtc();
-    // Placeholder window until security exit scan bills actual duration.
-    final placeholderEnd = now.add(const Duration(hours: 12));
 
     final document = {
       '_id': bookingId,
@@ -427,10 +431,11 @@ class MongoVehicleOwnerRepository implements VehicleOwnerRepository {
       'parkingType': listing.parkingType.value,
       'vehicleNumber': plate,
       'vehicleModel': vehicleModel?.trim(),
+      // Open session — duration/price are set only after security exit scan.
       'startDateTime': now.toIso8601String(),
-      'endDateTime': placeholderEnd.toIso8601String(),
-      'durationHours': 12.0,
-      'hourlyRate': listing.hourlyRate ?? 0,
+      'endDateTime': now.toIso8601String(),
+      'durationHours': 0.0,
+      'hourlyRate': listing.hourlyRate!,
       'totalPrice': 0.0,
       'status': BookingStatus.confirmed.value,
       'parkingAddress': listing.address,
@@ -535,9 +540,17 @@ class MongoVehicleOwnerRepository implements VehicleOwnerRepository {
     final parkingName = (existingName != null && existingName.isNotEmpty)
         ? existingName
         : listing?.displayName ?? booking.displayParkingName;
-    final hourlyRate = booking.hourlyRate > 0
-        ? booking.hourlyRate
-        : (listing?.hourlyRate ?? 0);
+
+    // Always prefer the live parking ticket rate over any stale booking copy.
+    final listingRate = listing?.hourlyRate;
+    final hourlyRate = (listingRate != null && listingRate > 0)
+        ? listingRate
+        : (booking.hourlyRate > 0 ? booking.hourlyRate : 0.0);
+    if (hourlyRate <= 0) {
+      throw const AppException(
+        'This parking has no hourly rate. Update the parking ticket amount first.',
+      );
+    }
 
     // First scan: start the parking timer.
     if (booking.checkedInAt == null) {
@@ -563,6 +576,11 @@ class MongoVehicleOwnerRepository implements VehicleOwnerRepository {
             .set('sessionId', sessionId)
             .set('parkingName', parkingName)
             .set('hourlyRate', hourlyRate)
+            .set('durationHours', 0.0)
+            .set('totalPrice', 0.0)
+            .unset('amountDue')
+            .unset('actualDurationHours')
+            .unset('checkedOutAt')
             .set('updatedAt', now.toIso8601String()),
       );
 
@@ -581,19 +599,18 @@ class MongoVehicleOwnerRepository implements VehicleOwnerRepository {
       return started;
     }
 
-    // Second scan: stop timer and calculate amount.
+    // Second scan: stop timer and bill actual elapsed time × parking hourly rate.
     if (booking.status != BookingStatus.active) {
       throw AppException(
         'Booking is ${booking.status.label.toLowerCase()}, not an active park session.',
       );
     }
 
-    final checkedIn = booking.checkedInAt!;
-    var minutes = now.difference(checkedIn.toUtc()).inMinutes;
-    if (minutes < 1) minutes = 1;
-    // Bill in rounded hundredths of an hour, minimum 15 minutes.
-    final actualHours = (minutes / 60.0 * 100).ceil() / 100;
-    final billedHours = actualHours < 0.25 ? 0.25 : actualHours;
+    final checkedIn = booking.checkedInAt!.toUtc();
+    final elapsedSeconds = now.difference(checkedIn).inSeconds;
+    // At least 1 second so a same-second double-scan still produces a bill.
+    final seconds = elapsedSeconds < 1 ? 1 : elapsedSeconds;
+    final billedHours = seconds / 3600.0;
     final amountDue = (billedHours * hourlyRate * 100).ceil() / 100;
 
     await _collectionService.updateOne(
@@ -611,11 +628,14 @@ class MongoVehicleOwnerRepository implements VehicleOwnerRepository {
           .set('updatedAt', now.toIso8601String()),
     );
 
+    final durationLabel = _formatDurationLabel(seconds);
     await _notificationHelper.notifyVehicleOwner(
       vehicleOwnerId: booking.vehicleOwnerId,
       title: 'Ready to Pay',
       message:
-          'Session stopped after ${billedHours.toStringAsFixed(2)} hrs at $parkingName. Pay ₹${amountDue.toStringAsFixed(0)} via Razorpay.',
+          'Session stopped after $durationLabel at $parkingName '
+          '(₹${hourlyRate.toStringAsFixed(0)}/hr). '
+          'Pay ₹${amountDue.toStringAsFixed(0)} via Razorpay.',
       bookingRef: booking.bookingRef,
     );
 
@@ -1213,10 +1233,15 @@ class MongoVehicleOwnerRepository implements VehicleOwnerRepository {
     if (lat == 0 && lng == 0) return false;
 
     final parkingPrefs = MongoJson.asMap(doc['parkingPreferences']);
-    final cars = MongoJson.asInt(parkingPrefs?['numberOfCars']) ??
-        MongoJson.asInt(doc['capacity']) ??
-        MongoJson.asInt(doc['numberOfCars']);
-    if (cars != null && cars <= 0) return false;
+    final areaSqFt = MongoJson.asDouble(landDetails['areaSqFt']) ?? 0;
+    final capacity = ParkingSlotCalculator.resolveCapacity(
+      requestType: doc['requestType'] as String?,
+      areaSqFt: areaSqFt,
+      storedNumberOfCars: MongoJson.asInt(parkingPrefs?['numberOfCars']) ??
+          MongoJson.asInt(doc['capacity']) ??
+          MongoJson.asInt(doc['numberOfCars']),
+    );
+    if (capacity <= 0) return false;
 
     return true;
   }
@@ -1242,11 +1267,14 @@ class MongoVehicleOwnerRepository implements VehicleOwnerRepository {
     final parkingPrefs = MongoJson.asMap(doc['parkingPreferences']) ?? const {};
     final prefs = ParkingPreferences.fromJson(parkingPrefs);
     final ownerDetails = MongoJson.asMap(doc['ownerDetails']);
-    final capacity = prefs.numberOfCars > 0
-        ? prefs.numberOfCars
-        : (MongoJson.asInt(doc['capacity']) ??
-            MongoJson.asInt(doc['numberOfCars']) ??
-            1);
+    final capacity = ParkingSlotCalculator.resolveCapacity(
+      requestType: doc['requestType'] as String?,
+      areaSqFt: landDetails.areaSqFt,
+      storedNumberOfCars: prefs.numberOfCars > 0
+          ? prefs.numberOfCars
+          : (MongoJson.asInt(doc['capacity']) ??
+              MongoJson.asInt(doc['numberOfCars'])),
+    );
 
     final address = landDetails.landAddress?.trim();
     final ownerName = (ownerDetails?['fullName'] as String?)?.trim();
@@ -1303,9 +1331,7 @@ class MongoVehicleOwnerRepository implements VehicleOwnerRepository {
       createdAt: DateTime.parse(map['createdAt'] as String),
       parkingAddress: map['parkingAddress'] as String?,
       parkingName: map['parkingName'] as String?,
-      assignedSlot: map['assignedSlot'] is num
-          ? (map['assignedSlot'] as num).toInt()
-          : null,
+      assignedSlot: MongoJson.asInt(map['assignedSlot']),
       qrPayload: map['qrPayload'] as String?,
       sessionId: map['sessionId'] as String?,
       checkedInAt: map['checkedInAt'] != null
@@ -1344,6 +1370,22 @@ class MongoVehicleOwnerRepository implements VehicleOwnerRepository {
         '${now.year}${now.month.toString().padLeft(2, '0')}${now.day.toString().padLeft(2, '0')}';
     final random = Random().nextInt(9000) + 1000;
     return 'PS-$datePart-$random';
+  }
+
+  String _formatDurationLabel(int seconds) {
+    final safe = seconds < 0 ? 0 : seconds;
+    final h = safe ~/ 3600;
+    final m = (safe % 3600) ~/ 60;
+    final s = safe % 60;
+    if (h > 0) {
+      if (m == 0) return '$h hr';
+      return '$h hr $m min';
+    }
+    if (m > 0) {
+      if (s == 0) return '$m min';
+      return '$m min $s sec';
+    }
+    return '$s sec';
   }
 
   Future<void> _ensureConnected() async {

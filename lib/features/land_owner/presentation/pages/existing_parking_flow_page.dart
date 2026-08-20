@@ -5,6 +5,7 @@ import 'package:go_router/go_router.dart';
 import 'package:open_space_parking/core/common/exceptions/app_exception.dart';
 import 'package:open_space_parking/core/providers/core_providers.dart';
 import 'package:open_space_parking/core/routes/route_paths.dart';
+import 'package:open_space_parking/core/utils/parking_slot_calculator.dart';
 import 'package:open_space_parking/core/widgets/buttons/primary_button.dart';
 import 'package:open_space_parking/core/utils/profile_prefill.dart';
 import 'package:open_space_parking/features/authentication/presentation/providers/auth_state_provider.dart';
@@ -174,10 +175,31 @@ class _ExistingParkingFlowPageState extends ConsumerState<ExistingParkingFlowPag
             ownerId: ref.watch(authStateProvider).session?.userId ?? '',
             onChanged: ref.read(existingParkingFormProvider.notifier).setDocuments,
           ),
-        2 => LandDetailsForm(
-            key: _landFormKey,
-            initial: form.landDetails,
-            onSave: ref.read(existingParkingFormProvider.notifier).setLandDetails,
+        2 => Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              LandDetailsForm(
+                key: _landFormKey,
+                initial: form.landDetails,
+                onSave:
+                    ref.read(existingParkingFormProvider.notifier).setLandDetails,
+              ),
+              const SizedBox(height: 16),
+              Text(
+                'Slots are calculated from land area: '
+                '${ParkingSlotCalculator.sqFtPerCar.toStringAsFixed(0)} sq ft per car '
+                '(basic stall + aisle).',
+                style: Theme.of(context).textTheme.bodySmall,
+              ),
+              if (form.landDetails != null && form.landDetails!.areaSqFt > 0) ...[
+                const SizedBox(height: 8),
+                Text(
+                  'Estimated slots: '
+                  '${ParkingSlotCalculator.slotsFromLandArea(form.landDetails!.areaSqFt)}',
+                  style: Theme.of(context).textTheme.titleSmall,
+                ),
+              ],
+            ],
           ),
         _ => const SizedBox.shrink(),
       },

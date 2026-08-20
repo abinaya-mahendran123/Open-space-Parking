@@ -143,6 +143,54 @@ class MongoNotificationRepository implements NotificationRepository {
   }
 
   @override
+  Future<void> deleteNotification(String notificationId) async {
+    await _ensureConnected();
+
+    final canonical = await _notificationMongoRepository.findById(
+      notificationId,
+      includeDeleted: true,
+    );
+    if (canonical != null) {
+      await _notificationMongoRepository.hardDelete(notificationId);
+      return;
+    }
+
+    for (final collection in _legacyCollections) {
+      try {
+        await _collectionService.deleteOne(
+          collectionName: collection,
+          selector: where.eq('_id', ObjectId.parse(notificationId)),
+        );
+      } catch (_) {
+        // Ignore invalid legacy ids / missing docs.
+      }
+    }
+  }
+
+  @override
+  Future<void> deleteMany(List<String> notificationIds) async {
+    final uniqueIds = notificationIds
+        .map((id) => id.trim())
+        .where((id) => id.isNotEmpty)
+        .toSet();
+    for (final id in uniqueIds) {
+      await deleteNotification(id);
+    }
+  }
+
+  @override
+  Future<void> deleteAll({
+    required String recipientId,
+    required NotificationRecipientType recipientType,
+  }) async {
+    final history = await getHistory(
+      recipientId: recipientId,
+      recipientType: recipientType,
+    );
+    await deleteMany(history.map((n) => n.id).toList());
+  }
+
+  @override
   Future<void> saveDeviceToken({
     required String userId,
     required String token,

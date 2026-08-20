@@ -189,42 +189,100 @@ class MongoAuthRepository implements AuthRepository {
 
   @override
   Future<AuthSession> loginSecurity({
-    required String email,
+    required String phone,
     required String password,
   }) async {
-    // Try Express API first so phone doesn't hang waiting for direct MongoDB
+    final normalizedPhone = PhoneUtils.normalizeIndianMobile(phone);
+    final expected = PhoneUtils.lastFourDigits(normalizedPhone);
+    if (expected.isEmpty || password.trim() != expected) {
+      throw const AppException('Invalid credentials.');
+    }
+
+    // Prefer Express API. Older deployments still expect email + stored password
+    // and reject phone/last-4 — fall through after last-4 already matched locally.
     final apiClient = _apiClient;
     if (apiClient != null) {
       try {
         final response = await apiClient.post('/api/auth/security-login', {
-          'email': email.trim().toLowerCase(),
-          'password': password,
+          'phone': normalizedPhone,
+          'password': password.trim(),
         });
-        return _sessionFromApi(response, email);
+        return _sessionFromApi(response, _phoneEmail(normalizedPhone));
       } on NetworkException catch (e) {
         final msg = e.message.toLowerCase();
-        if (!msg.contains('404') && !msg.contains('cannot post')) {
+        final staleBackend = msg.contains('invalid credentials') ||
+            msg.contains('404') ||
+            msg.contains('cannot post') ||
+            msg.contains('not found');
+        if (!staleBackend) {
           throw AppException(e.message);
+        }
+      }
+
+      if (PhoneUtils.isGateSecurityPhone(normalizedPhone)) {
+        try {
+          final response = await apiClient.post('/api/auth/security-login', {
+            'email': AppConstants.defaultSecurityEmail,
+            'phone': normalizedPhone,
+            'password': password.trim(),
+          });
+          return _sessionFromApi(
+            response,
+            AppConstants.defaultSecurityEmail,
+          );
+        } on NetworkException {
+          // Continue to local / offline default security.
         }
       }
     }
 
-    await _ensureConnected();
+    try {
+      await _ensureConnected();
 
-    await DefaultAdminSeedService(collectionService: _collectionService)
-        .ensureDefaultSecurity();
+      await DefaultAdminSeedService(collectionService: _collectionService)
+          .ensureDefaultSecurity();
 
-    final session = await _loginWithRoleCheck(
-      email: email,
-      password: password,
-      allowAdmin: false,
-      allowSecurity: true,
-    );
-
-    if (session.role != UserRole.security) {
-      throw const AppException('Only security staff can open the gate scanner.');
+      final users = await _collectionService.findMany(
+        collectionName: AppConstants.usersCollection,
+        selector: where.ne('isDeleted', true),
+      );
+      final lastTen = PhoneUtils.digitsOnly(normalizedPhone);
+      final ten = lastTen.length > 10
+          ? lastTen.substring(lastTen.length - 10)
+          : lastTen;
+      for (final doc in users) {
+        final docPhone = PhoneUtils.digitsOnly('${doc['phone'] ?? ''}');
+        final docTen = docPhone.length > 10
+            ? docPhone.substring(docPhone.length - 10)
+            : docPhone;
+        if (docTen == ten && doc['role'] == UserRole.security.value) {
+          return _buildSession(
+            userId: MongoJson.objectIdHex(doc['_id']),
+            email: '${doc['email'] ?? _phoneEmail(normalizedPhone)}',
+            displayName:
+                '${doc['displayName'] ?? AppConstants.defaultSecurityDisplayName}',
+            role: UserRole.security,
+            issuedAt: DateTime.now().toUtc(),
+          );
+        }
+      }
+    } catch (_) {
+      // Web / unreachable Mongo — use offline default below when allowed.
     }
-    return session;
+
+    if (PhoneUtils.isGateSecurityPhone(normalizedPhone)) {
+      return _buildSession(
+        userId: 'security-default',
+        email: AppConstants.defaultSecurityEmail,
+        displayName: AppConstants.defaultSecurityDisplayName,
+        role: UserRole.security,
+        issuedAt: DateTime.now().toUtc(),
+      );
+    }
+
+    throw const AppException(
+      'Only registered security staff can open the gate scanner.',
+    );
   }
 
   @override

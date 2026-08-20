@@ -5,6 +5,7 @@ import 'package:go_router/go_router.dart';
 import 'package:open_space_parking/core/common/exceptions/app_exception.dart';
 import 'package:open_space_parking/core/providers/core_providers.dart';
 import 'package:open_space_parking/core/routes/route_paths.dart';
+import 'package:open_space_parking/core/utils/parking_slot_calculator.dart';
 import 'package:open_space_parking/core/widgets/buttons/primary_button.dart';
 import 'package:open_space_parking/features/authentication/presentation/providers/auth_state_provider.dart';
 import 'package:open_space_parking/core/utils/profile_prefill.dart';
@@ -32,7 +33,6 @@ class _BuildParkingFlowPageState extends ConsumerState<BuildParkingFlowPage> {
   final _ownerFormKey = GlobalKey<GovernmentIdOwnerDetailsFormState>();
   final _landFormKey = GlobalKey<LandDetailsFormState>();
   final _docsFormKey = GlobalKey<UploadDocumentsFormState>();
-  final _carsController = TextEditingController(text: '1');
   final _rateController = TextEditingController();
 
   static const _stepLabels = [
@@ -46,7 +46,12 @@ class _BuildParkingFlowPageState extends ConsumerState<BuildParkingFlowPage> {
   @override
   void initState() {
     super.initState();
-    WidgetsBinding.instance.addPostFrameCallback((_) => _seedOwnerDetails());
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      ref.read(buildParkingFormProvider.notifier).setNumberOfCars(
+            ParkingSlotCalculator.constructedParkingSlots,
+          );
+      _seedOwnerDetails();
+    });
   }
 
   Future<void> _seedOwnerDetails() async {
@@ -77,7 +82,6 @@ class _BuildParkingFlowPageState extends ConsumerState<BuildParkingFlowPage> {
 
   @override
   void dispose() {
-    _carsController.dispose();
     _rateController.dispose();
     super.dispose();
   }
@@ -116,7 +120,7 @@ class _BuildParkingFlowPageState extends ConsumerState<BuildParkingFlowPage> {
             parkingPreferences: ParkingPreferences(
               priority: form.priority,
               parkingType: form.parkingType,
-              numberOfCars: form.numberOfCars,
+              numberOfCars: ParkingSlotCalculator.constructedParkingSlots,
               hourlyRate: form.hourlyRate,
             ),
           );
@@ -159,12 +163,14 @@ class _BuildParkingFlowPageState extends ConsumerState<BuildParkingFlowPage> {
       return;
     }
     if (step == 3) {
-      final cars = int.tryParse(_carsController.text);
-      if (cars == null || cars < 1) {
-        ref.read(snackbarServiceProvider).showError('Enter valid number of cars.');
+      notifier.setNumberOfCars(ParkingSlotCalculator.constructedParkingSlots);
+      final rate = ref.read(buildParkingFormProvider).hourlyRate;
+      if (rate == null || rate <= 0) {
+        ref.read(snackbarServiceProvider).showError(
+              'Enter a valid hourly amount.',
+            );
         return;
       }
-      notifier.setNumberOfCars(cars);
     }
 
     notifier.nextStep();
@@ -272,16 +278,16 @@ class _BuildParkingFlowPageState extends ConsumerState<BuildParkingFlowPage> {
               },
             ),
             const SizedBox(height: 16),
-            TextFormField(
-              controller: _carsController,
-              decoration: const InputDecoration(labelText: 'No of Cars / Slots'),
-              keyboardType: TextInputType.number,
-              onChanged: (v) {
-                final count = int.tryParse(v.trim());
-                if (count != null && count > 0) {
-                  ref.read(buildParkingFormProvider.notifier).setNumberOfCars(count);
-                }
-              },
+            InputDecorator(
+              decoration: const InputDecoration(
+                labelText: 'No of Cars / Slots',
+                border: OutlineInputBorder(),
+              ),
+              child: Text(
+                '${ParkingSlotCalculator.constructedParkingSlots} '
+                '(fixed for construction parking)',
+                style: Theme.of(context).textTheme.bodyLarge,
+              ),
             ),
             const SizedBox(height: 16),
             TextFormField(
@@ -315,7 +321,10 @@ class _BuildParkingFlowPageState extends ConsumerState<BuildParkingFlowPage> {
             _ReviewTile('Area', '${form.landDetails?.areaSqFt ?? 0} sq ft'),
             _ReviewTile('Priority', form.priority.label),
             _ReviewTile('Parking Type', form.parkingType.label),
-            _ReviewTile('No of Cars', '${form.numberOfCars}'),
+            _ReviewTile(
+              'No of Cars / Slots',
+              '${ParkingSlotCalculator.constructedParkingSlots}',
+            ),
             _ReviewTile(
               'Hourly Amount',
               form.hourlyRate != null
