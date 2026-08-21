@@ -107,7 +107,19 @@ class _ParkingSearchPageState extends ConsumerState<ParkingSearchPage> {
 
   Future<void> _openParking(ParkingListing listing) async {
     if (!mounted) return;
-    context.push(RoutePaths.vehicleOwnerParkingDetail(listing.id));
+    final id = listing.id.trim();
+    final key = (id.isNotEmpty &&
+            id != '[object Object]' &&
+            !id.contains('object Object'))
+        ? id
+        : listing.ticketId.trim();
+    if (key.isEmpty) {
+      ref.read(snackbarServiceProvider).showError(
+            'This parking cannot be opened right now. Pull to refresh and try again.',
+          );
+      return;
+    }
+    context.push(RoutePaths.vehicleOwnerParkingDetail(key));
   }
 
   Future<void> _navigateTo(ParkingListing listing) async {

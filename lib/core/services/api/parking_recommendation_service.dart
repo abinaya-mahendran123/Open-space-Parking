@@ -34,19 +34,28 @@ class ParkingRecommendationService {
     return raw
         .whereType<Map>()
         .map((item) => _mapRecommendation(Map<String, dynamic>.from(item)))
-        .where((listing) => listing.id.isNotEmpty && listing.id != '[object Object]')
+        .where((listing) =>
+            listing.id.isNotEmpty &&
+            listing.id != '[object Object]' &&
+            (listing.ticketId.isNotEmpty || listing.id.length == 24))
         .toList();
   }
 
   ParkingListing _mapRecommendation(Map<String, dynamic> item) {
     final parkingTypeValue = item['parkingType'] as String? ?? 'tower_parking';
-    final id = MongoJson.objectIdHex(item['id']).isNotEmpty
-        ? MongoJson.objectIdHex(item['id'])
-        : MongoJson.objectIdHex(item['_id']);
+    final ticketId = (item['ticketId'] as String? ?? '').trim();
+    var id = MongoJson.objectIdHex(item['id']);
+    if (id.isEmpty) {
+      id = MongoJson.objectIdHex(item['_id']);
+    }
+    // Live API previously returned "[object Object]" — fall back to ticket id.
+    if (id.isEmpty && ticketId.isNotEmpty) {
+      id = ticketId;
+    }
 
     return ParkingListing(
       id: id,
-      ticketId: item['ticketId'] as String? ?? '',
+      ticketId: ticketId,
       landOwnerId: '',
       parkingType: ParkingTypeX.fromValue(parkingTypeValue),
       capacity: MongoJson.asInt(item['capacity']) ?? 1,

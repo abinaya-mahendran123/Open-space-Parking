@@ -94,7 +94,7 @@ function listingToRecommendation(doc, extras = {}) {
   const capacity = listingCapacity(doc);
 
   return {
-    id: parseObjectId(doc._id),
+    id: parseObjectId(doc._id) || parseObjectId(doc.id) || String(doc.ticketId || ''),
     ticketId: doc.ticketId || '',
     parkingName:
       (land.landAddress && String(land.landAddress).trim()) ||

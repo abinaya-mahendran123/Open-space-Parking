@@ -5,8 +5,10 @@ function iso(value) {
 }
 
 function namedRequestToDoc(row) {
+  const id = String(row.id || '').trim();
   return {
-    _id: { $oid: row.id },
+    _id: { $oid: id },
+    id,
     ticketId: row.ticket_id,
     ownerId: row.owner_id,
     requestType: row.request_type,

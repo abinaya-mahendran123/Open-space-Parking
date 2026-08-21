@@ -25,7 +25,19 @@ class VehicleOwnerDashboardPage extends ConsumerWidget {
     WidgetRef ref,
     ParkingListing listing,
   ) {
-    context.push(RoutePaths.vehicleOwnerParkingDetail(listing.id));
+    final key = _parkingRouteKey(listing);
+    if (key.isEmpty) return;
+    context.push(RoutePaths.vehicleOwnerParkingDetail(key));
+  }
+
+  static String _parkingRouteKey(ParkingListing listing) {
+    final id = listing.id.trim();
+    if (id.isNotEmpty &&
+        id != '[object Object]' &&
+        !id.contains('object Object')) {
+      return id;
+    }
+    return listing.ticketId.trim();
   }
 
   @override

@@ -227,15 +227,22 @@ class MongoVehicleOwnerRepository implements VehicleOwnerRepository {
 
   Future<ParkingListing?> _getBaseListing(String listingId) async {
     final hex = _normalizeObjectId(listingId);
-    if (hex.isEmpty || hex == '[object Object]') return null;
+    final looksLikeTicket = listingId.trim().toUpperCase().startsWith('OSP-');
 
     Map<String, dynamic>? doc;
     final api = _apiClient;
     if (api != null) {
       try {
-        final response = await api.post('/api/parking/listing', {
-          'id': hex,
-        });
+        final body = <String, dynamic>{};
+        if (hex.isNotEmpty && hex != '[object Object]') {
+          body['id'] = hex;
+        }
+        if (looksLikeTicket) {
+          body['ticketId'] = listingId.trim();
+        }
+        if (body.isEmpty) return null;
+
+        final response = await api.post('/api/parking/listing', body);
         final raw = response['document'];
         if (raw is Map) {
           doc = Map<String, dynamic>.from(
@@ -246,10 +253,18 @@ class MongoVehicleOwnerRepository implements VehicleOwnerRepository {
         doc = null;
       }
     } else {
-      doc = await _collectionService.findOne(
-        collectionName: AppConstants.landOwnerRequestsCollection,
-        selector: where.eq('_id', ObjectId.parse(hex)),
-      );
+      if (hex.isNotEmpty && hex.length == 24) {
+        doc = await _collectionService.findOne(
+          collectionName: AppConstants.landOwnerRequestsCollection,
+          selector: where.eq('_id', ObjectId.parse(hex)),
+        );
+      }
+      if (doc == null && looksLikeTicket) {
+        doc = await _collectionService.findOne(
+          collectionName: AppConstants.landOwnerRequestsCollection,
+          selector: where.eq('ticketId', listingId.trim()),
+        );
+      }
       if (doc != null && !_isListableRequest(doc)) doc = null;
     }
 

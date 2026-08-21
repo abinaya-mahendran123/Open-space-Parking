@@ -20,6 +20,7 @@ const {
 const {
   nearbyVerifiedListings,
   verifiedListingById,
+  verifiedListingByTicketId,
   isEmployeeVerifiedListing,
   isPublicParkingListing,
 } = require('./parking_listings');
@@ -717,21 +718,42 @@ app.post('/api/parking/nearby', handleParkingNearby);
 app.post('/api/parking/listing', async (req, res) => {
   try {
     const id = String(req.body?.id || '').trim();
-    if (!id) {
-      res.status(400).json({ error: 'id is required' });
+    const ticketId = String(req.body?.ticketId || req.body?.ticket_id || '').trim();
+    if ((!id || id === '[object Object]') && !ticketId) {
+      res.status(400).json({ error: 'id or ticketId is required' });
       return;
     }
     if (!DATABASE_URL) {
-      const doc = await db.collection('land_owner_requests').findOne({
-        _id: new ObjectId(id),
-        isDeleted: { $ne: true },
-      });
+      let doc = null;
+      if (id && id !== '[object Object]') {
+        try {
+          doc = await db.collection('land_owner_requests').findOne({
+            _id: new ObjectId(id),
+            isDeleted: { $ne: true },
+          });
+        } catch (_) {
+          doc = null;
+        }
+      }
+      if (!doc && ticketId) {
+        doc = await db.collection('land_owner_requests').findOne({
+          ticketId,
+          isDeleted: { $ne: true },
+        });
+      }
       res.json({
         document: doc && isPublicParkingListing(doc) ? serialize(doc) : null,
       });
       return;
     }
-    const document = await verifiedListingById(db.pool, id);
+
+    let document = null;
+    if (id && id !== '[object Object]') {
+      document = await verifiedListingById(db.pool, id);
+    }
+    if (!document && ticketId) {
+      document = await verifiedListingByTicketId(db.pool, ticketId);
+    }
     res.json({ document: document ? serialize(document) : null });
   } catch (error) {
     res.status(500).json({ error: error.message });
