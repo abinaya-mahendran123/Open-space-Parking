@@ -138,6 +138,39 @@ function looksLikeRasterImage(buffer) {
   return false;
 }
 
+async function extractTextFromPdfBuffer(buffer) {
+  const pdfjs = await import('pdfjs-dist/legacy/build/pdf.mjs');
+  const loadingTask = pdfjs.getDocument({
+    data: new Uint8Array(buffer),
+    disableWorker: true,
+    useSystemFonts: true,
+  });
+  const pdf = await loadingTask.promise;
+  const maxPages = Math.min(pdf.numPages || 1, 3);
+  const chunks = [];
+
+  for (let pageNum = 1; pageNum <= maxPages; pageNum += 1) {
+    const page = await pdf.getPage(pageNum);
+    const content = await page.getTextContent();
+    const line = [];
+    for (const item of content.items || []) {
+      const str = String(item?.str || '').trim();
+      if (str) line.push(str);
+    }
+    if (line.length) {
+      // Keep both spaced and newline forms for label parsers.
+      chunks.push(line.join(' '));
+      chunks.push(line.join('\n'));
+    }
+  }
+
+  return chunks.join('\n');
+}
+
+/**
+ * Returns a raster image buffer for OCR, or null when PDF cannot be converted.
+ * Callers should try PDF text extraction before requiring an image.
+ */
 async function bufferToOcrImage(buffer, sourceUrl) {
   if (!isPdfBuffer(buffer)) return buffer;
 
@@ -166,19 +199,48 @@ async function bufferToOcrImage(buffer, sourceUrl) {
 
   try {
     const sharp = require('sharp');
-    // Works only if libvips was built with PDF support (often missing on Render).
     return await sharp(buffer, { density: 220, page: 0 }).png().toBuffer();
   } catch (error) {
     console.warn('[OCR] sharp PDF rasterize failed:', error?.message || error);
-    throw new Error(
-      'Could not read this Aadhaar PDF automatically. Upload a clear PNG/JPG photo of the card (or a screenshot of the PDF), then tap Re-scan.',
-    );
+    return null;
   }
 }
 
 async function fetchImageBufferForOcr(url) {
   const buffer = await fetchBuffer(url);
   return bufferToOcrImage(buffer, url);
+}
+
+async function tryExtractFromPdfUrl(url, idType) {
+  try {
+    const raw = await fetchBuffer(url);
+    if (!isPdfBuffer(raw)) return null;
+    const pdfText = await extractTextFromPdfBuffer(raw);
+    if (!pdfText || pdfText.replace(/\s+/g, '').length < 12) return null;
+
+    console.log(
+      '[OCR] PDF embedded text preview:',
+      pdfText.slice(0, 240).replace(/\n/g, ' | '),
+    );
+
+    const extracted = mergeExtracted(pdfText, pdfText, idType);
+    extracted.rawText = pdfText.slice(0, 4000);
+    extracted.extractionSource = 'pdf_text';
+    if (idType === 'aadhaar' && extracted.governmentIdNumber) {
+      extracted.aadhaarNumber = extracted.governmentIdNumber;
+    }
+
+    const useful =
+      (extracted.fullName && extracted.fullName.length >= 3) ||
+      (extracted.governmentIdNumber &&
+        String(extracted.governmentIdNumber).replace(/\D/g, '').length === 12) ||
+      (extracted.address && extracted.address.length >= 8);
+
+    return useful ? extracted : null;
+  } catch (error) {
+    console.warn('[OCR] PDF text extraction failed:', error?.message || error);
+    return null;
+  }
 }
 
 function cleanLine(value) {
@@ -833,26 +895,52 @@ async function extractGovernmentIdDetails({ frontUrl, backUrl, idType }) {
     throw new Error('Image URL is required.');
   }
 
+  // UIDAI PDFs often contain selectable text — extract that before image OCR.
+  const pdfTextExtracted = await tryExtractFromPdfUrl(frontUrl, idType);
+  if (
+    pdfTextExtracted &&
+    pdfTextExtracted.fullName &&
+    pdfTextExtracted.governmentIdNumber &&
+    pdfTextExtracted.address
+  ) {
+    return pdfTextExtracted;
+  }
+
   // Avoid downloading/processing the same image twice when front === back
   const sameUrl = frontUrl === backUrl;
-  let frontBuffer, backBuffer;
+  let frontBuffer;
+  let backBuffer;
   let extraBackBuffer = null; // bottom-right plastic back card (for portrait 2×2)
   if (sameUrl) {
-    const rawBuffer = await fetchImageBufferForOcr(frontUrl);
-    const split = await splitSideBySide(rawBuffer);
+    const converted = await fetchImageBufferForOcr(frontUrl);
+    if (!converted) {
+      if (pdfTextExtracted) return pdfTextExtracted;
+      throw new Error(
+        'Could not read this Aadhaar PDF automatically. Upload a clear PNG/JPG photo of the card (or a screenshot of the PDF), then tap Re-scan.',
+      );
+    }
+    const split = await splitSideBySide(converted);
     if (split) {
       frontBuffer = split.frontBuffer;
       backBuffer = split.backBuffer;
       if (split.bottomRight) extraBackBuffer = split.bottomRight;
     } else {
-      frontBuffer = rawBuffer;
-      backBuffer = rawBuffer;
+      frontBuffer = converted;
+      backBuffer = converted;
     }
   } else {
-    [frontBuffer, backBuffer] = await Promise.all([
+    const [frontConverted, backConverted] = await Promise.all([
       fetchImageBufferForOcr(frontUrl),
-      fetchImageBufferForOcr(backUrl),
+      fetchImageBufferForOcr(backUrl || frontUrl),
     ]);
+    if (!frontConverted) {
+      if (pdfTextExtracted) return pdfTextExtracted;
+      throw new Error(
+        'Could not read this Aadhaar PDF automatically. Upload a clear PNG/JPG photo of the card (or a screenshot of the PDF), then tap Re-scan.',
+      );
+    }
+    frontBuffer = frontConverted;
+    backBuffer = backConverted || frontConverted;
   }
 
   // For Aadhaar: try QR code first on ALL available buffers — instant and 100% accurate.
@@ -860,12 +948,13 @@ async function extractGovernmentIdDetails({ frontUrl, backUrl, idType }) {
   let qrExtracted = null;
   if (idType === 'aadhaar') {
     const qrCandidates = [frontBuffer, backBuffer];
-    // If we split, also try QR on the raw (unsplit) buffer
     if (sameUrl) {
       try {
-        const rawBuffer = await fetchImageBufferForOcr(frontUrl);
-        qrCandidates.unshift(rawBuffer); // raw full image first = highest quality
-      } catch (_) { /* ignore */ }
+        const rawBuffer = await fetchBuffer(frontUrl);
+        if (!isPdfBuffer(rawBuffer)) qrCandidates.unshift(rawBuffer);
+      } catch (_) {
+        /* ignore */
+      }
     }
     for (const buf of qrCandidates) {
       qrExtracted = await extractAadhaarFromQr(buf);
@@ -887,11 +976,20 @@ async function extractGovernmentIdDetails({ frontUrl, backUrl, idType }) {
   if (extraBackBuffer) {
     const extraOcr = await recognizeMultiPass(extraBackBuffer, { useTamil });
     combinedBackText = `${backOcr.text}\n${extraOcr.text}`;
-    console.log('[OCR] Extra back text preview:', extraOcr.text.substring(0, 200).replace(/\n/g, ' | '));
+    console.log(
+      '[OCR] Extra back text preview:',
+      extraOcr.text.substring(0, 200).replace(/\n/g, ' | '),
+    );
   }
 
-  console.log('[OCR] Front text preview:', frontOcr.text.substring(0, 200).replace(/\n/g, ' | '));
-  console.log('[OCR] Back text preview:', backOcr.text.substring(0, 200).replace(/\n/g, ' | '));
+  console.log(
+    '[OCR] Front text preview:',
+    frontOcr.text.substring(0, 200).replace(/\n/g, ' | '),
+  );
+  console.log(
+    '[OCR] Back text preview:',
+    backOcr.text.substring(0, 200).replace(/\n/g, ' | '),
+  );
 
   const ocrExtracted = mergeExtracted(frontOcr.text, combinedBackText, idType);
   ocrExtracted.ocrConfidence = Math.max(frontOcr.confidence, backOcr.confidence);
@@ -900,6 +998,9 @@ async function extractGovernmentIdDetails({ frontUrl, backUrl, idType }) {
   let extracted = ocrExtracted;
   if (qrExtracted) {
     extracted = mergeWithPreference(qrExtracted, ocrExtracted);
+  }
+  if (pdfTextExtracted) {
+    extracted = mergeWithPreference(pdfTextExtracted, extracted);
   }
 
   if (idType === 'aadhaar' && extracted.governmentIdNumber) {
