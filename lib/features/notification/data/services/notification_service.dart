@@ -43,7 +43,13 @@ class NotificationService {
     if (EnvironmentConfig.isFirebaseConfigured) {
       try {
         await FirebaseBootstrap.ensureInitialized();
-        AppLogger.i('Firebase ready for notifications');
+        if (FirebaseBootstrap.ready) {
+          AppLogger.i('Firebase ready for notifications');
+        } else {
+          AppLogger.w(
+            'Firebase not ready — push notifications may be unavailable on web.',
+          );
+        }
       } catch (e) {
         AppLogger.w('Firebase initialization skipped: $e');
       }

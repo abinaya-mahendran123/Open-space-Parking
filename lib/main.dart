@@ -27,8 +27,11 @@ Future<void> main() async {
   runApp(const ProviderScope(child: OpenSpaceParkingApp()));
 
   // Do not block the first frame on network / Firebase setup.
-  unawaited(FirebaseBootstrap.ensureInitialized());
-  unawaited(AppBootstrap.initialize());
+  // Firebase is started once here; AppBootstrap reuses the same in-flight future.
+  unawaited(() async {
+    await FirebaseBootstrap.ensureInitialized();
+    await AppBootstrap.initialize();
+  }());
 }
 
 class _StartupErrorApp extends StatelessWidget {

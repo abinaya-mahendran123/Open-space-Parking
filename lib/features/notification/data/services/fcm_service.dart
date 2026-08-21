@@ -79,16 +79,18 @@ class FcmService {
     if (!_initialized || _messaging == null) return null;
     try {
       final settings = await _messaging!.getNotificationSettings();
-      if (settings.authorizationStatus == AuthorizationStatus.denied) {
-        // Expected when the user blocked notifications — not an app failure.
+      if (settings.authorizationStatus == AuthorizationStatus.denied ||
+          settings.authorizationStatus == AuthorizationStatus.notDetermined) {
+        // Expected until the user allows notifications — not an app failure.
         return null;
       }
-      return await _messaging!.getToken().timeout(const Duration(seconds: 3));
+      return await _messaging!.getToken().timeout(const Duration(seconds: 8));
     } catch (e) {
       final text = e.toString().toLowerCase();
       if (text.contains('permission-blocked') ||
           text.contains('permission-denied') ||
-          text.contains('not granted')) {
+          text.contains('not granted') ||
+          text.contains('timeoutexception')) {
         return null;
       }
       AppLogger.w('Failed to get FCM token: $e');

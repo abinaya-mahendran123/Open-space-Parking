@@ -8,8 +8,18 @@ class FirebaseBootstrap {
   FirebaseBootstrap._();
 
   static bool ready = false;
+  static Future<void>? _inFlight;
 
-  static Future<void> ensureInitialized() async {
+  static Future<void> ensureInitialized() {
+    final existing = _inFlight;
+    if (existing != null) return existing;
+    return _inFlight = _initialize().whenComplete(() {
+      // Allow a later retry if the first attempt failed.
+      if (!ready) _inFlight = null;
+    });
+  }
+
+  static Future<void> _initialize() async {
     try {
       final options = EnvironmentConfig.firebaseOptions;
       if (Firebase.apps.isNotEmpty) {
@@ -23,7 +33,7 @@ class FirebaseBootstrap {
 
       if (options != null) {
         await Firebase.initializeApp(options: options).timeout(
-          const Duration(seconds: 12),
+          const Duration(seconds: 20),
         );
       } else if (kIsWeb) {
         AppLogger.w(
@@ -33,7 +43,7 @@ class FirebaseBootstrap {
         );
         return;
       } else {
-        await Firebase.initializeApp().timeout(const Duration(seconds: 12));
+        await Firebase.initializeApp().timeout(const Duration(seconds: 20));
       }
       ready = true;
       AppLogger.i('Firebase initialized (${Firebase.app().options.appId})');
