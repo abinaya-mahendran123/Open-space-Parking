@@ -52,44 +52,126 @@ function isPdfBuffer(buffer) {
 }
 
 /**
- * Cloudinary can render PDF page 1 as PNG via delivery transforms.
- * Works for both /image/upload/ and /raw/upload/ public IDs.
+ * Build Cloudinary delivery URLs that render PDF page 1 as PNG/JPG.
+ * Sharp on Render usually cannot rasterize PDFs (no Poppler), so this is required.
  */
-function cloudinaryPdfPageImageUrl(url) {
-  const text = String(url || '');
+function cloudinaryPdfRenderCandidates(url) {
+  const text = String(url || '').trim();
   if (!text.includes('res.cloudinary.com') || !text.includes('/upload/')) {
-    return null;
+    return [];
   }
 
-  let transformed = text;
-  if (transformed.includes('/raw/upload/')) {
-    transformed = transformed.replace('/raw/upload/', '/image/upload/');
+  const candidates = [];
+  const add = (value) => {
+    const u = String(value || '').trim();
+    if (u && !candidates.includes(u)) candidates.push(u);
+  };
+
+  const asImage = text
+    .replace('/raw/upload/', '/image/upload/')
+    .replace('/auto/upload/', '/image/upload/');
+
+  const match = asImage.match(
+    /^(https?:\/\/res\.cloudinary\.com\/[^/]+\/image\/upload\/)(.+)$/i,
+  );
+  if (!match) {
+    add(asImage.replace('/upload/', '/upload/f_png,pg_1,q_auto,w_2000/'));
+    return candidates;
   }
-  if (!/\/upload\/(?:[^/]+,)*f_png/.test(transformed)) {
-    transformed = transformed.replace('/upload/', '/upload/f_png,pg_1,q_auto/');
+
+  const prefix = match[1];
+  let rest = match[2];
+
+  // Drop any existing transformation segment so we control pg_1 / format.
+  const segments = rest.split('/');
+  const versionIdx = segments.findIndex((part) => /^v\d+$/.test(part));
+  if (versionIdx > 0) {
+    rest = segments.slice(versionIdx).join('/');
+  } else if (
+    segments.length > 1 &&
+    (segments[0].includes(',') || /^(f_|pg_|q_|w_|c_|fl_)/.test(segments[0]))
+  ) {
+    rest = segments.slice(1).join('/');
   }
-  return transformed === text ? null : transformed;
+
+  const transforms = [
+    'f_png,pg_1,q_auto,w_2000',
+    'pg_1,f_png,q_auto,w_2000',
+    'f_jpg,pg_1,q_auto,w_2000',
+    'pg_1/f_png',
+  ];
+  for (const transform of transforms) {
+    add(`${prefix}${transform}/${rest}`);
+  }
+
+  // Last resort: inject after /upload/ on the original URL shape.
+  add(asImage.replace('/upload/', '/upload/f_png,pg_1,q_auto,w_2000/'));
+  return candidates;
+}
+
+function cloudinaryPdfPageImageUrl(url) {
+  return cloudinaryPdfRenderCandidates(url)[0] || null;
+}
+
+function looksLikeRasterImage(buffer) {
+  if (!Buffer.isBuffer(buffer) || buffer.length < 8) return false;
+  // PNG
+  if (
+    buffer[0] === 0x89 &&
+    buffer[1] === 0x50 &&
+    buffer[2] === 0x4e &&
+    buffer[3] === 0x47
+  ) {
+    return true;
+  }
+  // JPEG
+  if (buffer[0] === 0xff && buffer[1] === 0xd8 && buffer[2] === 0xff) {
+    return true;
+  }
+  // WEBP (RIFF....WEBP)
+  if (
+    buffer.toString('ascii', 0, 4) === 'RIFF' &&
+    buffer.toString('ascii', 8, 12) === 'WEBP'
+  ) {
+    return true;
+  }
+  return false;
 }
 
 async function bufferToOcrImage(buffer, sourceUrl) {
   if (!isPdfBuffer(buffer)) return buffer;
 
-  const pageUrl = cloudinaryPdfPageImageUrl(sourceUrl);
-  if (pageUrl) {
+  const candidates = cloudinaryPdfRenderCandidates(sourceUrl);
+  for (const pageUrl of candidates) {
     try {
       const rendered = await fetchBuffer(pageUrl);
-      if (!isPdfBuffer(rendered)) return rendered;
-    } catch (_) {
-      // Fall through to local sharp conversion when available.
+      if (looksLikeRasterImage(rendered)) {
+        console.log('[OCR] PDF rendered via Cloudinary:', pageUrl);
+        return rendered;
+      }
+      console.warn(
+        '[OCR] Cloudinary PDF render returned non-image:',
+        pageUrl,
+        'bytes=',
+        rendered.length,
+      );
+    } catch (error) {
+      console.warn(
+        '[OCR] Cloudinary PDF render failed:',
+        pageUrl,
+        error?.message || error,
+      );
     }
   }
 
   try {
     const sharp = require('sharp');
-    return await sharp(buffer, { density: 200 }).png().toBuffer();
-  } catch (_) {
+    // Works only if libvips was built with PDF support (often missing on Render).
+    return await sharp(buffer, { density: 220, page: 0 }).png().toBuffer();
+  } catch (error) {
+    console.warn('[OCR] sharp PDF rasterize failed:', error?.message || error);
     throw new Error(
-      'PDF uploaded, but automatic reading failed. Please fill the details manually.',
+      'Could not read this Aadhaar PDF automatically. Upload a clear PNG/JPG photo of the card (or a screenshot of the PDF), then tap Re-scan.',
     );
   }
 }
@@ -838,4 +920,6 @@ module.exports = {
   mergeWithPreference,
   recognizeMultiPass,
   terminateWorkers,
+  cloudinaryPdfRenderCandidates,
+  bufferToOcrImage,
 };
