@@ -7,6 +7,7 @@ import 'package:open_space_parking/core/common/exceptions/network_exception.dart
 import 'package:open_space_parking/core/config/app_constants.dart';
 import 'package:open_space_parking/core/integration/notification_helper.dart';
 import 'package:open_space_parking/core/services/api/api_client.dart';
+import 'package:open_space_parking/core/services/api/mongo_http_codec.dart';
 import 'package:open_space_parking/core/services/mongodb/mongo_collection_service.dart';
 import 'package:open_space_parking/core/services/mongodb/mongo_database_service.dart';
 import 'package:open_space_parking/core/utils/mongo_json.dart';
@@ -225,20 +226,29 @@ class MongoVehicleOwnerRepository implements VehicleOwnerRepository {
   }
 
   Future<ParkingListing?> _getBaseListing(String listingId) async {
+    final hex = _normalizeObjectId(listingId);
+    if (hex.isEmpty || hex == '[object Object]') return null;
+
     Map<String, dynamic>? doc;
     final api = _apiClient;
     if (api != null) {
-      final response = await api.post('/api/parking/listing', {
-        'id': _normalizeObjectId(listingId),
-      });
-      final raw = response['document'];
-      if (raw is Map) {
-        doc = Map<String, dynamic>.from(raw);
+      try {
+        final response = await api.post('/api/parking/listing', {
+          'id': hex,
+        });
+        final raw = response['document'];
+        if (raw is Map) {
+          doc = Map<String, dynamic>.from(
+            MongoHttpCodec.decode(raw) as Map,
+          );
+        }
+      } on NetworkException {
+        doc = null;
       }
     } else {
       doc = await _collectionService.findOne(
         collectionName: AppConstants.landOwnerRequestsCollection,
-        selector: where.eq('_id', ObjectId.parse(_normalizeObjectId(listingId))),
+        selector: where.eq('_id', ObjectId.parse(hex)),
       );
       if (doc != null && !_isListableRequest(doc)) doc = null;
     }
@@ -354,8 +364,8 @@ class MongoVehicleOwnerRepository implements VehicleOwnerRepository {
         continue;
       }
       final slot = doc['assignedSlot'];
-      if (slot is int) used.add(slot);
-      if (slot is num) used.add(slot.toInt());
+      final parsed = MongoJson.asInt(slot);
+      if (parsed != null && parsed > 0) used.add(parsed);
     }
 
     for (var i = 1; i <= capacity; i++) {
@@ -381,7 +391,9 @@ class MongoVehicleOwnerRepository implements VehicleOwnerRepository {
         });
         final raw = response['document'];
         if (raw is Map) {
-          return _mapBookingToEntity(MongoJson.asMap(raw)!);
+          return _mapBookingToEntity(
+            MongoJson.asMap(MongoHttpCodec.decode(raw))!,
+          );
         }
       } on NetworkException catch (e) {
         throw AppException(e.message);
@@ -473,7 +485,9 @@ class MongoVehicleOwnerRepository implements VehicleOwnerRepository {
         final raw = response['document'];
         if (raw == null) return null;
         if (raw is Map) {
-          return _mapBookingToEntity(MongoJson.asMap(raw)!);
+          return _mapBookingToEntity(
+            MongoJson.asMap(MongoHttpCodec.decode(raw))!,
+          );
         }
       } on NetworkException catch (e) {
         throw AppException(e.message);
@@ -488,14 +502,16 @@ class MongoVehicleOwnerRepository implements VehicleOwnerRepository {
       collectionName: AppConstants.bookingsCollection,
       selector: where.eq('qrPayload', code),
     );
-    if (doc != null) return _mapBookingToEntity(doc);
+    if (doc != null) {
+      return _ensureBookingHasSlot(_mapBookingToEntity(doc), doc);
+    }
 
     final byRef = await _collectionService.findOne(
       collectionName: AppConstants.bookingsCollection,
       selector: where.eq('bookingRef', code),
     );
     if (byRef == null) return null;
-    return _mapBookingToEntity(byRef);
+    return _ensureBookingHasSlot(_mapBookingToEntity(byRef), byRef);
   }
 
   @override
@@ -508,7 +524,9 @@ class MongoVehicleOwnerRepository implements VehicleOwnerRepository {
         });
         final raw = response['document'];
         if (raw is Map) {
-          return _mapBookingToEntity(MongoJson.asMap(raw)!);
+          return _mapBookingToEntity(
+            MongoJson.asMap(MongoHttpCodec.decode(raw))!,
+          );
         }
         throw const AppException('Could not load updated booking.');
       } on NetworkException catch (e) {
@@ -852,13 +870,51 @@ class MongoVehicleOwnerRepository implements VehicleOwnerRepository {
   Future<Booking?> getBooking(String bookingId) async {
     await _ensureConnected();
 
+    final hex = MongoJson.objectIdHex(bookingId);
+    if (hex.isEmpty || hex.length != 24) return null;
+
     final doc = await _collectionService.findOne(
       collectionName: AppConstants.bookingsCollection,
-      selector: where.eq('_id', ObjectId.parse(bookingId)),
+      selector: where.eq('_id', ObjectId.parse(hex)),
     );
 
     if (doc == null) return null;
-    return _mapBookingToEntity(doc);
+    return _ensureBookingHasSlot(_mapBookingToEntity(doc), doc);
+  }
+
+  /// Older bookings may have been saved without FCFS slot — assign one now.
+  Future<Booking> _ensureBookingHasSlot(
+    Booking booking,
+    Map<String, dynamic> rawDoc,
+  ) async {
+    final existing = booking.assignedSlot;
+    if (existing != null && existing > 0) return booking;
+    if (booking.status == BookingStatus.cancelled ||
+        booking.status == BookingStatus.completed) {
+      return booking;
+    }
+
+    try {
+      final listing = await _getBaseListing(booking.parkingListingId);
+      final capacity = listing?.capacity ?? 10;
+      final slot = await _allocateNextSlot(
+        parkingListingId: booking.parkingListingId,
+        capacity: capacity > 0 ? capacity : 10,
+      );
+      final now = DateTime.now().toUtc().toIso8601String();
+      await _collectionService.updateOne(
+        collectionName: AppConstants.bookingsCollection,
+        selector: where.eq('_id', ObjectId.parse(booking.id)),
+        modifier: modify.set('assignedSlot', slot).set('updatedAt', now),
+      );
+      // Booking is immutable — remap with updated slot.
+      final updated = Map<String, dynamic>.from(rawDoc)
+        ..['assignedSlot'] = slot
+        ..['updatedAt'] = now;
+      return _mapBookingToEntity(updated);
+    } catch (_) {
+      return booking;
+    }
   }
 
   @override
@@ -1310,25 +1366,31 @@ class MongoVehicleOwnerRepository implements VehicleOwnerRepository {
   }
 
   Booking _mapBookingToEntity(Map<String, dynamic> map) {
-    final rawId = map['_id'];
-    final id = rawId is ObjectId ? rawId.oid : rawId.toString();
+    final id = MongoJson.objectIdHex(map['_id']);
+    if (id.isEmpty) {
+      throw const AppException('Booking id is missing.');
+    }
 
     return Booking(
       id: id,
-      bookingRef: map['bookingRef'] as String,
-      vehicleOwnerId: map['vehicleOwnerId'] as String,
-      parkingListingId: map['parkingListingId'] as String,
-      ticketId: map['ticketId'] as String,
-      parkingType: ParkingTypeX.fromValue(map['parkingType'] as String),
-      vehicleNumber: map['vehicleNumber'] as String,
+      bookingRef: map['bookingRef'] as String? ?? '',
+      vehicleOwnerId: '${map['vehicleOwnerId'] ?? ''}',
+      parkingListingId: MongoJson.objectIdHex(map['parkingListingId']).isNotEmpty
+          ? MongoJson.objectIdHex(map['parkingListingId'])
+          : '${map['parkingListingId'] ?? ''}',
+      ticketId: '${map['ticketId'] ?? ''}',
+      parkingType: ParkingTypeX.fromValue(map['parkingType'] as String? ?? ''),
+      vehicleNumber: map['vehicleNumber'] as String? ?? '',
       vehicleModel: map['vehicleModel'] as String?,
       startDateTime: DateTime.parse(map['startDateTime'] as String),
       endDateTime: DateTime.parse(map['endDateTime'] as String),
-      durationHours: (map['durationHours'] as num).toDouble(),
+      durationHours: (map['durationHours'] as num?)?.toDouble() ?? 0,
       hourlyRate: (map['hourlyRate'] as num?)?.toDouble() ?? 0,
-      totalPrice: (map['totalPrice'] as num).toDouble(),
-      status: BookingStatusX.fromValue(map['status'] as String),
-      createdAt: DateTime.parse(map['createdAt'] as String),
+      totalPrice: (map['totalPrice'] as num?)?.toDouble() ?? 0,
+      status: BookingStatusX.fromValue(map['status'] as String? ?? ''),
+      createdAt: DateTime.parse(
+        map['createdAt'] as String? ?? DateTime.now().toUtc().toIso8601String(),
+      ),
       parkingAddress: map['parkingAddress'] as String?,
       parkingName: map['parkingName'] as String?,
       assignedSlot: MongoJson.asInt(map['assignedSlot']),

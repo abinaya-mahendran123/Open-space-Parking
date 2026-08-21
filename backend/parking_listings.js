@@ -83,10 +83,23 @@ async function nearbyVerifiedListings(pool) {
 
 async function verifiedListingById(pool, id) {
   const hex = String(id || '').match(/[a-fA-F0-9]{24}/);
-  const lookup = hex ? hex[0] : String(id || '');
+  const lookup = hex ? hex[0] : String(id || '').trim();
+  if (!lookup || lookup === '[object Object]') return null;
   const result = await pool.query(
     'select * from public.land_owner_requests where id = $1 limit 1',
     [lookup],
+  );
+  if (!result.rows[0]) return null;
+  const doc = namedRequestToDoc(result.rows[0]);
+  return isEmployeeVerifiedListing(doc) ? doc : null;
+}
+
+async function verifiedListingByTicketId(pool, ticketId) {
+  const ticket = String(ticketId || '').trim();
+  if (!ticket) return null;
+  const result = await pool.query(
+    'select * from public.land_owner_requests where ticket_id = $1 limit 1',
+    [ticket],
   );
   if (!result.rows[0]) return null;
   const doc = namedRequestToDoc(result.rows[0]);
@@ -100,4 +113,6 @@ module.exports = {
   loadNamedRequests,
   nearbyVerifiedListings,
   verifiedListingById,
+  verifiedListingByTicketId,
 };
+

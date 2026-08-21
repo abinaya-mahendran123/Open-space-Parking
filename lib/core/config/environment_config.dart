@@ -178,9 +178,14 @@ class EnvironmentConfig {
   }
 
   static const String phoneUnreachableMessage =
-      'Cannot reach the server from this phone. '
-      'Keep the USB cable connected, keep the backend running '
-      '(cd backend && npm start), then run: adb reverse tcp:3000 tcp:3000';
+      'Cannot reach the server. Check your internet connection. '
+      'If using the hosted API, wait up to a minute for it to wake, then retry.';
+
+  static Duration _healthTimeoutFor(String base) {
+    return base.startsWith('https://')
+        ? const Duration(seconds: 45)
+        : const Duration(seconds: 3);
+  }
 
   static Future<String?> _firstHealthy(
     http.Client client,
@@ -195,7 +200,7 @@ class EnvironmentConfig {
         try {
           final response = await client
               .get(Uri.parse('$base/api/health'))
-              .timeout(const Duration(milliseconds: 3000));
+              .timeout(_healthTimeoutFor(base));
           if (response.statusCode == 200 && !completer.isCompleted) {
             completer.complete(base);
           }

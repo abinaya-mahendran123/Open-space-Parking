@@ -252,21 +252,37 @@ class GovernmentIdOwnerDetailsFormState
 
       if (!mounted) return;
 
-      if (result.fullName.isNotEmpty) _nameController.text = result.fullName;
-      if (result.phone.isNotEmpty) _phoneController.text = result.phone;
-      if (result.address.isNotEmpty) _addressController.text = result.address;
-      if (result.governmentIdNumber.isNotEmpty) {
-        _idNumberController.text = result.governmentIdNumber;
+      if (result.fullName.isNotEmpty) {
+        _nameController.text = result.fullName;
+      }
+      // Only fill phone from Aadhaar when OCR found an explicitly labeled number.
+      if (result.phone.isNotEmpty &&
+          RegExp(r'^[6-9]\d{9}$').hasMatch(result.phone)) {
+        _phoneController.text = result.phone;
+      }
+      if (result.address.isNotEmpty) {
+        _addressController.text = result.address;
+      }
+      final idNumber = (result.aadhaarNumber?.isNotEmpty == true
+              ? result.aadhaarNumber!
+              : result.governmentIdNumber)
+          .replaceAll(RegExp(r'\D'), '');
+      if (idNumber.length == 12) {
+        _idNumberController.text = idNumber;
       }
 
       setState(() => _extracting = false);
 
-      if (result.fullName.isEmpty &&
-          result.address.isEmpty &&
-          result.governmentIdNumber.isEmpty) {
+      final missing = <String>[];
+      if (_nameController.text.trim().isEmpty) missing.add('name');
+      if (_addressController.text.trim().isEmpty) missing.add('address');
+      if (_idNumberController.text.replaceAll(RegExp(r'\D'), '').length != 12) {
+        missing.add('Aadhaar number');
+      }
+      if (missing.isNotEmpty) {
         setState(() {
           _extractError =
-              'Could not read all details automatically. Please fill in any missing fields.';
+              'Could not read ${missing.join(', ')} clearly. Please correct the fields below.';
         });
       }
     } on AppException catch (e) {

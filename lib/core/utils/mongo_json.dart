@@ -33,18 +33,20 @@ class MongoJson {
   static String objectIdHex(dynamic raw) {
     if (raw == null) return '';
     if (raw is String) {
-      final match = RegExp(r'[a-fA-F0-9]{24}').firstMatch(raw);
-      return match?.group(0) ?? raw;
+      final trimmed = raw.trim();
+      if (trimmed.isEmpty || trimmed.contains('[object Object]')) return '';
+      final match = RegExp(r'[a-fA-F0-9]{24}').firstMatch(trimmed);
+      return match?.group(0) ?? trimmed;
     }
     try {
       final hex = (raw as dynamic).oid;
-      if (hex is String && hex.isNotEmpty) return hex;
+      if (hex is String && hex.isNotEmpty) return objectIdHex(hex);
     } catch (_) {}
     if (raw is Map) {
-      final oid = raw['\$oid'] ?? raw['oid'] ?? raw['\$id'];
+      final oid = raw['\$oid'] ?? raw['oid'] ?? raw['\$id'] ?? raw['id'];
       if (oid != null) return objectIdHex(oid);
     }
     final match = RegExp(r'[a-fA-F0-9]{24}').firstMatch(raw.toString());
-    return match?.group(0) ?? raw.toString();
+    return match?.group(0) ?? '';
   }
 }

@@ -36,9 +36,12 @@ class ApiClient {
   Future<void> checkHealth() async {
     Future<bool> ping() async {
       try {
-        final response = await _httpClient
-            .get(_uri('/api/health'))
-            .timeout(const Duration(milliseconds: 3000));
+        final base = _baseUrl;
+        final timeout = base.startsWith('https://')
+            ? const Duration(seconds: 45)
+            : const Duration(seconds: 3);
+        final response =
+            await _httpClient.get(_uri('/api/health')).timeout(timeout);
         return response.statusCode == 200;
       } catch (_) {
         return false;

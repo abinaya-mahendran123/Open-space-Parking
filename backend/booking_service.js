@@ -94,9 +94,24 @@ async function getListing(db, listingId) {
 }
 
 function listingCapacity(listing) {
-  const prefs = listing.parkingPreferences || {};
-  const cars = Number(prefs.numberOfCars || prefs.numberOfSlots || 0);
-  if (Number.isFinite(cars) && cars > 0) return cars;
+  const prefs = listing?.parkingPreferences || {};
+  const land = listing?.landDetails || {};
+  const requestType = String(listing?.requestType || '').toLowerCase();
+  if (requestType === 'build_parking') return 100;
+
+  const stored =
+    Number(prefs.numberOfCars) ||
+    Number(prefs.numberOfSlots) ||
+    Number(listing?.capacity) ||
+    Number(listing?.numberOfCars) ||
+    0;
+  if (Number.isFinite(stored) && stored > 0) return Math.floor(stored);
+
+  const areaSqFt = Number(land.areaSqFt) || 0;
+  if (areaSqFt > 0) {
+    const fromArea = Math.floor(areaSqFt / 150);
+    return fromArea > 0 ? fromArea : 1;
+  }
   return 10;
 }
 
@@ -129,6 +144,7 @@ async function countActiveBookings(db, parkingListingId) {
 }
 
 async function allocateNextSlot(db, parkingListingId, capacity) {
+  const safeCapacity = Math.max(1, Number(capacity) || 10);
   const bookings = await db
     .collection('bookings')
     .find({
@@ -145,12 +161,41 @@ async function allocateNextSlot(db, parkingListingId, capacity) {
     if (Number.isFinite(slot) && slot > 0) used.add(slot);
   }
 
-  for (let slot = 1; slot <= capacity; slot += 1) {
+  for (let slot = 1; slot <= safeCapacity; slot += 1) {
     if (!used.has(slot)) return slot;
   }
   const error = new Error('No parking slots available right now.');
   error.statusCode = 409;
   throw error;
+}
+
+/** Assign an FCFS slot when an older booking was saved without one. */
+async function ensureAssignedSlot(db, booking) {
+  if (!booking) return booking;
+  const existing = Number(booking.assignedSlot);
+  if (Number.isFinite(existing) && existing > 0) return booking;
+
+  const status = String(booking.status || '');
+  if (!ACTIVE_SLOT_STATUSES.includes(status) && status !== 'awaiting_payment') {
+    return booking;
+  }
+
+  const listing = await getListing(db, booking.parkingListingId);
+  const capacity = listing ? listingCapacity(listing) : 10;
+  const slot = await allocateNextSlot(db, booking.parkingListingId, capacity);
+  const now = new Date().toISOString();
+  await db.collection('bookings').updateOne(
+    { _id: booking._id },
+    {
+      $set: {
+        assignedSlot: slot,
+        updatedAt: now,
+      },
+    },
+  );
+  booking.assignedSlot = slot;
+  booking.updatedAt = now;
+  return booking;
 }
 
 async function insertNotification(db, { recipientId, recipientType, title, message }) {
@@ -189,7 +234,8 @@ async function findBookingByQr(db, qrPayload) {
       isDeleted: { $ne: true },
     });
   }
-  return doc;
+  if (!doc) return null;
+  return ensureAssignedSlot(db, doc);
 }
 
 async function startParkingSession(db, { vehicleOwnerId, parkingListingId, vehicleNumber, vehicleModel }) {
@@ -257,7 +303,7 @@ async function startParkingSession(db, { vehicleOwnerId, parkingListingId, vehic
       message: `Slot ${slot} assigned (FCFS). Show QR (${bookingRef}) to security to start parking.`,
     });
 
-    return document;
+    return ensureAssignedSlot(db, document);
   });
 }
 
@@ -282,7 +328,7 @@ async function scanParkingQr(db, qrPayload) {
   }
 
   if (booking.checkedOutAt && booking.amountDue != null) {
-    return booking;
+    return ensureAssignedSlot(db, booking);
   }
 
   const listing = await getListing(db, booking.parkingListingId);
@@ -377,4 +423,7 @@ module.exports = {
   startParkingSession,
   scanParkingQr,
   findBookingByQr,
+  ensureAssignedSlot,
+  allocateNextSlot,
+  listingCapacity,
 };

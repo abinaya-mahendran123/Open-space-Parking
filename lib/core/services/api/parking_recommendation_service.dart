@@ -1,4 +1,5 @@
 import 'package:open_space_parking/core/services/api/api_client.dart';
+import 'package:open_space_parking/core/utils/mongo_json.dart';
 import 'package:open_space_parking/features/land_owner/domain/entities/parking_type.dart';
 import 'package:open_space_parking/features/vehicle_owner/domain/entities/parking_listing.dart';
 
@@ -23,7 +24,8 @@ class ParkingRecommendationService {
     }
 
     final queryString = query.entries
-        .map((e) => '${Uri.encodeQueryComponent(e.key)}=${Uri.encodeQueryComponent(e.value)}')
+        .map((e) =>
+            '${Uri.encodeQueryComponent(e.key)}=${Uri.encodeQueryComponent(e.value)}')
         .join('&');
 
     final response = await _apiClient.get('/api/parking/nearby?$queryString');
@@ -32,26 +34,30 @@ class ParkingRecommendationService {
     return raw
         .whereType<Map>()
         .map((item) => _mapRecommendation(Map<String, dynamic>.from(item)))
+        .where((listing) => listing.id.isNotEmpty && listing.id != '[object Object]')
         .toList();
   }
 
   ParkingListing _mapRecommendation(Map<String, dynamic> item) {
     final parkingTypeValue = item['parkingType'] as String? ?? 'tower_parking';
+    final id = MongoJson.objectIdHex(item['id']).isNotEmpty
+        ? MongoJson.objectIdHex(item['id'])
+        : MongoJson.objectIdHex(item['_id']);
 
     return ParkingListing(
-      id: '${item['id'] ?? ''}',
+      id: id,
       ticketId: item['ticketId'] as String? ?? '',
       landOwnerId: '',
       parkingType: ParkingTypeX.fromValue(parkingTypeValue),
-      capacity: item['capacity'] as int? ?? 1,
-      latitude: (item['latitude'] as num?)?.toDouble() ?? 0,
-      longitude: (item['longitude'] as num?)?.toDouble() ?? 0,
-      areaSqFt: (item['areaSqFt'] as num?)?.toDouble() ?? 0,
-      hourlyRate: (item['hourlyRate'] as num?)?.toDouble(),
+      capacity: MongoJson.asInt(item['capacity']) ?? 1,
+      latitude: MongoJson.asDouble(item['latitude']) ?? 0,
+      longitude: MongoJson.asDouble(item['longitude']) ?? 0,
+      areaSqFt: MongoJson.asDouble(item['areaSqFt']) ?? 0,
+      hourlyRate: MongoJson.asDouble(item['hourlyRate']),
       parkingName: item['parkingName'] as String?,
       address: item['address'] as String?,
-      distanceKm: (item['distanceKm'] as num?)?.toDouble(),
-      availableSlots: item['availableSlots'] as int?,
+      distanceKm: MongoJson.asDouble(item['distanceKm']),
+      availableSlots: MongoJson.asInt(item['availableSlots']),
       verifiedByEmployee: item['documentsVerified'] as bool? ?? true,
       isCompatible: item['isCompatible'] as bool? ?? true,
       isBestMatch: item['isBestMatch'] as bool? ?? false,

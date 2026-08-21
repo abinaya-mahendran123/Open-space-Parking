@@ -197,7 +197,12 @@ class _ParkingDetailPageState extends ConsumerState<ParkingDetailPage> {
         ),
         data: (listing) {
           if (listing == null) {
-            return const Center(child: Text('Parking space not found.'));
+            return AppErrorWidget(
+              message:
+                  'Parking space not found. Go back and open it again from search.',
+              onRetry: () =>
+                  ref.invalidate(parkingListingProvider(widget.listingId)),
+            );
           }
 
           return CustomScrollView(

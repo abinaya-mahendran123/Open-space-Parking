@@ -1,4 +1,5 @@
 import 'package:flutter/foundation.dart';
+import 'package:open_space_parking/core/config/environment_config.dart';
 import 'package:open_space_parking/core/di/service_locator.dart';
 import 'package:open_space_parking/core/mongodb/services/mongo_integration_service.dart';
 import 'package:open_space_parking/core/utils/app_logger.dart';
@@ -22,6 +23,9 @@ class AppBootstrap {
   }
 
   static Future<bool> retryApi() async {
+    try {
+      await EnvironmentConfig.refreshReachableApiUrl();
+    } catch (_) {}
     await _initializeMongo();
     return mongoReady;
   }

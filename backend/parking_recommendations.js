@@ -28,7 +28,21 @@ function distanceKmBetween(lat1, lon1, lat2, lon2) {
 }
 
 function parseObjectId(value) {
-  const text = String(value || '').trim();
+  if (value == null) return '';
+  if (typeof value === 'object') {
+    if (typeof value.$oid === 'string') return parseObjectId(value.$oid);
+    if (typeof value.oid === 'string') return parseObjectId(value.oid);
+    if (typeof value.toHexString === 'function') {
+      try {
+        return parseObjectId(value.toHexString());
+      } catch (_) {
+        /* fall through */
+      }
+    }
+    if (typeof value.id === 'string') return parseObjectId(value.id);
+  }
+  const text = String(value).trim();
+  if (text === '[object Object]') return '';
   const match = text.match(/[a-fA-F0-9]{24}/);
   return match ? match[0] : text;
 }
@@ -138,6 +152,7 @@ async function recommendNearbyParking(db, options = {}) {
 
   for (const doc of docs) {
     const listingId = parseObjectId(doc._id);
+    if (!listingId || listingId.length < 8) continue;
     const capacity = listingCapacity(doc);
     const booked = await countActiveBookings(db, listingId);
     const availableSlots = Math.max(0, capacity - booked);

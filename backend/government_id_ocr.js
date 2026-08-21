@@ -5,8 +5,8 @@ const { buildPreprocessedBuffers, splitSideBySide } = require('./ocr_preprocess'
 const { extractAadhaarFromQr } = require('./aadhaar_qr');
 
 const ID_TYPES = new Set(['aadhaar', 'pan', 'driving_license', 'voter_id']);
-// Only one PSM pass to keep OCR fast (PSM 6 = uniform block of text, best for ID cards)
-const OCR_PSMS = ['6'];
+// PSM 6 = uniform block; PSM 4 = single column — helps plastic Aadhaar cards
+const OCR_PSMS = ['6', '4'];
 
 function fetchBuffer(url, redirects = 0) {
   return new Promise((resolve, reject) => {
@@ -419,19 +419,22 @@ function extractName(text) {
   return '';
 }
 
-function extractPhone(text) {
+function extractPhone(text, idType) {
   const raw = String(text || '');
   // Step 1: strip 12-digit Aadhaar and 16-digit VID numbers first
   const cleaned = raw
-    .replace(/\bVID\s*[:\-]?\s*\d[\d\s]{14,18}\d\b/gi, '')  // VID label + number
-    .replace(/\b\d{4}[\s]?\d{4}[\s]?\d{4}[\s]?\d{4}\b/g, '') // bare 16-digit VID
-    .replace(/\b\d{4}[\s]?\d{4}[\s]?\d{4}\b/g, '');           // bare 12-digit Aadhaar
+    .replace(/\bVID\s*[:\-]?\s*\d[\d\s]{14,18}\d\b/gi, '')
+    .replace(/\b\d{4}[\s]?\d{4}[\s]?\d{4}[\s]?\d{4}\b/g, '')
+    .replace(/\b\d{4}[\s]?\d{4}[\s]?\d{4}\b/g, '');
 
   // Step 2: labeled mobile line takes highest priority
   const labelMatch = cleaned.match(
-    /(?:mobile|mob|phone|ph)\s*[:\-]?\s*([6-9]\d{9})/i,
+    /(?:mobile|mob\.?|phone|ph\.?|contact)\s*(?:no\.?|number)?\s*[:\-]?\s*([6-9]\d{9})/i,
   );
   if (labelMatch) return labelMatch[1];
+
+  // Plastic Aadhaar usually has no phone — do not guess from random digits.
+  if (idType === 'aadhaar') return '';
 
   // Step 3: any standalone 10-digit Indian mobile number
   const allMatches = cleaned.match(/(?<!\d)([6-9]\d{9})(?!\d)/g) || [];
@@ -441,17 +444,78 @@ function extractPhone(text) {
   return '';
 }
 
+/** Verhoeff checksum used by UIDAI for Aadhaar numbers. */
+function isValidAadhaarChecksum(aadhaar) {
+  const d = [
+    [0, 1, 2, 3, 4, 5, 6, 7, 8, 9],
+    [1, 2, 3, 4, 0, 6, 7, 8, 9, 5],
+    [2, 3, 4, 0, 1, 7, 8, 9, 5, 6],
+    [3, 4, 0, 1, 2, 8, 9, 5, 6, 7],
+    [4, 0, 1, 2, 3, 9, 5, 6, 7, 8],
+    [5, 9, 8, 7, 6, 0, 4, 3, 2, 1],
+    [6, 5, 9, 8, 7, 1, 0, 4, 3, 2],
+    [7, 6, 5, 9, 8, 2, 1, 0, 4, 3],
+    [8, 7, 6, 5, 9, 3, 2, 1, 0, 4],
+    [9, 8, 7, 6, 5, 4, 3, 2, 1, 0],
+  ];
+  const p = [
+    [0, 1, 2, 3, 4, 5, 6, 7, 8, 9],
+    [1, 5, 7, 6, 2, 8, 3, 0, 9, 4],
+    [5, 8, 0, 3, 7, 9, 6, 1, 4, 2],
+    [8, 9, 1, 6, 0, 4, 3, 5, 2, 7],
+    [9, 4, 5, 3, 1, 2, 6, 8, 7, 0],
+    [4, 2, 8, 6, 5, 7, 3, 9, 0, 1],
+    [2, 7, 9, 3, 8, 0, 6, 4, 1, 5],
+    [7, 0, 4, 6, 9, 1, 3, 2, 5, 8],
+  ];
+  const digits = String(aadhaar || '').replace(/\D/g, '');
+  if (!/^\d{12}$/.test(digits)) return false;
+  let c = 0;
+  const reversed = digits.split('').reverse().map((x) => Number(x));
+  for (let i = 0; i < reversed.length; i += 1) {
+    c = d[c][p[i % 8][reversed[i]]];
+  }
+  return c === 0;
+}
+
+function scoreNameCandidate(name) {
+  if (!name) return -1;
+  let score = name.length;
+  if (/^[A-Z][a-z]+(?: [A-Z][a-z]+)+$/.test(name)) score += 20;
+  if (/^[A-Z][A-Z ]{2,}$/.test(name)) score += 8;
+  if (NAME_NOISE.test(name)) score -= 50;
+  return score;
+}
+
+function titleCaseName(name) {
+  return String(name || '')
+    .toLowerCase()
+    .replace(/\b([a-z])/g, (m) => m.toUpperCase())
+    .trim();
+}
+
 function fixOcrIdNumber(value, idType) {
   let compact = String(value || '')
     .toUpperCase()
     .replace(/[^A-Z0-9]/g, '');
 
   if (idType === 'aadhaar') {
-    compact = compact.replace(/[O]/g, '0').replace(/[IL]/g, '1');
+    // Common OCR confusions on printed Aadhaar digits
+    compact = compact
+      .replace(/[OQD]/g, '0')
+      .replace(/[IL|]/g, '1')
+      .replace(/[SZ]/g, '5')
+      .replace(/[BG]/g, '8')
+      .replace(/A/g, '4')
+      .replace(/T/g, '7');
     if (/^\d{12}$/.test(compact)) return compact;
-    const spaced = String(value || '').replace(/[O]/g, '0').replace(/[IL]/g, '1');
-    const match = spaced.match(/\b(\d{4}[\s]?\d{4}[\s]?\d{4})\b/);
-    return match ? match[1].replace(/\s+/g, '') : compact;
+    const spaced = String(value || '')
+      .replace(/[OQD]/gi, '0')
+      .replace(/[IL|]/gi, '1')
+      .replace(/[SZ]/gi, '5')
+      .replace(/[BG]/gi, '8');
+    const match = spaced.match(/\b([0-9OQDILSZBG]{4}[\s\-]?[0-9OQDILSZBG]{4}[\s\-]?[0-9OQDILSZBG]{4})\b/i);
+    return match ? fixOcrIdNumber(match[1], idType) : compact.replace(/\D/g, '').slice(0, 12);
   }
 
   if (idType === 'pan') {
@@ -468,20 +532,30 @@ function extractIdNumber(text, idType) {
   const raw = String(text || '');
 
   if (idType === 'aadhaar') {
-    // First try: explicit "Aadhaar No." / "Your Aadhaar No." label
+    const candidates = new Set();
+
     const labelMatch = raw.match(
-      /(?:aadhaar\s*no\.?|your\s+aadhaar\s*no\.?)\s*[:\-]?\s*(\d[\d\s]{10,14}\d)/i,
+      /(?:aadhaar\s*no\.?|your\s+aadhaar\s*no\.?|uid\s*(?:no\.?|number)?)\s*[:\-]?\s*([0-9OQDILSZBG][0-9OQDILSZBG\s\-]{10,18}[0-9OQDILSZBG])/i,
     );
     if (labelMatch) {
-      const digits = labelMatch[1].replace(/\s+/g, '');
-      if (digits.length === 12) return digits;
+      const fixed = fixOcrIdNumber(labelMatch[1], idType);
+      if (fixed) candidates.add(fixed);
     }
 
-    // Second: find all 12-digit groups, excluding those that are part of 16-digit VID
-    // Strip VID lines first (4×4 digit = 16 digits)
-    const noVid = raw.replace(/\b\d{4}[\s]?\d{4}[\s]?\d{4}[\s]?\d{4}\b/g, '');
-    const match = noVid.match(/\b(\d{4}[\s]?\d{4}[\s]?\d{4})\b/);
-    return fixOcrIdNumber(match ? match[1] : '', idType);
+    // Strip VID (16 digits) then collect all 12-digit-looking groups
+    const noVid = raw.replace(/\b\d{4}[\s\-]?\d{4}[\s\-]?\d{4}[\s\-]?\d{4}\b/g, '');
+    const groups = noVid.match(/\b([0-9OQDILSZBG]{4}[\s\-]?[0-9OQDILSZBG]{4}[\s\-]?[0-9OQDILSZBG]{4})\b/gi) || [];
+    for (const g of groups) {
+      const fixed = fixOcrIdNumber(g, idType);
+      if (/^\d{12}$/.test(fixed)) candidates.add(fixed);
+    }
+
+    const list = [...candidates];
+    if (list.length === 0) return '';
+
+    // Prefer Verhoeff-valid Aadhaar numbers
+    const valid = list.find((n) => isValidAadhaarChecksum(n));
+    return valid || list[0];
   }
 
   if (idType === 'pan') {
@@ -504,24 +578,34 @@ function mergeExtracted(frontText, backText, idType) {
   const backName = extractName(backText);
   const frontAddress = extractAddress(frontText);
   const backAddress = extractAddress(backText);
-  const frontPhone = extractPhone(frontText);
-  const backPhone = extractPhone(backText);
+  const frontPhone = extractPhone(frontText, idType);
+  const backPhone = extractPhone(backText, idType);
   const frontId = extractIdNumber(frontText, idType);
   const backId = extractIdNumber(backText, idType);
+  const combinedId = extractIdNumber(combined, idType);
 
-  // For Aadhaar letter format (portrait 2×2):
-  // - back = top-left letter panel: has name, address, phone, Aadhaar No.
-  // - front = bottom-left plastic card: OCR quality is poor
-  // So prefer back for name and address; use front only as fallback.
-  const name = backName || frontName;
-  const address = backAddress || frontAddress;
-  const phone = backPhone || frontPhone;
-  // Aadhaar number appears in both but back (letter) has it most clearly labeled
-  const governmentIdNumber = backId || frontId;
+  // Prefer the stronger name candidate (plastic front vs letter back).
+  const name =
+    scoreNameCandidate(frontName) >= scoreNameCandidate(backName)
+      ? frontName || backName
+      : backName || frontName;
+  // Address is usually on the back / letter panel.
+  const address =
+    (backAddress && backAddress.length >= (frontAddress || '').length
+      ? backAddress
+      : frontAddress) ||
+    backAddress ||
+    frontAddress;
+  const phone = frontPhone || backPhone;
+  const governmentIdNumber =
+    [combinedId, frontId, backId].find((n) => isValidAadhaarChecksum(n)) ||
+    combinedId ||
+    frontId ||
+    backId;
 
   return {
-    fullName: name,
-    address,
+    fullName: titleCaseName(name),
+    address: finalizeAddress(address || ''),
     phone,
     governmentIdNumber,
     rawText: combined.slice(0, 4000),
