@@ -1,12 +1,12 @@
-import 'package:flutter/foundation.dart';
-
+import 'package:open_space_parking/core/di/mongo_service_registration.dart';
+import 'package:open_space_parking/core/services/api/http_mongo_database_service.dart';
 import 'package:open_space_parking/core/services/mongodb/mongo_database_service.dart';
 import 'package:open_space_parking/core/mongodb/services/default_admin_seed_service.dart';
 import 'package:open_space_parking/core/mongodb/services/mongo_data_service.dart';
 import 'package:open_space_parking/core/mongodb/services/mongo_index_service.dart';
 import 'package:open_space_parking/core/services/mongodb/mongo_collection_service.dart';
 
-/// Orchestrates MongoDB connection, index bootstrapping, and health checks.
+/// Orchestrates data-layer connection. Production uses HTTP → Node → Supabase.
 class MongoIntegrationService {
   MongoIntegrationService({
     required MongoDatabaseService databaseService,
@@ -30,16 +30,10 @@ class MongoIntegrationService {
 
   MongoDataService get dataService => _dataService;
 
-  /// Direct Mongo (desktop). Phones/web use the HTTP API instead.
-  bool get _isDirectMongoClient {
-    if (kIsWeb) return false;
-    return switch (defaultTargetPlatform) {
-      TargetPlatform.android || TargetPlatform.iOS => false,
-      _ => true,
-    };
-  }
+  bool get _isHttpApi =>
+      useBackendApiDataLayer || _databaseService is HttpMongoDatabaseService;
 
-  /// Connect to MongoDB and ensure all collection indexes.
+  /// Connect to the backend API (or direct Mongo when USE_DIRECT_MONGO=true).
   Future<void> initialize({bool ensureIndexes = true}) async {
     if (_initialized && _databaseService.isConnected) return;
 
@@ -47,9 +41,9 @@ class MongoIntegrationService {
       await _databaseService.connect();
     }
 
-    // Indexes + local seed only for direct Mongo. On Android/iOS the hosted
-    // API already owns seeding; doing it here can fail and mark the app offline.
-    if (_isDirectMongoClient) {
+    // Indexes and default users are owned by the Node backend on Supabase.
+    // Only run client-side bootstrap for rare direct-Mongo desktop debugging.
+    if (!_isHttpApi) {
       if (ensureIndexes) {
         await _indexService.ensureAllIndexes();
       }

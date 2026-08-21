@@ -10,14 +10,26 @@ import 'package:open_space_parking/core/services/mongodb/mongo_collection_servic
 import 'package:open_space_parking/core/services/mongodb/mongo_database_service.dart';
 import 'package:open_space_parking/core/mongodb/services/mongo_data_service.dart';
 
-/// Physical phones cannot reach `mongodb://localhost` on the host PC.
-/// Android/iOS (and web) talk to the Node API; desktop keeps direct Mongo.
-bool get _useHttpMongoApi {
-  if (kIsWeb) return true;
-  return switch (defaultTargetPlatform) {
-    TargetPlatform.android || TargetPlatform.iOS => true,
-    _ => false,
-  };
+/// Production path: all platforms talk to the Node API (Supabase-backed).
+///
+/// Escape hatch for rare local desktop debugging against a real Mongo daemon:
+/// `--dart-define=USE_DIRECT_MONGO=true` (never enable in production builds).
+bool get useBackendApiDataLayer {
+  const forceDirectMongo = bool.fromEnvironment(
+    'USE_DIRECT_MONGO',
+    defaultValue: false,
+  );
+  if (forceDirectMongo) {
+    assert(() {
+      debugPrint(
+        'USE_DIRECT_MONGO=true: connecting to MongoDB directly. '
+        'Not supported for production.',
+      );
+      return true;
+    }());
+    return false;
+  }
+  return true;
 }
 
 void registerMongoServices(GetIt sl) {
@@ -27,7 +39,7 @@ void registerMongoServices(GetIt sl) {
     sl.registerLazySingleton<AuthTokenProvider>(AuthTokenProvider.new);
   }
 
-  if (_useHttpMongoApi) {
+  if (useBackendApiDataLayer) {
     sl.registerLazySingleton<ApiClient>(
       () => ApiClient(sl<AuthTokenProvider>()),
     );

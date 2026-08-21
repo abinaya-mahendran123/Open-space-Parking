@@ -1,6 +1,7 @@
 const {
   isPublicParkingListing,
-  loadNamedRequests,
+  loadPublicParkingListings,
+  loadActiveBookingCounts,
 } = require('./parking_listings');
 const {
   resolveVehicleSpec,
@@ -47,6 +48,19 @@ function parseObjectId(value) {
   return match ? match[0] : text;
 }
 
+function isBookingActive(doc, now, windowEnd) {
+  const status = String(doc.status || '');
+  if (status === 'cancelled' || status === 'completed') return false;
+  if (status === 'confirmed' || status === 'active') return true;
+
+  const start = new Date(doc.startDateTime || doc.start_date_time);
+  const bookingEnd = new Date(doc.endDateTime || doc.end_date_time);
+  if (Number.isNaN(start.getTime()) || Number.isNaN(bookingEnd.getTime())) {
+    return false;
+  }
+  return start < windowEnd && bookingEnd > now;
+}
+
 async function loadVehicleProfile(db, vehicleOwnerId) {
   if (!vehicleOwnerId) return null;
 
@@ -64,28 +78,40 @@ async function loadVehicleProfile(db, vehicleOwnerId) {
   return profileDoc.profile || profileDoc;
 }
 
-async function countActiveBookings(db, listingId) {
-  const hex = parseObjectId(listingId);
-  const now = new Date();
-  const end = new Date(now.getTime() + 60 * 60 * 1000);
+/**
+ * One query for all candidate listings' active bookings, then group in memory.
+ * Avoids N+1 countActiveBookings calls.
+ */
+async function loadActiveBookingCountMap(db, listingIds) {
+  const ids = [...new Set((listingIds || []).map((id) => String(id || '')).filter(Boolean))];
+  const counts = new Map();
+  if (!ids.length) return counts;
 
+  if (db.pool) {
+    try {
+      return await loadActiveBookingCounts(db.pool, ids);
+    } catch (error) {
+      console.warn(
+        `Named bookings bulk count failed, falling back to collection scan: ${error.message}`,
+      );
+    }
+  }
+
+  const now = new Date();
+  const windowEnd = new Date(now.getTime() + 60 * 60 * 1000);
   const bookings = await db
     .collection('bookings')
-    .find({ parkingListingId: { $in: [hex, listingId] } })
+    .find({ parkingListingId: { $in: ids } })
     .toArray();
 
-  return bookings.filter((doc) => {
-    const status = String(doc.status || '');
-    if (status === 'cancelled' || status === 'completed') return false;
-    if (status === 'confirmed' || status === 'active') return true;
+  for (const doc of bookings) {
+    if (!isBookingActive(doc, now, windowEnd)) continue;
+    const listingId = parseObjectId(doc.parkingListingId);
+    if (!listingId) continue;
+    counts.set(listingId, (counts.get(listingId) || 0) + 1);
+  }
 
-    const start = new Date(doc.startDateTime);
-    const bookingEnd = new Date(doc.endDateTime);
-    if (Number.isNaN(start.getTime()) || Number.isNaN(bookingEnd.getTime())) {
-      return false;
-    }
-    return start < end && bookingEnd > now;
-  }).length;
+  return counts;
 }
 
 function listingToRecommendation(doc, extras = {}) {
@@ -139,7 +165,7 @@ async function recommendNearbyParking(db, options = {}) {
 
   let docs;
   if (db.pool) {
-    docs = (await loadNamedRequests(db.pool)).filter(isPublicParkingListing);
+    docs = await loadPublicParkingListings(db.pool);
   } else {
     docs = await db
       .collection('land_owner_requests')
@@ -148,13 +174,16 @@ async function recommendNearbyParking(db, options = {}) {
     docs = docs.filter(isPublicParkingListing);
   }
 
+  const listingIds = docs.map((doc) => parseObjectId(doc._id));
+  const bookingCounts = await loadActiveBookingCountMap(db, listingIds);
+
   const recommendations = [];
 
   for (const doc of docs) {
     const listingId = parseObjectId(doc._id);
     if (!listingId || listingId.length < 8) continue;
     const capacity = listingCapacity(doc);
-    const booked = await countActiveBookings(db, listingId);
+    const booked = bookingCounts.get(listingId) || 0;
     const availableSlots = Math.max(0, capacity - booked);
     if (availableSlots <= 0) continue;
 
@@ -216,4 +245,5 @@ module.exports = {
   recommendNearbyParking,
   distanceKmBetween,
   loadVehicleProfile,
+  loadActiveBookingCountMap,
 };

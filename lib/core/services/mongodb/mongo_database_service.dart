@@ -21,7 +21,11 @@ class MongoDatabaseServiceImpl implements MongoDatabaseService {
     if (isConnected) return;
 
     try {
-      _db = await Db.create(EnvironmentConfig.mongoConnectionString);
+      _db = await Db.create(
+        EnvironmentConfig.hasMongoConnectionString
+            ? EnvironmentConfig.mongoConnectionString
+            : 'mongodb://127.0.0.1:27017/open_space_parking',
+      );
       await _db!.open().timeout(
         const Duration(seconds: 5),
         onTimeout: () {

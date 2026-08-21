@@ -42,7 +42,7 @@
 		<string>UIInterfaceOrientationLandscapeRight</string>
 	</array>
 	<key>NSCameraUsageDescription</key>
-	<string>Camera is used by gate security to scan parking QR codes.</string>
+	<string>Camera is used to photograph Aadhaar cards for land owner verification and by gate security to scan parking QR codes.</string>
 	<key>CADisableMinimumFrameDurationOnPhone</key>
 	<true/>
 	<key>UIApplicationSupportsIndirectInputEvents</key>

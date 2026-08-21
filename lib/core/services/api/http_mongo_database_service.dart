@@ -5,7 +5,8 @@ import 'package:open_space_parking/core/config/environment_config.dart';
 import 'package:open_space_parking/core/services/api/api_client.dart';
 import 'package:open_space_parking/core/services/mongodb/mongo_database_service.dart';
 
-/// Web implementation — connects to the local REST API instead of MongoDB TCP.
+/// HTTP data layer — Flutter talks to the Node API (Supabase Postgres).
+/// Never opens a MongoDB socket.
 class HttpMongoDatabaseService implements MongoDatabaseService {
   HttpMongoDatabaseService(this._apiClient);
 
