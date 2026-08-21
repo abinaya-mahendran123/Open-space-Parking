@@ -2,16 +2,20 @@ const sharp = require('sharp');
 
 // Only two variants to keep OCR fast. 'standard' works for most clear images;
 // 'contrast' helps with faded or low-contrast prints.
-const VARIANTS = ['standard', 'contrast'];
+const VARIANTS = ['standard', 'contrast', 'threshold'];
 
 async function withAutoScale(image) {
   const meta = await image.metadata();
   const width = meta.width || 0;
-  if (width > 0 && width < 1400) {
+  // Phone camera / compressed uploads are often too small for reliable OCR.
+  if (width > 0 && width < 1800) {
     return image.resize({
-      width: Math.min(width * 2, 2400),
+      width: Math.min(Math.max(width * 2, 1800), 2800),
       withoutEnlargement: false,
     });
+  }
+  if (width > 3200) {
+    return image.resize({ width: 2800, withoutEnlargement: true });
   }
   return image;
 }

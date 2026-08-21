@@ -92,8 +92,8 @@ class GovernmentIdOwnerDetailsFormState
     try {
       final photo = await ImagePicker().pickImage(
         source: ImageSource.camera,
-        imageQuality: 90,
-        maxWidth: 2500,
+        imageQuality: 100,
+        maxWidth: 3200,
         preferredCameraDevice: CameraDevice.rear,
       );
       if (photo == null) return;
@@ -342,8 +342,22 @@ class GovernmentIdOwnerDetailsFormState
       if (missing.isNotEmpty) {
         setState(() {
           _extractError =
-              'Could not read ${missing.join(', ')} clearly. Please correct the fields below.';
+              'Could not read ${missing.join(', ')} clearly. '
+              'Tip: use bright light, fill the frame with the card, and keep the QR code sharp — or type the missing fields below.';
         });
+      } else {
+        setState(() {
+          _extractError = null;
+        });
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text(
+                'Details filled from Aadhaar. Please verify name, address, and number.',
+              ),
+            ),
+          );
+        }
       }
     } on AppException catch (e) {
       if (!mounted) return;

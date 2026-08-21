@@ -381,6 +381,9 @@ function isNameCandidate(line) {
   if (!line || line.length < 3 || line.length > 55) return false;
   if (NAME_NOISE.test(line)) return false;
   if (AADHAAR_BACK_BOILERPLATE.test(line)) return false;
+  // Address / relationship lines are not names
+  if (/^(s\/o|d\/o|w\/o|c\/o)\b/i.test(line)) return false;
+  if (ADDRESS_KEYWORD.test(line)) return false;
   if (/^\d/.test(line)) return false;
   if (/[@#%&*=+<>{}[\]\\|~`]/.test(line)) return false;
   const latinRatio = (line.match(/[a-zA-Z ]/g) || []).length / line.length;
@@ -717,6 +720,20 @@ async function recognizeMultiPass(buffer, { useTamil = false } = {}) {
     for (const psm of OCR_PSMS) {
       const result = await recognizeWithPsm(worker, item.buffer, psm);
       runs.push({ ...result, variant: item.variant, psm });
+    }
+  }
+
+  // Extra English-only pass for Aadhaar — cleaner Latin name/address than eng+tam.
+  if (useTamil) {
+    try {
+      const engWorker = await getWorkerEng();
+      const standard = preprocessed.find((p) => p.variant === 'standard') || preprocessed[0];
+      if (standard) {
+        const engRun = await recognizeWithPsm(engWorker, standard.buffer, '6');
+        runs.push({ ...engRun, variant: 'eng_only', psm: '6' });
+      }
+    } catch (_) {
+      /* optional */
     }
   }
 
