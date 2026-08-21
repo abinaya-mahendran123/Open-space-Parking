@@ -41,9 +41,11 @@ class EnvironmentConfig {
             lanIp: hostLanIp,
           );
 
+    // Unused for Supabase-only production (Flutter → Node API → Postgres).
+    // Only needed with --dart-define=USE_DIRECT_MONGO=true for local debugging.
     mongoConnectionString = const String.fromEnvironment(
       'MONGO_CONNECTION_STRING',
-      defaultValue: 'mongodb://localhost:27017/open_space_parking',
+      defaultValue: '',
     );
 
     cloudinaryCloudName = const String.fromEnvironment(
@@ -216,6 +218,10 @@ class EnvironmentConfig {
 
     return completer.future;
   }
+
+  /// True when a direct Mongo URI was provided (dev escape hatch only).
+  static bool get hasMongoConnectionString =>
+      mongoConnectionString.trim().isNotEmpty;
 
   static bool get isCloudinaryConfigured =>
       cloudinaryCloudName.isNotEmpty && cloudinaryUploadPreset.isNotEmpty;

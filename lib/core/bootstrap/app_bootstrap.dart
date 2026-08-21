@@ -1,5 +1,6 @@
 import 'package:flutter/foundation.dart';
 import 'package:open_space_parking/core/config/environment_config.dart';
+import 'package:open_space_parking/core/di/mongo_service_registration.dart';
 import 'package:open_space_parking/core/di/service_locator.dart';
 import 'package:open_space_parking/core/mongodb/services/mongo_integration_service.dart';
 import 'package:open_space_parking/core/utils/app_logger.dart';
@@ -11,6 +12,7 @@ enum ApiConnectionStatus { unknown, ready, offline }
 class AppBootstrap {
   AppBootstrap._();
 
+  /// Backend API (and data layer) is reachable.
   static bool mongoReady = false;
   static bool notificationsReady = false;
   static final apiStatus = ValueNotifier<ApiConnectionStatus>(
@@ -18,7 +20,7 @@ class AppBootstrap {
   );
 
   static Future<void> initialize() async {
-    await _initializeMongo();
+    await _initializeDataLayer();
     await _initializeNotifications();
   }
 
@@ -26,20 +28,28 @@ class AppBootstrap {
     try {
       await EnvironmentConfig.refreshReachableApiUrl();
     } catch (_) {}
-    await _initializeMongo();
+    await _initializeDataLayer();
     return mongoReady;
   }
 
-  static Future<void> _initializeMongo() async {
+  static Future<void> _initializeDataLayer() async {
     try {
       await sl<MongoIntegrationService>().initialize();
       mongoReady = true;
       apiStatus.value = ApiConnectionStatus.ready;
-      AppLogger.i('MongoDB connected and indexes ensured');
+      if (useBackendApiDataLayer) {
+        AppLogger.i('Backend API connected (Supabase via Node)');
+      } else {
+        AppLogger.i('Direct MongoDB connected and indexes ensured');
+      }
     } catch (e, stack) {
       mongoReady = false;
       apiStatus.value = ApiConnectionStatus.offline;
-      AppLogger.w('MongoDB initialization failed — app runs in offline mode: $e');
+      AppLogger.w(
+        useBackendApiDataLayer
+            ? 'Backend API initialization failed — app runs in offline mode: $e'
+            : 'MongoDB initialization failed — app runs in offline mode: $e',
+      );
       AppLogger.w(stack.toString());
     }
   }

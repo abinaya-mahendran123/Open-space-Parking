@@ -33,11 +33,6 @@ function namedRequestToDoc(row) {
   };
 }
 
-/** Legacy name kept for existing imports. */
-function isEmployeeVerifiedListing(doc) {
-  return isPublicParkingListing(doc);
-}
-
 /**
  * Parking visible to vehicle owners in nearby search.
  * Admin-approved, verified, active, with valid GPS and capacity.
@@ -73,14 +68,86 @@ function isPublicParkingListing(doc) {
   return true;
 }
 
+/** Legacy name kept for existing imports. */
+function isEmployeeVerifiedListing(doc) {
+  return isPublicParkingListing(doc);
+}
+
 async function loadNamedRequests(pool) {
   const result = await pool.query('select * from public.land_owner_requests');
   return result.rows.map(namedRequestToDoc);
 }
 
+/**
+ * Load only candidate public listings from Postgres (pre-filtered in SQL).
+ * Final validation still uses isPublicParkingListing.
+ */
+async function loadPublicParkingListings(pool) {
+  const result = await pool.query(
+    `select *
+     from public.land_owner_requests
+     where coalesce(is_deleted, false) = false
+       and documents_verified = true
+       and status in ('approved', 'completed')
+       and nullif(land_details->>'gpsLatitude', '') is not null
+       and nullif(land_details->>'gpsLongitude', '') is not null`,
+  );
+  return result.rows.map(namedRequestToDoc).filter(isPublicParkingListing);
+}
+
+/**
+ * Bulk active booking counts keyed by parking_listing_id.
+ * Mirrors the overlap rules used by countActiveBookings in recommendations.
+ */
+async function loadActiveBookingCounts(pool, listingIds = []) {
+  const ids = [...new Set((listingIds || []).map((id) => String(id || '').trim()).filter(Boolean))];
+  const counts = new Map();
+  if (!ids.length) return counts;
+
+  const result = await pool.query(
+    `select parking_listing_id, status, start_date_time, end_date_time
+     from public.bookings
+     where parking_listing_id = any($1::text[])
+       and status not in ('cancelled', 'completed')`,
+    [ids],
+  );
+
+  const now = new Date();
+  const windowEnd = new Date(now.getTime() + 60 * 60 * 1000);
+
+  for (const row of result.rows) {
+    const listingId = String(row.parking_listing_id || '');
+    if (!listingId) continue;
+
+    const status = String(row.status || '');
+    let active = false;
+    if (status === 'confirmed' || status === 'active') {
+      active = true;
+    } else {
+      const start = row.start_date_time ? new Date(row.start_date_time) : null;
+      const end = row.end_date_time ? new Date(row.end_date_time) : null;
+      if (
+        start &&
+        end &&
+        !Number.isNaN(start.getTime()) &&
+        !Number.isNaN(end.getTime()) &&
+        start < windowEnd &&
+        end > now
+      ) {
+        active = true;
+      }
+    }
+
+    if (active) {
+      counts.set(listingId, (counts.get(listingId) || 0) + 1);
+    }
+  }
+
+  return counts;
+}
+
 async function nearbyVerifiedListings(pool) {
-  const docs = await loadNamedRequests(pool);
-  return docs.filter(isEmployeeVerifiedListing);
+  return loadPublicParkingListings(pool);
 }
 
 async function verifiedListingById(pool, id) {
@@ -93,7 +160,7 @@ async function verifiedListingById(pool, id) {
   );
   if (!result.rows[0]) return null;
   const doc = namedRequestToDoc(result.rows[0]);
-  return isEmployeeVerifiedListing(doc) ? doc : null;
+  return isPublicParkingListing(doc) ? doc : null;
 }
 
 async function verifiedListingByTicketId(pool, ticketId) {
@@ -113,6 +180,8 @@ module.exports = {
   isEmployeeVerifiedListing,
   isPublicParkingListing,
   loadNamedRequests,
+  loadPublicParkingListings,
+  loadActiveBookingCounts,
   nearbyVerifiedListings,
   verifiedListingById,
   verifiedListingByTicketId,

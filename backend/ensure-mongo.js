@@ -62,9 +62,16 @@ async function waitForMongo(timeoutMs = 20000) {
 
 async function main() {
   if (process.env.DATABASE_URL || process.env.SUPABASE_DB_URL) {
-    console.log('Using Supabase PostgreSQL — skipping local MongoDB.');
+    console.log(
+      'Using Supabase PostgreSQL — skipping local MongoDB (production path).',
+    );
     return;
   }
+
+  console.warn(
+    'DATABASE_URL is not set. Falling back to local MongoDB for development only.\n' +
+      'For production, set DATABASE_URL to your Supabase Postgres URI in backend/.env.',
+  );
 
   if (await canConnect()) {
     console.log('MongoDB already running on 127.0.0.1:27017');

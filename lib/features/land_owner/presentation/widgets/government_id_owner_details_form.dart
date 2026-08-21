@@ -4,6 +4,7 @@ import 'package:file_picker/file_picker.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:image_picker/image_picker.dart';
 
 import 'package:open_space_parking/core/cloudinary/domain/entities/cloudinary_file_category.dart';
 import 'package:open_space_parking/core/cloudinary/domain/entities/upload_progress.dart';
@@ -51,6 +52,7 @@ class GovernmentIdOwnerDetailsFormState
 
   String? _uploadedUrl;
   Uint8List? _previewBytes;
+  bool _isPdfUpload = false;
   UploadProgress _uploadProgress = const UploadProgress();
   bool _isDeleting = false;
   bool _extracting = false;
@@ -64,6 +66,9 @@ class GovernmentIdOwnerDetailsFormState
     super.initState();
     final initial = widget.initial;
     _uploadedUrl = initial?.governmentIdFrontPath;
+    _isPdfUpload =
+        (_uploadedUrl?.toLowerCase().contains('.pdf') ?? false) ||
+        (_uploadedUrl?.toLowerCase().contains('/raw/upload/') ?? false);
     _nameController = TextEditingController(text: initial?.fullName ?? '');
     _phoneController = TextEditingController(text: initial?.phone ?? '');
     _addressController = TextEditingController(text: initial?.address ?? '');
@@ -81,27 +86,63 @@ class GovernmentIdOwnerDetailsFormState
     super.dispose();
   }
 
-  Future<void> _pickAndUpload(FileType fileType) async {
+  Future<void> _captureFromCamera() async {
     if (_isUploading || widget.ownerId.isEmpty) return;
 
-    FilePickerResult? result;
-    if (fileType == FileType.image) {
-      result = await FilePicker.platform.pickFiles(
-        type: FileType.image,
-        withData: kIsWeb,
+    try {
+      final photo = await ImagePicker().pickImage(
+        source: ImageSource.camera,
+        imageQuality: 90,
+        maxWidth: 2500,
+        preferredCameraDevice: CameraDevice.rear,
       );
-    } else {
-      result = await FilePicker.platform.pickFiles(
-        type: FileType.custom,
-        allowedExtensions: const ['jpg', 'jpeg', 'png', 'webp'],
-        withData: kIsWeb,
+      if (photo == null) return;
+
+      final bytes = await photo.readAsBytes();
+      if (bytes.isEmpty) return;
+
+      final name = photo.name.trim().isNotEmpty
+          ? photo.name
+          : 'aadhaar_camera_${DateTime.now().millisecondsSinceEpoch}.jpg';
+
+      await _uploadSelectedFile(
+        fileBytes: bytes,
+        fileName: name,
+        previewBytes: bytes,
+        isPdf: false,
       );
+    } on AppException catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _extractError = e.message;
+      });
+    } catch (_) {
+      if (!mounted) return;
+      setState(() {
+        _extractError =
+            'Could not open the camera. Allow camera permission and try again.';
+      });
     }
+  }
+
+  Future<void> _pickFromFiles() async {
+    if (_isUploading || widget.ownerId.isEmpty) return;
+
+    final result = await FilePicker.platform.pickFiles(
+      type: FileType.custom,
+      allowedExtensions: const ['jpg', 'jpeg', 'png', 'webp', 'pdf'],
+      withData: kIsWeb,
+    );
 
     if (result == null || result.files.isEmpty) return;
 
     final picked = result.files.single;
     if (picked.name.isEmpty) return;
+
+    final extension = picked.name.contains('.')
+        ? picked.name.split('.').last.toLowerCase()
+        : '';
+    final isPdf = extension == 'pdf';
 
     late List<int> fileBytes;
     Uint8List? previewBytes;
@@ -109,17 +150,36 @@ class GovernmentIdOwnerDetailsFormState
     if (kIsWeb) {
       if (picked.bytes == null || picked.bytes!.isEmpty) return;
       fileBytes = picked.bytes!;
-      previewBytes = picked.bytes;
+      previewBytes = isPdf ? null : picked.bytes;
     } else {
       final path = picked.path;
       if (path == null || path.isEmpty) return;
       fileBytes = await readFileBytes(path);
-      // Offload large list copy off the UI thread.
-      previewBytes = await compute(_copyToUint8List, fileBytes);
+      if (!isPdf) {
+        previewBytes = await compute(_copyToUint8List, fileBytes);
+      }
     }
+
+    await _uploadSelectedFile(
+      fileBytes: fileBytes,
+      fileName: picked.name,
+      previewBytes: previewBytes,
+      isPdf: isPdf,
+    );
+  }
+
+  Future<void> _uploadSelectedFile({
+    required List<int> fileBytes,
+    required String fileName,
+    required Uint8List? previewBytes,
+    required bool isPdf,
+  }) async {
+    final category =
+        isPdf ? CloudinaryFileCategory.pdf : CloudinaryFileCategory.image;
 
     setState(() {
       _previewBytes = previewBytes;
+      _isPdfUpload = isPdf;
       _uploadProgress = const UploadProgress(
         status: UploadStatus.uploading,
         progress: 0,
@@ -130,8 +190,8 @@ class GovernmentIdOwnerDetailsFormState
     try {
       final asset = await ref.read(cloudinaryRepositoryProvider).uploadFile(
             fileBytes: fileBytes,
-            fileName: picked.name,
-            category: CloudinaryFileCategory.image,
+            fileName: fileName,
+            category: category,
             ownerId: widget.ownerId,
             ownerType: 'land_owner',
             referenceId: 'aadhaar_card',
@@ -203,7 +263,7 @@ class GovernmentIdOwnerDetailsFormState
               ),
               const SizedBox(height: 4),
               Text(
-                'Upload a clear photo of your Aadhaar card',
+                'Upload a clear PNG photo or PDF of your Aadhaar card',
                 style: Theme.of(ctx).textTheme.bodySmall?.copyWith(
                       color: Theme.of(ctx).colorScheme.onSurfaceVariant,
                     ),
@@ -212,19 +272,19 @@ class GovernmentIdOwnerDetailsFormState
               ListTile(
                 leading: const CircleAvatar(child: Icon(Icons.camera_alt_outlined)),
                 title: const Text('Use Camera'),
-                subtitle: const Text('Take a photo right now'),
+                subtitle: const Text('Open the phone camera and take a photo'),
                 onTap: () {
                   Navigator.pop(ctx);
-                  _pickAndUpload(FileType.image);
+                  _captureFromCamera();
                 },
               ),
               ListTile(
                 leading: const CircleAvatar(child: Icon(Icons.photo_library_outlined)),
                 title: const Text('Choose from Files'),
-                subtitle: const Text('Select an existing photo or file'),
+                subtitle: const Text('PNG, JPG, WEBP, or PDF'),
                 onTap: () {
                   Navigator.pop(ctx);
-                  _pickAndUpload(FileType.custom);
+                  _pickFromFiles();
                 },
               ),
               const SizedBox(height: 8),
@@ -311,6 +371,7 @@ class GovernmentIdOwnerDetailsFormState
         setState(() {
           _uploadedUrl = null;
           _previewBytes = null;
+          _isPdfUpload = false;
           _uploadProgress = const UploadProgress();
           _extractError = null;
           _isDeleting = false;
@@ -324,7 +385,7 @@ class GovernmentIdOwnerDetailsFormState
   bool validateAndSave() {
     if (!_hasFile) {
       setState(() {
-        _extractError = 'Please upload your Aadhaar card image.';
+        _extractError = 'Please upload your Aadhaar card as a PNG image or PDF.';
       });
       return false;
     }
@@ -362,7 +423,7 @@ class GovernmentIdOwnerDetailsFormState
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           Text(
-            'Upload your Aadhaar card. We will read the details from the image.',
+            'Upload your Aadhaar card as a PNG image or PDF. We will read the details automatically.',
             style: Theme.of(context).textTheme.bodyMedium?.copyWith(
                   color: colorScheme.onSurfaceVariant,
                 ),
@@ -373,6 +434,8 @@ class GovernmentIdOwnerDetailsFormState
             isUploading: _isUploading,
             isDeleting: _isDeleting,
             isExtracting: _extracting,
+            isPdf: _isPdfUpload ||
+                (_uploadedUrl?.toLowerCase().contains('.pdf') ?? false),
             previewBytes: _previewBytes,
             uploadedUrl: _uploadedUrl,
             progress: _uploadProgress,
@@ -435,6 +498,7 @@ class _AadhaarUploadCard extends StatelessWidget {
     required this.isUploading,
     required this.isDeleting,
     required this.isExtracting,
+    required this.isPdf,
     required this.previewBytes,
     required this.uploadedUrl,
     required this.progress,
@@ -447,6 +511,7 @@ class _AadhaarUploadCard extends StatelessWidget {
   final bool isUploading;
   final bool isDeleting;
   final bool isExtracting;
+  final bool isPdf;
   final Uint8List? previewBytes;
   final String? uploadedUrl;
   final UploadProgress progress;
@@ -568,8 +633,10 @@ class _AadhaarUploadCard extends StatelessWidget {
                                   : isExtracting
                                       ? 'Reading ID details…'
                                       : hasFile
-                                          ? 'Tap Re-scan if details are missing'
-                                          : 'Tap to upload your Aadhaar card image',
+                                          ? (isPdf
+                                              ? 'PDF uploaded · tap Re-scan if details are missing'
+                                              : 'Tap Re-scan if details are missing')
+                                          : 'Tap to upload PNG image or PDF',
                           style: Theme.of(context).textTheme.bodySmall?.copyWith(
                                 color: isFailed
                                     ? colorScheme.error
@@ -595,7 +662,31 @@ class _AadhaarUploadCard extends StatelessWidget {
                   textAlign: TextAlign.center,
                 ),
               ],
-              if (previewBytes != null && hasFile) ...[
+              if (hasFile && isPdf) ...[
+                const SizedBox(height: 14),
+                Container(
+                  height: 120,
+                  decoration: BoxDecoration(
+                    color: colorScheme.surfaceContainerHighest,
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Icon(
+                        Icons.picture_as_pdf,
+                        size: 40,
+                        color: colorScheme.primary,
+                      ),
+                      const SizedBox(height: 8),
+                      Text(
+                        'Aadhaar PDF ready',
+                        style: Theme.of(context).textTheme.bodyMedium,
+                      ),
+                    ],
+                  ),
+                ),
+              ] else if (previewBytes != null && hasFile) ...[
                 const SizedBox(height: 14),
                 ClipRRect(
                   borderRadius: BorderRadius.circular(10),

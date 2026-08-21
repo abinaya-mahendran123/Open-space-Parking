@@ -43,6 +43,62 @@ function fetchBuffer(url, redirects = 0) {
   });
 }
 
+function isPdfBuffer(buffer) {
+  return (
+    Buffer.isBuffer(buffer) &&
+    buffer.length >= 4 &&
+    buffer.slice(0, 4).toString('utf8') === '%PDF'
+  );
+}
+
+/**
+ * Cloudinary can render PDF page 1 as PNG via delivery transforms.
+ * Works for both /image/upload/ and /raw/upload/ public IDs.
+ */
+function cloudinaryPdfPageImageUrl(url) {
+  const text = String(url || '');
+  if (!text.includes('res.cloudinary.com') || !text.includes('/upload/')) {
+    return null;
+  }
+
+  let transformed = text;
+  if (transformed.includes('/raw/upload/')) {
+    transformed = transformed.replace('/raw/upload/', '/image/upload/');
+  }
+  if (!/\/upload\/(?:[^/]+,)*f_png/.test(transformed)) {
+    transformed = transformed.replace('/upload/', '/upload/f_png,pg_1,q_auto/');
+  }
+  return transformed === text ? null : transformed;
+}
+
+async function bufferToOcrImage(buffer, sourceUrl) {
+  if (!isPdfBuffer(buffer)) return buffer;
+
+  const pageUrl = cloudinaryPdfPageImageUrl(sourceUrl);
+  if (pageUrl) {
+    try {
+      const rendered = await fetchBuffer(pageUrl);
+      if (!isPdfBuffer(rendered)) return rendered;
+    } catch (_) {
+      // Fall through to local sharp conversion when available.
+    }
+  }
+
+  try {
+    const sharp = require('sharp');
+    return await sharp(buffer, { density: 200 }).png().toBuffer();
+  } catch (_) {
+    throw new Error(
+      'PDF uploaded, but automatic reading failed. Please fill the details manually.',
+    );
+  }
+}
+
+async function fetchImageBufferForOcr(url) {
+  const buffer = await fetchBuffer(url);
+  return bufferToOcrImage(buffer, url);
+}
+
 function cleanLine(value) {
   return String(value || '')
     .replace(/\|/g, ' ')
@@ -683,7 +739,7 @@ async function extractGovernmentIdDetails({ frontUrl, backUrl, idType }) {
   let frontBuffer, backBuffer;
   let extraBackBuffer = null; // bottom-right plastic back card (for portrait 2×2)
   if (sameUrl) {
-    const rawBuffer = await fetchBuffer(frontUrl);
+    const rawBuffer = await fetchImageBufferForOcr(frontUrl);
     const split = await splitSideBySide(rawBuffer);
     if (split) {
       frontBuffer = split.frontBuffer;
@@ -695,8 +751,8 @@ async function extractGovernmentIdDetails({ frontUrl, backUrl, idType }) {
     }
   } else {
     [frontBuffer, backBuffer] = await Promise.all([
-      fetchBuffer(frontUrl),
-      fetchBuffer(backUrl),
+      fetchImageBufferForOcr(frontUrl),
+      fetchImageBufferForOcr(backUrl),
     ]);
   }
 
@@ -708,7 +764,7 @@ async function extractGovernmentIdDetails({ frontUrl, backUrl, idType }) {
     // If we split, also try QR on the raw (unsplit) buffer
     if (sameUrl) {
       try {
-        const rawBuffer = await fetchBuffer(frontUrl);
+        const rawBuffer = await fetchImageBufferForOcr(frontUrl);
         qrCandidates.unshift(rawBuffer); // raw full image first = highest quality
       } catch (_) { /* ignore */ }
     }
