@@ -158,12 +158,9 @@ function tryJsQr(data, width, height) {
  * Each variant targets a different image characteristic to maximise QR decode rate.
  */
 async function buildQrVariants(buffer) {
-  const base = sharp(buffer).rotate();
-  const meta = await base.metadata();
+  const meta = await sharp(buffer).rotate().metadata();
   const w = meta.width || 800;
-
-  // Upscale small images so jsQR can find the QR finder patterns
-  const targetWidth = Math.max(w, 1400);
+  const targetWidth = Math.max(Math.min(w, 1600), 1000);
 
   const makeVariant = (pipeline) =>
     pipeline
@@ -172,12 +169,9 @@ async function buildQrVariants(buffer) {
       .raw()
       .toBuffer({ resolveWithObject: true });
 
+  // Fewer variants — stop early in decodeQrFromBuffer once one works.
   const results = await Promise.allSettled([
-    // 1. Standard colour, auto-rotated
-    makeVariant(sharp(buffer).rotate()),
-    // 2. Greyscale + normalize
     makeVariant(sharp(buffer).rotate().greyscale().normalize()),
-    // 3. High contrast
     makeVariant(
       sharp(buffer)
         .rotate()
@@ -185,16 +179,7 @@ async function buildQrVariants(buffer) {
         .normalize()
         .linear(1.5, -(128 * 0.4)),
     ),
-    // 4. Threshold binarize (good for dark QR on white bg)
     makeVariant(sharp(buffer).rotate().greyscale().normalize().threshold(128)),
-    // 5. Inverted threshold (for light QR on dark bg — rare but happens)
-    makeVariant(
-      sharp(buffer).rotate().greyscale().normalize().threshold(128).negate(),
-    ),
-    // 6. Sharpen then greyscale
-    makeVariant(
-      sharp(buffer).rotate().sharpen({ sigma: 2 }).greyscale().normalize(),
-    ),
   ]);
 
   return results
@@ -203,9 +188,7 @@ async function buildQrVariants(buffer) {
 }
 
 /**
- * Crop specific regions of the image to help QR scanning when the QR is in a
- * known corner. On Aadhaar letter format the QR is bottom-right of the left
- * (address) half. On plastic Aadhaar the QR is front-centre-right.
+ * Crop the regions where Aadhaar QR codes usually sit.
  */
 async function buildQrCropVariants(buffer) {
   try {
@@ -214,25 +197,18 @@ async function buildQrCropVariants(buffer) {
     const h = meta.height || 0;
     if (w < 10 || h < 10) return [];
 
-    // Generate 4 quadrant crops + 4 half-image crops
     const crops = [
-      { left: Math.floor(w / 2), top: Math.floor(h / 2), width: Math.floor(w / 2), height: Math.floor(h / 2) }, // BR
-      { left: 0, top: Math.floor(h / 2), width: Math.floor(w / 2), height: Math.floor(h / 2) }, // BL
-      { left: Math.floor(w / 2), top: 0, width: Math.floor(w / 2), height: Math.floor(h / 2) }, // TR
-      { left: 0, top: 0, width: Math.floor(w / 2), height: Math.floor(h / 2) }, // TL
+      // bottom-right (most common on letter / plastic back)
+      {
+        left: Math.floor(w * 0.55),
+        top: Math.floor(h * 0.45),
+        width: Math.floor(w * 0.45),
+        height: Math.floor(h * 0.55),
+      },
       // right half
       { left: Math.floor(w / 2), top: 0, width: Math.floor(w / 2), height: h },
-      // left half
-      { left: 0, top: 0, width: Math.floor(w / 2), height: h },
       // bottom half
       { left: 0, top: Math.floor(h / 2), width: w, height: Math.floor(h / 2) },
-      // bottom-right 40%
-      {
-        left: Math.floor(w * 0.6),
-        top: Math.floor(h * 0.5),
-        width: Math.floor(w * 0.4),
-        height: Math.floor(h * 0.5),
-      },
     ];
 
     const results = await Promise.allSettled(
@@ -242,7 +218,7 @@ async function buildQrCropVariants(buffer) {
           .extract(crop)
           .greyscale()
           .normalize()
-          .resize({ width: 800, withoutEnlargement: false })
+          .resize({ width: 700, withoutEnlargement: false })
           .ensureAlpha()
           .raw()
           .toBuffer({ resolveWithObject: true }),

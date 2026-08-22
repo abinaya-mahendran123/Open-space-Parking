@@ -68,6 +68,42 @@ Expected:
 
 If `"database": "mongodb"`, `DATABASE_URL` is missing — fix `.env` and restart.
 
+## PaddleOCR (government ID photo OCR)
+
+Land-owner Aadhaar extraction uses **PaddleOCR** (primary) with **Tesseract.js** fallback. QR decoding remains first when readable.
+
+### Local development
+
+1. Install Python 3.9–3.11 and create a venv in `python/paddleocr_service/` (see that folder's README).
+2. Start the PaddleOCR worker:
+
+```bash
+cd python/paddleocr_service
+pip install -r requirements.txt
+python main.py
+```
+
+3. In `backend/.env`:
+
+```env
+PADDLEOCR_SERVICE_URL=http://127.0.0.1:8765
+PADDLEOCR_LANGS=en,ta,hi
+```
+
+4. Restart the Node API. If PaddleOCR is unavailable, OCR falls back to Tesseract automatically.
+
+### Render / production
+
+PaddleOCR is CPU/RAM intensive (~500 MB+ with models). Recommended:
+
+- **Option A:** Second Render **Background Worker** or private service running `python main.py`, with `PADDLEOCR_SERVICE_URL` pointing to it from the Node service.
+- **Option B:** Single VPS with Node + Python managed by systemd/supervisor.
+- **Option C:** Subprocess fallback on the same host (higher latency on cold model load).
+
+Do not assume PaddleOCR runs on Render free tier without verifying instance RAM (≥2 GB recommended).
+
+See `backend/ocr/README.md` for architecture details.
+
 ## Flutter production build
 
 **Do not pass `MONGO_CONNECTION_STRING`.** Point the app at your deployed API.
