@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:open_space_parking/core/common/exceptions/app_exception.dart';
+import 'package:open_space_parking/core/common/exceptions/network_exception.dart';
 import 'package:open_space_parking/core/config/environment_config.dart';
 import 'package:open_space_parking/core/services/api/api_client.dart';
 import 'package:open_space_parking/features/land_owner/domain/entities/government_id_type.dart';
@@ -29,12 +30,17 @@ class GovernmentIdOcrService {
   /// OCR is multi-pass; cold Paddle model download can exceed 2 minutes.
   static const _ocrTimeout = Duration(seconds: 180);
 
+  /// Render free tier often sleeps; wake before uploading OCR work.
+  static const _wakeAttempts = 8;
+  static const _wakeDelay = Duration(seconds: 8);
+
   Future<GovernmentIdExtractionResult> extractDetails({
     required String frontUrl,
     required String backUrl,
     required GovernmentIdType idType,
   }) async {
     try {
+      await _ensureApiAwake();
       return await _postExtract(
         frontUrl: frontUrl,
         backUrl: backUrl,
@@ -43,9 +49,7 @@ class GovernmentIdOcrService {
     } on AppException catch (error) {
       if (!_looksUnreachable(error.message)) rethrow;
       await EnvironmentConfig.refreshReachableApiUrl();
-      try {
-        await _apiClient.checkHealth();
-      } catch (_) {}
+      await _ensureApiAwake();
       return _postExtract(
         frontUrl: frontUrl,
         backUrl: backUrl,
@@ -56,8 +60,28 @@ class GovernmentIdOcrService {
         'Aadhaar scan is taking too long. Please try again — it usually completes faster on the second attempt.',
       );
     } catch (e) {
+      if (e is AppException) rethrow;
       throw AppException('Could not read Aadhaar card: ${e.toString()}');
     }
+  }
+
+  /// Ping /api/health with backoff so a waking Render instance can finish boot.
+  Future<void> _ensureApiAwake() async {
+    NetworkException? lastError;
+    for (var i = 0; i < _wakeAttempts; i += 1) {
+      try {
+        await _apiClient.checkHealth();
+        return;
+      } on NetworkException catch (error) {
+        lastError = error;
+        if (i < _wakeAttempts - 1) {
+          await Future<void>.delayed(_wakeDelay);
+          await EnvironmentConfig.refreshReachableApiUrl();
+        }
+      }
+    }
+    throw lastError ??
+        const NetworkException(EnvironmentConfig.phoneUnreachableMessage);
   }
 
   Future<GovernmentIdExtractionResult> _postExtract({

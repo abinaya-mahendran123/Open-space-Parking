@@ -180,8 +180,9 @@ class EnvironmentConfig {
   }
 
   static const String phoneUnreachableMessage =
-      'Cannot reach the server. Check your internet connection. '
-      'If using the hosted API, wait up to a minute for it to wake, then retry.';
+      'Cannot reach the server. The hosted API may still be starting '
+      '(Render can take 1–2 minutes after a deploy). Wait until the service '
+      'shows Live, then tap Re-scan.';
 
   static Duration _healthTimeoutFor(String base) {
     return base.startsWith('https://')

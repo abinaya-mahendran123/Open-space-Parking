@@ -1,13 +1,14 @@
 /**
- * Starts PaddleOCR HTTP worker (if installed), then the Node API.
+ * Starts the Node API first (so Render sees 0.0.0.0:PORT), then PaddleOCR.
  *
- * Important for Render: Node must bind PORT quickly for health checks.
- * Do NOT wait for Paddle model downloads before starting Node — models
- * warm in the background; OCR falls back to Tesseract until ready.
+ * Model downloads are heavy; starting Paddle before Node often prevents the API
+ * from binding in time → Render "No open ports detected" / Timed Out.
+ * Until Paddle models are ready, OCR falls back to Tesseract.
  */
 const { spawn } = require('child_process');
 const fs = require('fs');
 const http = require('http');
+const net = require('net');
 const path = require('path');
 
 const serviceDir = path.resolve(__dirname, '..', '..', 'python', 'paddleocr_service');
@@ -20,7 +21,8 @@ const venvPython = isWin
 const serviceUrl = (
   process.env.PADDLEOCR_SERVICE_URL || 'http://127.0.0.1:8765'
 ).replace(/\/$/, '');
-const port = Number(process.env.PADDLEOCR_SERVICE_PORT || 8765);
+const paddlePort = Number(process.env.PADDLEOCR_SERVICE_PORT || 8765);
+const apiPort = Number(process.env.PORT || 3000);
 
 let paddleChild = null;
 let nodeChild = null;
@@ -34,14 +36,29 @@ function resolvePython() {
   return null;
 }
 
-function healthCheck(timeoutMs = 2500) {
+function tcpOpen(host, port, timeoutMs = 1500) {
   return new Promise((resolve) => {
-    const url = new URL(`${serviceUrl}/health`);
+    const socket = net.connect({ host, port }, () => {
+      socket.destroy();
+      resolve(true);
+    });
+    socket.setTimeout(timeoutMs);
+    socket.on('timeout', () => {
+      socket.destroy();
+      resolve(false);
+    });
+    socket.on('error', () => resolve(false));
+  });
+}
+
+function healthJson(url, timeoutMs = 2500) {
+  return new Promise((resolve) => {
+    const parsed = new URL(url);
     const req = http.get(
       {
-        hostname: url.hostname,
-        port: url.port || 80,
-        path: url.pathname,
+        hostname: parsed.hostname,
+        port: parsed.port || 80,
+        path: `${parsed.pathname}${parsed.search}`,
         timeout: timeoutMs,
       },
       (res) => {
@@ -53,7 +70,7 @@ function healthCheck(timeoutMs = 2500) {
           try {
             resolve(JSON.parse(body));
           } catch (_) {
-            resolve(null);
+            resolve({ ok: res.statusCode >= 200 && res.statusCode < 500 });
           }
         });
       },
@@ -66,21 +83,32 @@ function healthCheck(timeoutMs = 2500) {
   });
 }
 
-/** Wait only until Flask answers — not until models finish downloading. */
-async function waitForFlaskUp(attempts = 30, delayMs = 1000) {
+async function waitUntilApiListening(attempts = 90, delayMs = 1000) {
   for (let i = 0; i < attempts; i += 1) {
-    const health = await healthCheck();
-    if (health && health.ok) return health;
+    if (await tcpOpen('127.0.0.1', apiPort)) {
+      const health = await healthJson(`http://127.0.0.1:${apiPort}/api/health`);
+      if (health) {
+        console.log(
+          `[start_with_ocr] Node API is up on port ${apiPort} (attempt ${i + 1})`,
+        );
+        return true;
+      }
+    }
+    if (i === 0 || (i + 1) % 15 === 0) {
+      console.log(
+        `[start_with_ocr] Waiting for Node to bind 0.0.0.0:${apiPort}... (${i + 1}/${attempts})`,
+      );
+    }
     await new Promise((r) => setTimeout(r, delayMs));
   }
-  return null;
+  return false;
 }
 
 function watchModelsInBackground() {
   let attempt = 0;
   const timer = setInterval(async () => {
     attempt += 1;
-    const health = await healthCheck(5000);
+    const health = await healthJson(`${serviceUrl}/health`, 5000);
     if (health && health.modelsReady) {
       console.log('[start_with_ocr] PaddleOCR models ready (background)');
       clearInterval(timer);
@@ -96,7 +124,6 @@ function watchModelsInBackground() {
         `[start_with_ocr] Models still downloading in background... (${attempt})`,
       );
     }
-    // Stop polling after ~15 minutes; OCR will keep falling back to Tesseract.
     if (attempt >= 450) clearInterval(timer);
   }, 2000);
 }
@@ -105,7 +132,7 @@ function startPaddle(pythonBin) {
   console.log(`[start_with_ocr] Starting PaddleOCR with ${pythonBin}`);
   const env = {
     ...process.env,
-    PADDLEOCR_SERVICE_PORT: String(port),
+    PADDLEOCR_SERVICE_PORT: String(paddlePort),
     PADDLEOCR_SERVICE_HOST: process.env.PADDLEOCR_SERVICE_HOST || '127.0.0.1',
     PADDLEOCR_SERVICE_URL: serviceUrl,
     PADDLEOCR_PYTHON: pythonBin,
@@ -117,6 +144,11 @@ function startPaddle(pythonBin) {
     env,
     stdio: ['ignore', 'inherit', 'inherit'],
     windowsHide: true,
+  });
+
+  paddleChild.on('error', (err) => {
+    console.warn('[start_with_ocr] PaddleOCR failed to spawn:', err.message);
+    paddleChild = null;
   });
 
   paddleChild.on('exit', (code, signal) => {
@@ -138,12 +170,17 @@ function startNode() {
     env.PADDLEOCR_SCRIPT = scriptPath;
   }
 
-  console.log('[start_with_ocr] Starting Node API');
+  console.log(`[start_with_ocr] Starting Node API (bind 0.0.0.0:${apiPort} first)`);
   nodeChild = spawn(process.execPath, ['server.js'], {
     cwd: path.resolve(__dirname, '..'),
     env,
     stdio: 'inherit',
     windowsHide: true,
+  });
+
+  nodeChild.on('error', (err) => {
+    console.error('[start_with_ocr] Node failed to spawn:', err.message);
+    shutdown(1);
   });
 
   nodeChild.on('exit', (code, signal) => {
@@ -152,6 +189,31 @@ function startNode() {
     );
     shutdown(code || 0);
   });
+}
+
+async function startPaddleAfterApi() {
+  if (process.env.SKIP_PADDLEOCR_WORKER === '1') {
+    console.log('[start_with_ocr] SKIP_PADDLEOCR_WORKER=1 — skipping PaddleOCR');
+    return;
+  }
+
+  const already = await healthJson(`${serviceUrl}/health`);
+  if (already && already.ok) {
+    console.log('[start_with_ocr] PaddleOCR already up at', serviceUrl);
+    if (!already.modelsReady) watchModelsInBackground();
+    return;
+  }
+
+  const pythonBin = resolvePython();
+  if (!pythonBin || !fs.existsSync(scriptPath)) {
+    console.warn(
+      '[start_with_ocr] PaddleOCR venv/script missing — Tesseract fallback only.',
+    );
+    return;
+  }
+
+  startPaddle(pythonBin);
+  watchModelsInBackground();
 }
 
 function shutdown(code = 0) {
@@ -171,60 +233,17 @@ function shutdown(code = 0) {
 }
 
 async function main() {
-  if (process.env.SKIP_PADDLEOCR_WORKER === '1') {
-    console.log('[start_with_ocr] SKIP_PADDLEOCR_WORKER=1 — Node only');
-    startNode();
-    return;
-  }
-
-  const already = await healthCheck();
-  if (already && already.ok) {
-    console.log('[start_with_ocr] PaddleOCR Flask already up at', serviceUrl);
-    if (!already.modelsReady) {
-      console.log(
-        '[start_with_ocr] Models still warming — Node starts now; OCR uses Tesseract until ready.',
-      );
-      watchModelsInBackground();
-    } else {
-      console.log('[start_with_ocr] PaddleOCR models already ready');
-    }
-    startNode();
-    return;
-  }
-
-  const pythonBin = resolvePython();
-  if (!pythonBin || !fs.existsSync(scriptPath)) {
-    console.warn(
-      '[start_with_ocr] PaddleOCR venv/script missing — Node will use Tesseract fallback.',
-    );
-    startNode();
-    return;
-  }
-
-  startPaddle(pythonBin);
-  // Only wait for Flask /health — NOT for model download (that can take 10+ min).
-  const health = await waitForFlaskUp();
-  if (!health) {
-    console.warn(
-      '[start_with_ocr] PaddleOCR HTTP did not start — continuing with Tesseract fallback.',
-    );
-    startNode();
-    return;
-  }
-
-  if (health.modelsReady) {
-    console.log('[start_with_ocr] PaddleOCR ready at', serviceUrl);
-  } else {
-    console.log(
-      '[start_with_ocr] Flask up; model download continues in background.',
-    );
-    console.log(
-      '[start_with_ocr] Starting Node now so Render health checks pass.',
-    );
-    watchModelsInBackground();
-  }
-
+  // Critical for Render: bind public PORT before any heavy OCR work.
   startNode();
+
+  const up = await waitUntilApiListening();
+  if (!up) {
+    console.warn(
+      `[start_with_ocr] Node did not bind port ${apiPort} in time; still starting PaddleOCR.`,
+    );
+  }
+
+  await startPaddleAfterApi();
 }
 
 process.on('SIGINT', () => shutdown(0));
@@ -232,5 +251,5 @@ process.on('SIGTERM', () => shutdown(0));
 
 main().catch((error) => {
   console.error('[start_with_ocr]', error);
-  startNode();
+  if (!nodeChild) startNode();
 });
