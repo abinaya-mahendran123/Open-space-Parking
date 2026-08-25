@@ -47,7 +47,11 @@ class BackendOtpService {
     final normalized = PhoneUtils.normalizeIndianMobile(phone);
 
     final response = await _apiClient
-        .post('/api/auth/otp/send', {'phone': normalized})
+        .post(
+          '/api/auth/otp/send',
+          {'phone': normalized},
+          authenticated: false,
+        )
         .timeout(
           const Duration(seconds: 15),
           onTimeout: () => throw const AppException(
@@ -69,10 +73,14 @@ class BackendOtpService {
     final normalized = PhoneUtils.normalizeIndianMobile(phone);
 
     final response = await _apiClient
-        .post('/api/auth/otp/verify', {
-          'phone': normalized,
-          'otp': otp.trim(),
-        })
+        .post(
+          '/api/auth/otp/verify',
+          {
+            'phone': normalized,
+            'otp': otp.trim(),
+          },
+          authenticated: false,
+        )
         .timeout(
           const Duration(seconds: 15),
           onTimeout: () => throw const AppException(

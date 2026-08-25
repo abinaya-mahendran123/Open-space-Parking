@@ -38,10 +38,14 @@ class MongoAuthRepository implements AuthRepository {
     final apiClient = _apiClient;
     if (apiClient != null) {
       try {
-        final response = await apiClient.post('/api/auth/app-login', {
-          'email': email.trim().toLowerCase(),
-          'password': password,
-        });
+        final response = await apiClient.post(
+          '/api/auth/app-login',
+          {
+            'email': email.trim().toLowerCase(),
+            'password': password,
+          },
+          authenticated: false,
+        );
         return _sessionFromApi(response, email);
       } on NetworkException catch (e) {
         final msg = e.message.toLowerCase();
@@ -74,10 +78,14 @@ class MongoAuthRepository implements AuthRepository {
     final apiClient = _apiClient;
     if (apiClient != null) {
       try {
-        final response = await apiClient.post('/api/auth/admin-login', {
-          'email': email.trim().toLowerCase(),
-          'password': password,
-        });
+        final response = await apiClient.post(
+          '/api/auth/admin-login',
+          {
+            'email': email.trim().toLowerCase(),
+            'password': password,
+          },
+          authenticated: false,
+        );
         return _sessionFromApi(response, email);
       } on NetworkException catch (e) {
         final msg = e.message.toLowerCase();
@@ -113,10 +121,14 @@ class MongoAuthRepository implements AuthRepository {
     final apiClient = _apiClient;
     if (apiClient != null) {
       try {
-        final response = await apiClient.post('/api/auth/employee-phone-login', {
-          'phone': normalizedPhone,
-          'password': password.trim(),
-        });
+        final response = await apiClient.post(
+          '/api/auth/employee-phone-login',
+          {
+            'phone': normalizedPhone,
+            'password': password.trim(),
+          },
+          authenticated: false,
+        );
         return _sessionFromApi(
           response,
           response['email'] as String? ?? '',
@@ -214,10 +226,14 @@ class MongoAuthRepository implements AuthRepository {
     final apiClient = _apiClient;
     if (apiClient != null) {
       try {
-        final response = await apiClient.post('/api/auth/security-login', {
-          'phone': normalizedPhone,
-          'password': password.trim(),
-        });
+        final response = await apiClient.post(
+          '/api/auth/security-login',
+          {
+            'phone': normalizedPhone,
+            'password': password.trim(),
+          },
+          authenticated: false,
+        );
         return _sessionFromApi(response, _phoneEmail(normalizedPhone));
       } on NetworkException catch (e) {
         final msg = e.message.toLowerCase();
@@ -232,11 +248,15 @@ class MongoAuthRepository implements AuthRepository {
 
       if (PhoneUtils.isGateSecurityPhone(normalizedPhone)) {
         try {
-          final response = await apiClient.post('/api/auth/security-login', {
-            'email': AppConstants.defaultSecurityEmail,
-            'phone': normalizedPhone,
-            'password': password.trim(),
-          });
+          final response = await apiClient.post(
+            '/api/auth/security-login',
+            {
+              'email': AppConstants.defaultSecurityEmail,
+              'phone': normalizedPhone,
+              'password': password.trim(),
+            },
+            authenticated: false,
+          );
           return _sessionFromApi(
             response,
             AppConstants.defaultSecurityEmail,
@@ -312,12 +332,16 @@ class MongoAuthRepository implements AuthRepository {
     final apiClient = _apiClient;
     if (apiClient != null) {
       try {
-        final response = await apiClient.post('/api/auth/register', {
-          'email': email.trim().toLowerCase(),
-          'password': password,
-          'displayName': displayName.trim(),
-          'role': role.value,
-        });
+        final response = await apiClient.post(
+          '/api/auth/register',
+          {
+            'email': email.trim().toLowerCase(),
+            'password': password,
+            'displayName': displayName.trim(),
+            'role': role.value,
+          },
+          authenticated: false,
+        );
         return _sessionFromApi(response, email);
       } on NetworkException catch (e) {
         final msg = e.message.toLowerCase();
@@ -395,11 +419,15 @@ class MongoAuthRepository implements AuthRepository {
     final apiClient = _apiClient;
     if (apiClient != null) {
       try {
-        final response = await apiClient.post('/api/auth/phone-login', {
-          'phone': normalizedPhone,
-          if (otpToken != null && otpToken.isNotEmpty) 'otpToken': otpToken,
-          if (idToken != null && idToken.isNotEmpty) 'idToken': idToken,
-        });
+        final response = await apiClient.post(
+          '/api/auth/phone-login',
+          {
+            'phone': normalizedPhone,
+            if (otpToken != null && otpToken.isNotEmpty) 'otpToken': otpToken,
+            if (idToken != null && idToken.isNotEmpty) 'idToken': idToken,
+          },
+          authenticated: false,
+        );
         return _sessionFromApi(response, _phoneEmail(normalizedPhone));
       } on NetworkException catch (e) {
         final msg = e.message.toLowerCase();
@@ -446,13 +474,17 @@ class MongoAuthRepository implements AuthRepository {
     final apiClient = _apiClient;
     if (apiClient != null) {
       try {
-        final response = await apiClient.post('/api/auth/phone-register', {
-          'phone': normalizedPhone,
-          'displayName': displayName.trim(),
-          'role': role.value,
-          if (otpToken != null && otpToken.isNotEmpty) 'otpToken': otpToken,
-          if (idToken != null && idToken.isNotEmpty) 'idToken': idToken,
-        });
+        final response = await apiClient.post(
+          '/api/auth/phone-register',
+          {
+            'phone': normalizedPhone,
+            'displayName': displayName.trim(),
+            'role': role.value,
+            if (otpToken != null && otpToken.isNotEmpty) 'otpToken': otpToken,
+            if (idToken != null && idToken.isNotEmpty) 'idToken': idToken,
+          },
+          authenticated: false,
+        );
         final session = _sessionFromApi(response, _phoneEmail(normalizedPhone));
         try {
           await _seedProfileForRole(
@@ -526,7 +558,41 @@ class MongoAuthRepository implements AuthRepository {
     required String email,
     required String googleId,
     required String displayName,
+    String? idToken,
   }) async {
+    final token = idToken?.trim() ?? '';
+    final apiClient = _apiClient;
+    if (apiClient != null && token.isNotEmpty) {
+      try {
+        final response = await apiClient.post(
+          '/api/auth/google',
+          {
+            'idToken': token,
+            'action': 'login',
+          },
+          authenticated: false,
+        );
+        final jwt = response['jwtToken'] as String?;
+        if (jwt != null && jwt.isNotEmpty) {
+          return _sessionFromApi(
+            response,
+            email,
+            displayNameOverride: displayName,
+          );
+        }
+        throw const AppException(
+          'Google sign-in needs the latest API. Restart or redeploy the backend, then try again.',
+        );
+      } on NetworkException catch (e) {
+        final msg = e.message.toLowerCase();
+        if (!msg.contains('404') &&
+            !msg.contains('cannot post') &&
+            !msg.contains('invalid google auth action')) {
+          throw AppException(e.message);
+        }
+      }
+    }
+
     await _ensureConnected();
     final normalizedEmail = email.trim().toLowerCase();
     final trimmedGoogleId = googleId.trim();
@@ -551,8 +617,45 @@ class MongoAuthRepository implements AuthRepository {
     required String googleId,
     required String displayName,
     required UserRole role,
+    String? idToken,
   }) async {
     _assertSelfRegisterRole(role);
+
+    final token = idToken?.trim() ?? '';
+    final apiClient = _apiClient;
+    if (apiClient != null && token.isNotEmpty) {
+      try {
+        final response = await apiClient.post(
+          '/api/auth/google',
+          {
+            'idToken': token,
+            'action': 'register',
+            'role': role.value,
+            'displayName': displayName.trim(),
+          },
+          authenticated: false,
+        );
+        final jwt = response['jwtToken'] as String?;
+        if (jwt != null && jwt.isNotEmpty) {
+          return _sessionFromApi(
+            response,
+            email,
+            displayNameOverride: displayName,
+          );
+        }
+        throw const AppException(
+          'Google sign-up needs the latest API. Restart or redeploy the backend, then try again.',
+        );
+      } on NetworkException catch (e) {
+        final msg = e.message.toLowerCase();
+        if (!msg.contains('404') &&
+            !msg.contains('cannot post') &&
+            !msg.contains('invalid google auth action')) {
+          throw AppException(e.message);
+        }
+      }
+    }
+
     await _ensureConnected();
 
     final normalizedEmail = email.trim().toLowerCase();

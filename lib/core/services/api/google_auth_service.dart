@@ -14,12 +14,14 @@ class GoogleAuthProfile {
     required this.googleId,
     required this.displayName,
     required this.emailVerified,
+    this.idToken = '',
   });
 
   final String email;
   final String googleId;
   final String displayName;
   final bool emailVerified;
+  final String idToken;
 }
 
 /// Official Google Sign-In via `google_sign_in` for Android, iOS, and Web.
@@ -114,7 +116,14 @@ class GoogleAuthService {
       final idToken = auth.idToken?.trim() ?? '';
 
       if (idToken.isNotEmpty) {
-        return await verifyIdToken(idToken);
+        final verified = await verifyIdToken(idToken);
+        return GoogleAuthProfile(
+          email: verified.email,
+          googleId: verified.googleId,
+          displayName: verified.displayName,
+          emailVerified: verified.emailVerified,
+          idToken: idToken,
+        );
       }
 
       // Rare web edge case: account selected but ID token not yet issued.
@@ -128,6 +137,7 @@ class GoogleAuthService {
           displayName:
               (account.displayName ?? account.email.split('@').first).trim(),
           emailVerified: true,
+          idToken: '',
         );
       }
 

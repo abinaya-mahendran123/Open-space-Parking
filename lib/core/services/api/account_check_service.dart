@@ -23,9 +23,13 @@ class AccountCheckService {
     }
 
     try {
-      final response = await _apiClient.post('/api/auth/check-account', {
-        'phone': normalized,
-      });
+      final response = await _apiClient.post(
+        '/api/auth/check-account',
+        {
+          'phone': normalized,
+        },
+        authenticated: false,
+      );
       final accountType = response['accountType'] as String? ?? 'user';
       return switch (accountType) {
         'employee' => PhoneAccountType.employee,

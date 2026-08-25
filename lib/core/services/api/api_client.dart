@@ -21,14 +21,19 @@ class ApiClient {
 
   Uri _uri(String path) => Uri.parse('$_baseUrl$path');
 
-  Map<String, String> _headers({bool jsonBody = false}) {
+  Map<String, String> _headers({
+    bool jsonBody = false,
+    bool authenticated = true,
+  }) {
     final headers = <String, String>{};
     if (jsonBody) {
       headers['Content-Type'] = 'application/json';
     }
-    final token = _authTokenProvider.token;
-    if (token != null && token.isNotEmpty) {
-      headers['Authorization'] = 'Bearer $token';
+    if (authenticated) {
+      final token = _authTokenProvider.token;
+      if (token != null && token.isNotEmpty) {
+        headers['Authorization'] = 'Bearer $token';
+      }
     }
     return headers;
   }
@@ -90,7 +95,7 @@ class ApiClient {
       return _httpClient
           .post(
             _uri(path),
-            headers: _headers(jsonBody: true),
+            headers: _headers(jsonBody: true, authenticated: authenticated),
             body: jsonEncode(MongoHttpCodec.encode(body)),
           )
           .timeout(effectiveTimeout);

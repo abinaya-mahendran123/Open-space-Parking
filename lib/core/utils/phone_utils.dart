@@ -40,11 +40,14 @@ class PhoneUtils {
     return digits.substring(digits.length - 4);
   }
 
-  /// Last 6 digits of a phone number (employee password).
+  /// Last 6 digits of the national mobile number (employee password).
+  /// Uses the last 10 digits first so a +91 country code does not change it.
   static String lastSixDigits(String phone) {
     final digits = digitsOnly(phone);
-    if (digits.length < 6) return '';
-    return digits.substring(digits.length - 6);
+    final national =
+        digits.length > 10 ? digits.substring(digits.length - 10) : digits;
+    if (national.length < 6) return '';
+    return national.substring(national.length - 6);
   }
 
   static bool isGateSecurityPhone(String phone) {

@@ -275,6 +275,7 @@ class AuthStateNotifier extends StateNotifier<AuthState> {
         email: profile.email,
         googleId: profile.googleId,
         displayName: profile.displayName,
+        idToken: profile.idToken,
       ),
     );
   }
@@ -301,6 +302,7 @@ class AuthStateNotifier extends StateNotifier<AuthState> {
         googleId: profile.googleId,
         displayName: profile.displayName,
         role: role,
+        idToken: profile.idToken,
       ),
     );
   }
