@@ -24,6 +24,8 @@ services:
       - key: PADDLEOCR_SERVICE_PORT
         value: "8765"
       - key: PADDLEOCR_LANGS
-        value: en,ta,hi
-      # Set these in the Render dashboard (do not commit secrets):
-      # DATABASE_URL, JWT_SECRET, CLOUDINARY_*, RAZORPAY_*, etc.
+        value: en
+      - key: PADDLEOCR_TIMEOUT_MS
+        value: "180000"
+      - key: PADDLEOCR_MAX_CONCURRENT
+        value: "1"

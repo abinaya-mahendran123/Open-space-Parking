@@ -26,8 +26,8 @@ class GovernmentIdOcrService {
 
   final ApiClient _apiClient;
 
-  /// OCR is multi-pass and can take up to 120 seconds on a cold backend.
-  static const _ocrTimeout = Duration(seconds: 120);
+  /// OCR is multi-pass; cold Paddle model download can exceed 2 minutes.
+  static const _ocrTimeout = Duration(seconds: 180);
 
   Future<GovernmentIdExtractionResult> extractDetails({
     required String frontUrl,

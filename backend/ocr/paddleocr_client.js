@@ -9,8 +9,8 @@ const { logOcr } = require('./ocr_logging');
 
 const DEFAULT_SERVICE_URL =
   process.env.PADDLEOCR_SERVICE_URL || 'http://127.0.0.1:8765';
-const DEFAULT_TIMEOUT_MS = Number(process.env.PADDLEOCR_TIMEOUT_MS || 45000);
-const MAX_CONCURRENT = Number(process.env.PADDLEOCR_MAX_CONCURRENT || 2);
+const DEFAULT_TIMEOUT_MS = Number(process.env.PADDLEOCR_TIMEOUT_MS || 180000);
+const MAX_CONCURRENT = Number(process.env.PADDLEOCR_MAX_CONCURRENT || 1);
 
 let activeCount = 0;
 const waitQueue = [];
@@ -221,7 +221,33 @@ async function recognizeBuffer(buffer, options = {}) {
       });
       return { ...result, mode: 'http' };
     } catch (httpError) {
-      logOcr('paddle_http_failed', { reason: httpError.message });
+      const reason = httpError.message || String(httpError);
+      logOcr('paddle_http_failed', { reason });
+
+      // Models still warming / first-download race — wait and retry once.
+      if (
+        reason.includes('503') ||
+        reason.includes('still downloading') ||
+        reason.includes('timeout')
+      ) {
+        await new Promise((r) => setTimeout(r, 8000));
+        try {
+          const retry = await postJson(
+            `${serviceUrl}/ocr`,
+            { imagePath: tempPath, langs },
+            timeoutMs,
+          );
+          logOcr('engine=paddleocr mode=http_retry', {
+            paddleTimeMs: Date.now() - started,
+            langsUsed: retry.langsUsed,
+          });
+          return { ...retry, mode: 'http_retry' };
+        } catch (retryError) {
+          logOcr('paddle_http_retry_failed', {
+            reason: retryError.message || String(retryError),
+          });
+        }
+      }
     }
 
     const result = await runSubprocess(tempPath, langs, timeoutMs);

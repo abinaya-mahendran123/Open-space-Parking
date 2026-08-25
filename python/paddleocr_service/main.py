@@ -18,6 +18,7 @@ import json
 import os
 import sys
 import tempfile
+import threading
 import time
 from typing import Any
 
@@ -27,9 +28,13 @@ from flask import Flask, jsonify, request
 
 # Lazy-import PaddleOCR so --health works before models are installed.
 _engines: dict[str, Any] = {}
+_engine_lock = threading.Lock()
+_models_ready = False
+_models_error: str | None = None
 _app = Flask(__name__)
 
-DEFAULT_LANGS = ["en", "ta", "hi"]
+# Prefer English first on small hosts; add ta,hi via PADDLEOCR_LANGS when RAM allows.
+DEFAULT_LANGS = ["en"]
 
 
 def configured_langs() -> list[str]:
@@ -39,19 +44,36 @@ def configured_langs() -> list[str]:
 
 
 def get_engine(lang: str):
-    if lang in _engines:
-        return _engines[lang]
-    from paddleocr import PaddleOCR
+    with _engine_lock:
+        if lang in _engines:
+            return _engines[lang]
+        from paddleocr import PaddleOCR
 
-    use_gpu = os.environ.get("PADDLEOCR_USE_GPU", "false").lower() == "true"
-    engine = PaddleOCR(
-        use_angle_cls=True,
-        lang=lang,
-        use_gpu=use_gpu,
-        show_log=False,
-    )
-    _engines[lang] = engine
-    return engine
+        print(f"[PaddleOCR] loading model lang={lang} (may download on first run)...")
+        use_gpu = os.environ.get("PADDLEOCR_USE_GPU", "false").lower() == "true"
+        engine = PaddleOCR(
+            use_angle_cls=True,
+            lang=lang,
+            use_gpu=use_gpu,
+            show_log=False,
+        )
+        _engines[lang] = engine
+        print(f"[PaddleOCR] model ready lang={lang}")
+        return engine
+
+
+def warmup_models() -> None:
+    global _models_ready, _models_error
+    try:
+        for lang in configured_langs():
+            get_engine(lang)
+        _models_ready = True
+        _models_error = None
+        print(f"[PaddleOCR] warmup complete langs={list(_engines.keys())}")
+    except Exception as exc:  # noqa: BLE001
+        _models_ready = False
+        _models_error = str(exc)
+        print(f"[PaddleOCR] warmup failed: {exc}")
 
 
 def bbox_top_left(bbox: list) -> tuple[float, float]:
@@ -169,6 +191,8 @@ def health():
         {
             "ok": True,
             "engine": "paddleocr",
+            "modelsReady": _models_ready,
+            "modelsError": _models_error,
             "langsConfigured": configured_langs(),
             "enginesLoaded": sorted(_engines.keys()),
         }
@@ -184,8 +208,18 @@ def ocr_http():
                 "endpoint": "POST /ocr",
                 "usage": "Called by the Node backend with JSON { imagePath, langs }. Not for browser GET.",
                 "health": "GET /health",
+                "modelsReady": _models_ready,
             }
         )
+
+    if not _models_ready:
+        return jsonify(
+            {
+                "error": "PaddleOCR models are still downloading/loading. Retry in a minute.",
+                "engine": "paddleocr",
+                "modelsReady": False,
+            }
+        ), 503
 
     tmp_path = None
     try:
@@ -242,6 +276,10 @@ def serve():
     host = os.environ.get("PADDLEOCR_SERVICE_HOST", "127.0.0.1")
     print(f"[PaddleOCR] listening on http://{host}:{port}")
     print(f"[PaddleOCR] langs={configured_langs()}")
+
+    # Warm models in the background so /health stays reachable during downloads.
+    threading.Thread(target=warmup_models, name="paddle-warmup", daemon=True).start()
+
     _app.run(host=host, port=port, threaded=True)
 
 

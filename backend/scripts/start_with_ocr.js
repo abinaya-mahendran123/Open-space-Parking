@@ -48,25 +48,47 @@ function healthCheck(timeoutMs = 2500) {
         });
         res.on('end', () => {
           try {
-            const json = JSON.parse(body);
-            resolve(Boolean(json && json.ok));
+            resolve(JSON.parse(body));
           } catch (_) {
-            resolve(false);
+            resolve(null);
           }
         });
       },
     );
     req.on('timeout', () => {
       req.destroy();
-      resolve(false);
+      resolve(null);
     });
-    req.on('error', () => resolve(false));
+    req.on('error', () => resolve(null));
   });
 }
 
 async function waitForHealthy(attempts = 40, delayMs = 1500) {
   for (let i = 0; i < attempts; i += 1) {
-    if (await healthCheck()) return true;
+    const health = await healthCheck();
+    if (health && health.ok) return true;
+    await new Promise((r) => setTimeout(r, delayMs));
+  }
+  return false;
+}
+
+/** Wait until Paddle models finished downloading (first boot can take several minutes). */
+async function waitForModelsReady(attempts = 180, delayMs = 2000) {
+  for (let i = 0; i < attempts; i += 1) {
+    const health = await healthCheck(5000);
+    if (health && health.modelsReady) {
+      console.log('[start_with_ocr] PaddleOCR models ready');
+      return true;
+    }
+    if (health && health.modelsError) {
+      console.warn('[start_with_ocr] PaddleOCR warmup error:', health.modelsError);
+      return false;
+    }
+    if (i === 0 || i % 15 === 0) {
+      console.log(
+        `[start_with_ocr] Waiting for PaddleOCR model download/warmup... (${i + 1}/${attempts})`,
+      );
+    }
     await new Promise((r) => setTimeout(r, delayMs));
   }
   return false;
@@ -149,8 +171,8 @@ async function main() {
     return;
   }
 
-  const alreadyUp = await healthCheck();
-  if (alreadyUp) {
+  const already = await healthCheck();
+  if (already && already.ok && already.modelsReady) {
     console.log('[start_with_ocr] PaddleOCR already healthy at', serviceUrl);
     startNode();
     return;
@@ -168,11 +190,23 @@ async function main() {
     return;
   }
 
-  startPaddle(pythonBin);
-  const healthy = await waitForHealthy();
-  if (!healthy) {
+  if (!(already && already.ok)) {
+    startPaddle(pythonBin);
+    const healthy = await waitForHealthy();
+    if (!healthy) {
+      console.warn(
+        '[start_with_ocr] PaddleOCR HTTP did not start — continuing with Tesseract fallback.',
+      );
+      startNode();
+      return;
+    }
+  }
+
+  // First deploy downloads PP-OCR models; wait so the first Aadhaar scan does not time out.
+  const modelsReady = await waitForModelsReady();
+  if (!modelsReady) {
     console.warn(
-      '[start_with_ocr] PaddleOCR did not become healthy in time — continuing with Tesseract fallback.',
+      '[start_with_ocr] Models not ready yet — OCR may fall back to Tesseract until warmup finishes.',
     );
   } else {
     console.log('[start_with_ocr] PaddleOCR ready at', serviceUrl);
