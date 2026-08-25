@@ -119,6 +119,19 @@ class AppDialogs {
     );
   }
 
+  static Future<bool> confirmLogout(BuildContext context) async {
+    final confirmed = await showConfirmation(
+      context,
+      title: 'Logout',
+      message: 'Are you sure you want to logout?',
+      confirmText: 'Logout',
+      cancelText: 'Cancel',
+      icon: Icons.logout,
+      isDestructive: true,
+    );
+    return confirmed == true;
+  }
+
   static Future<void> showInfo(
     BuildContext context, {
     required String title,

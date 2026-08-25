@@ -31,7 +31,7 @@ class NearbyParkingMapPage extends ConsumerWidget {
             if (context.canPop()) {
               context.pop();
             } else {
-              context.go(RoutePaths.vehicleOwnerDashboard);
+              context.go(RoutePaths.vehicleOwnerSearch);
             }
           },
         ),

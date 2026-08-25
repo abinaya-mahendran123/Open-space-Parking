@@ -63,3 +63,28 @@ dependencies {
 flutter {
     source = "../.."
 }
+
+// android/build.gradle.kts sends Gradle outputs to %LOCALAPPDATA% so OneDrive
+// does not lock merge* tasks. Flutter still looks for the APK under
+// <project>/build/app/outputs/flutter-apk/.
+fun copyApksForFlutterTool() {
+    val dest = rootProject.projectDir.resolve("../build/app/outputs/flutter-apk")
+    dest.mkdirs()
+    val sources =
+        listOf(
+            layout.buildDirectory.get().asFile.resolve("outputs/flutter-apk"),
+            layout.buildDirectory.get().asFile.resolve("outputs/apk/debug"),
+            layout.buildDirectory.get().asFile.resolve("outputs/apk/release"),
+        )
+    sources.filter { it.isDirectory }.forEach { dir ->
+        dir.listFiles()?.filter { it.extension == "apk" }?.forEach { apk ->
+            apk.copyTo(dest.resolve(apk.name), overwrite = true)
+        }
+    }
+}
+
+afterEvaluate {
+    tasks.matching { it.name.startsWith("assemble") }.configureEach {
+        doLast { copyApksForFlutterTool() }
+    }
+}

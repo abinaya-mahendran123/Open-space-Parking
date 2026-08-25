@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'package:open_space_parking/core/domain/domain_extensions.dart';
+import 'package:open_space_parking/core/widgets/dialogs/app_dialogs.dart';
 import 'package:open_space_parking/features/authentication/presentation/providers/auth_state_provider.dart';
 
 class AppHomePage extends ConsumerWidget {
@@ -16,7 +17,11 @@ class AppHomePage extends ConsumerWidget {
         title: const Text('Open Space Parking'),
         actions: [
           IconButton(
-            onPressed: () => ref.read(authStateProvider.notifier).logout(),
+            onPressed: () async {
+              final confirmed = await AppDialogs.confirmLogout(context);
+              if (!confirmed || !context.mounted) return;
+              await ref.read(authStateProvider.notifier).logout();
+            },
             icon: const Icon(Icons.logout),
           ),
         ],

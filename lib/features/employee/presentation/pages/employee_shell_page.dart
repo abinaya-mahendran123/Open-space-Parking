@@ -5,6 +5,7 @@ import 'package:go_router/go_router.dart';
 import 'package:open_space_parking/core/routes/route_paths.dart';
 import 'package:open_space_parking/core/utils/responsive.dart';
 import 'package:open_space_parking/core/widgets/layout/app_shell_scaffold.dart';
+import 'package:open_space_parking/core/widgets/dialogs/app_dialogs.dart';
 import 'package:open_space_parking/features/authentication/presentation/providers/auth_state_provider.dart';
 import 'package:open_space_parking/features/employee/presentation/pages/employee_assigned_page.dart';
 import 'package:open_space_parking/features/employee/presentation/pages/employee_completed_page.dart';
@@ -61,6 +62,8 @@ class _EmployeeShellPageState extends ConsumerState<EmployeeShellPage> {
   }
 
   Future<void> _logout() async {
+    final confirmed = await AppDialogs.confirmLogout(context);
+    if (!confirmed || !mounted) return;
     ref.read(employeeShellTabProvider.notifier).state = 0;
     await ref.read(authStateProvider.notifier).logout();
     if (!mounted) return;

@@ -178,7 +178,7 @@ class _GoogleMapViewState extends ConsumerState<GoogleMapView> {
       children: [
         if (widget.showCurrentLocation)
           FloatingActionButton.small(
-            heroTag: 'current_location',
+            heroTag: null,
             onPressed: mapState.isLoadingLocation
                 ? null
                 : () async {

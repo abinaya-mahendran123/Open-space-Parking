@@ -215,10 +215,13 @@ class _AuthPageState extends ConsumerState<AuthPage> {
   }
 
   Future<void> _submitEmployeePassword() async {
-    if (_employeePasswordController.text.trim().length < 8) {
-      ref
-          .read(snackbarServiceProvider)
-          .showError('Password must be at least 8 characters.');
+    final phone = _phoneController.text.trim();
+    final password = _employeePasswordController.text.trim();
+    final expected = PhoneUtils.lastSixDigits(phone);
+    if (password.length != 6 || password != expected) {
+      ref.read(snackbarServiceProvider).showError(
+            'Enter the last 6 digits of this mobile number.',
+          );
       return;
     }
 
@@ -228,8 +231,8 @@ class _AuthPageState extends ConsumerState<AuthPage> {
     loading.state = true;
     try {
       await ref.read(authStateProvider.notifier).loginEmployee(
-            phone: _phoneController.text.trim(),
-            password: _employeePasswordController.text,
+            phone: phone,
+            password: password,
           );
       if (!mounted) return;
       await _completeAuthenticatedFlow();
@@ -561,6 +564,13 @@ class _AuthPageState extends ConsumerState<AuthPage> {
                   'Employee Sign In',
                   style: Theme.of(context).textTheme.titleMedium,
                 ),
+                const SizedBox(height: 8),
+                Text(
+                  'Password is the last 6 digits of this mobile number.',
+                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                        color: colorScheme.onSurfaceVariant,
+                      ),
+                ),
                 const SizedBox(height: 16),
                 Text(
                   'Mobile Number',
@@ -574,8 +584,13 @@ class _AuthPageState extends ConsumerState<AuthPage> {
                 const SizedBox(height: 16),
                 AppPasswordField(
                   controller: _employeePasswordController,
-                  label: 'Password',
-                  validator: (value) => Validators.minLength(value, 8),
+                  label: 'Password (last 6 digits)',
+                  validator: (value) {
+                    if (value == null || value.trim().length != 6) {
+                      return 'Enter the last 6 digits';
+                    }
+                    return null;
+                  },
                 ),
                 const SizedBox(height: 20),
                 PrimaryButton(

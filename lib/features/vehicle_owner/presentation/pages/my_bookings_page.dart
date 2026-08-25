@@ -31,6 +31,10 @@ class MyBookingsPage extends ConsumerWidget {
     return Scaffold(
       appBar: AppBar(
         title: const Text('Booking History'),
+        leading: IconButton(
+          icon: const Icon(Icons.arrow_back),
+          onPressed: () => context.go(RoutePaths.vehicleOwnerSearch),
+        ),
         actions: const [VehicleOwnerAppBarActions()],
       ),
       body: bookingsAsync.when(

@@ -5,6 +5,7 @@ import 'package:go_router/go_router.dart';
 import 'package:open_space_parking/core/common/exceptions/app_exception.dart';
 import 'package:open_space_parking/core/providers/core_providers.dart';
 import 'package:open_space_parking/core/routes/route_paths.dart';
+import 'package:open_space_parking/core/utils/phone_utils.dart';
 import 'package:open_space_parking/core/utils/validators.dart';
 import 'package:open_space_parking/core/widgets/buttons/primary_button.dart';
 import 'package:open_space_parking/core/widgets/textfields/app_password_field.dart';
@@ -35,12 +36,22 @@ class _EmployeeLoginPageState extends ConsumerState<EmployeeLoginPage> {
   Future<void> _submit() async {
     if (!_formKey.currentState!.validate()) return;
 
+    final phone = _phoneController.text.trim();
+    final password = _passwordController.text.trim();
+    final expected = PhoneUtils.lastSixDigits(phone);
+    if (password != expected) {
+      ref.read(snackbarServiceProvider).showError(
+            'Enter the last 6 digits of this mobile number.',
+          );
+      return;
+    }
+
     final loading = ref.read(authLoadingProvider.notifier);
     loading.state = true;
     try {
       await ref.read(authStateProvider.notifier).loginEmployee(
-            phone: _phoneController.text.trim(),
-            password: _passwordController.text,
+            phone: phone,
+            password: password,
           );
       if (!mounted) return;
       context.go(RoutePaths.employeeDashboard);
@@ -65,7 +76,7 @@ class _EmployeeLoginPageState extends ConsumerState<EmployeeLoginPage> {
         child: Column(
           children: [
             Text(
-              'Sign in with the mobile number and password shared by Admin.',
+              'Password is the last 6 digits of the employee mobile number.',
               style: Theme.of(context).textTheme.bodySmall,
               textAlign: TextAlign.center,
             ),
@@ -80,8 +91,13 @@ class _EmployeeLoginPageState extends ConsumerState<EmployeeLoginPage> {
             const SizedBox(height: 12),
             AppPasswordField(
               controller: _passwordController,
-              label: 'Password',
-              validator: (value) => Validators.minLength(value, 8),
+              label: 'Password (last 6 digits)',
+              validator: (value) {
+                if (value == null || value.trim().length != 6) {
+                  return 'Enter the last 6 digits';
+                }
+                return null;
+              },
             ),
             const SizedBox(height: 20),
             PrimaryButton(

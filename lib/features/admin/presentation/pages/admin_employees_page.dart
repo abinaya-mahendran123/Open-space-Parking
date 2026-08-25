@@ -199,7 +199,8 @@ class AdminEmployeesPage extends ConsumerWidget {
             'Share these login details with the employee:\n'
             'Open the app → Sign in with phone number\n'
             'Mobile: ${result.employee.phone}\n'
-            'Password: ${result.temporaryPassword}',
+            'Password: ${result.temporaryPassword} '
+            '(last 6 digits of the mobile number)',
           ),
           actions: [
             FilledButton(

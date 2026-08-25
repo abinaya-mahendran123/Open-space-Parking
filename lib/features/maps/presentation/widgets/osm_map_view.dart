@@ -164,7 +164,7 @@ class _OsmMapViewState extends ConsumerState<OsmMapView> {
       children: [
         if (widget.showCurrentLocation)
           FloatingActionButton.small(
-            heroTag: 'osm_current_location',
+            heroTag: null,
             onPressed: mapState.isLoadingLocation
                 ? null
                 : () async {

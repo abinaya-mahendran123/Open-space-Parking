@@ -24,7 +24,7 @@ class FavoritesPage extends ConsumerWidget {
         title: const Text('Favorites'),
         leading: IconButton(
           icon: const Icon(Icons.arrow_back),
-          onPressed: () => context.go(RoutePaths.vehicleOwnerDashboard),
+          onPressed: () => context.go(RoutePaths.vehicleOwnerSearch),
         ),
         actions: const [VehicleOwnerAppBarActions()],
       ),

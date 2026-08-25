@@ -126,7 +126,7 @@ final appRouterProvider = Provider<GoRouter>((ref) {
       }
 
       if (role == UserRole.vehicleOwner && RoutePaths.isSecurityRoute(location)) {
-        return RoutePaths.vehicleOwnerDashboard;
+        return RoutePaths.vehicleOwnerSearch;
       }
 
       if (role == UserRole.landOwner && RoutePaths.isSecurityRoute(location)) {
@@ -136,7 +136,7 @@ final appRouterProvider = Provider<GoRouter>((ref) {
       // Non-admin / non-employee cannot access isolated portals.
       if (isAdminPath || (isEmployeePath && location != RoutePaths.employeeLogin)) {
         if (role == UserRole.landOwner) return RoutePaths.landOwnerDashboard;
-        if (role == UserRole.vehicleOwner) return RoutePaths.vehicleOwnerDashboard;
+        if (role == UserRole.vehicleOwner) return RoutePaths.vehicleOwnerSearch;
         return RoutePaths.appHome;
       }
 
@@ -152,15 +152,16 @@ final appRouterProvider = Provider<GoRouter>((ref) {
           return RoutePaths.landOwnerDashboard;
         }
       } else if (role == UserRole.vehicleOwner) {
-        if (location == RoutePaths.roleSelection) {
-          return RoutePaths.vehicleOwnerDashboard;
+        if (location == RoutePaths.roleSelection ||
+            location == RoutePaths.vehicleOwnerDashboard) {
+          return RoutePaths.vehicleOwnerSearch;
         }
         if (location == RoutePaths.appHome ||
             (inAuthFlow && location != RoutePaths.forgotPassword)) {
-          return RoutePaths.vehicleOwnerDashboard;
+          return RoutePaths.vehicleOwnerSearch;
         }
         if (landOwnerRoutes.contains(location)) {
-          return RoutePaths.vehicleOwnerDashboard;
+          return RoutePaths.vehicleOwnerSearch;
         }
       } else {
         if (landOwnerRoutes.contains(location) || isVehicleOwnerPath) {
@@ -276,19 +277,19 @@ final appRouterProvider = Provider<GoRouter>((ref) {
 
       GoRoute(
         path: RoutePaths.vehicleOwnerDashboard,
-        builder: (_, __) => const VehicleOwnerShellPage(initialIndex: 0),
+        redirect: (_, __) => RoutePaths.vehicleOwnerSearch,
       ),
       GoRoute(
         path: RoutePaths.vehicleOwnerSearch,
-        builder: (_, __) => const VehicleOwnerShellPage(initialIndex: 1),
+        builder: (_, __) => const VehicleOwnerShellPage(initialIndex: 0),
       ),
       GoRoute(
         path: RoutePaths.vehicleOwnerFavorites,
-        builder: (_, __) => const VehicleOwnerShellPage(initialIndex: 2),
+        builder: (_, __) => const VehicleOwnerShellPage(initialIndex: 1),
       ),
       GoRoute(
         path: RoutePaths.vehicleOwnerBookings,
-        builder: (_, __) => const VehicleOwnerShellPage(initialIndex: 3),
+        builder: (_, __) => const VehicleOwnerShellPage(initialIndex: 2),
       ),
       GoRoute(
         path: RoutePaths.vehicleOwnerNotifications,
@@ -296,7 +297,7 @@ final appRouterProvider = Provider<GoRouter>((ref) {
       ),
       GoRoute(
         path: RoutePaths.vehicleOwnerProfile,
-        builder: (_, __) => const VehicleOwnerShellPage(initialIndex: 4),
+        builder: (_, __) => const VehicleOwnerShellPage(initialIndex: 3),
       ),
       GoRoute(
         path: '/vehicle-owner/parking/:listingId/check-in',

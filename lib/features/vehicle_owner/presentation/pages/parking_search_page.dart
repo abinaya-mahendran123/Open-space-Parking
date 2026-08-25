@@ -289,10 +289,6 @@ class _ParkingSearchPageState extends ConsumerState<ParkingSearchPage> {
     return Scaffold(
       appBar: AppBar(
         title: const Text('Find Nearby Parking'),
-        leading: IconButton(
-          icon: const Icon(Icons.arrow_back),
-          onPressed: () => context.go(RoutePaths.vehicleOwnerDashboard),
-        ),
         actions: [
           const VehicleOwnerLiveQrButton(),
           IconButton(

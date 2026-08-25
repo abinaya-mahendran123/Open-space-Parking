@@ -140,7 +140,7 @@ void main() {
 
         final session = await repository.loginEmployee(
           phone: '9876543210',
-          password: AuthFixtures.testPassword,
+          password: '543210',
         );
 
         expect(session.role, UserRole.employee);
@@ -158,13 +158,23 @@ void main() {
         expect(
           () => repository.loginEmployee(
             phone: '9876543210',
-            password: AuthFixtures.testPassword,
+            password: '543210',
           ),
           throwsA(
             predicate<AppException>(
               (e) => e.message.contains('inactive'),
             ),
           ),
+        );
+      });
+
+      test('throws when password is not last 6 digits', () async {
+        expect(
+          () => repository.loginEmployee(
+            phone: '9876543210',
+            password: '999999',
+          ),
+          throwsA(isA<AppException>()),
         );
       });
     });

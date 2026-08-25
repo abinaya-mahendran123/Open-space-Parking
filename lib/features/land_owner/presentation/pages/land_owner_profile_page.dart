@@ -6,6 +6,7 @@ import 'package:open_space_parking/core/providers/core_providers.dart';
 import 'package:open_space_parking/core/utils/validators.dart';
 import 'package:open_space_parking/core/widgets/buttons/primary_button.dart';
 import 'package:open_space_parking/core/widgets/textfields/app_text_field.dart';
+import 'package:open_space_parking/core/widgets/dialogs/app_dialogs.dart';
 import 'package:open_space_parking/core/utils/profile_prefill.dart';
 import 'package:open_space_parking/features/authentication/domain/entities/auth_session.dart';
 import 'package:open_space_parking/features/authentication/presentation/providers/auth_state_provider.dart';
@@ -130,6 +131,12 @@ class _LandOwnerProfilePageState extends ConsumerState<LandOwnerProfilePage> {
     } finally {
       if (mounted) setState(() => _saving = false);
     }
+  }
+
+  Future<void> _logout() async {
+    final confirmed = await AppDialogs.confirmLogout(context);
+    if (!confirmed || !mounted) return;
+    await ref.read(authStateProvider.notifier).logout();
   }
 
   @override
@@ -281,7 +288,7 @@ class _LandOwnerProfilePageState extends ConsumerState<LandOwnerProfilePage> {
             ),
             const SizedBox(height: 16),
             OutlinedButton.icon(
-              onPressed: () => ref.read(authStateProvider.notifier).logout(),
+              onPressed: _logout,
               icon: const Icon(Icons.logout),
               label: const Text('Logout'),
             ),

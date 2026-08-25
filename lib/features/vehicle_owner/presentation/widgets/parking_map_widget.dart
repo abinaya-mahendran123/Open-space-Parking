@@ -31,7 +31,7 @@ class ParkingMapWidget extends StatelessWidget {
       children: [
         GoogleMapView(
           height: height,
-          showCurrentLocation: true,
+          showCurrentLocation: false,
           initialZoom: 15,
           markers: [
             MapMarkerData(

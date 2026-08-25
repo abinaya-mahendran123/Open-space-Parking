@@ -8,7 +8,7 @@ String dashboardRouteForRole(UserRole? role) {
     UserRole.employee => RoutePaths.employeeDashboard,
     UserRole.security => RoutePaths.securityScan,
     UserRole.landOwner => RoutePaths.landOwnerDashboard,
-    UserRole.vehicleOwner => RoutePaths.vehicleOwnerDashboard,
+    UserRole.vehicleOwner => RoutePaths.vehicleOwnerSearch,
     _ => RoutePaths.appHome,
   };
 }
