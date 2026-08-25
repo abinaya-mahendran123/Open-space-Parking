@@ -9,7 +9,9 @@
     "start": "node server.js",
     "migrate:supabase": "node migrate-mongo-to-supabase.js",
     "sync:tables": "node backfill-named-tables.js",
-    "dev": "node ensure-mongo.js && node server.js"
+    "dev": "node ensure-mongo.js && node server.js",
+    "test:ocr": "node ocr/ocr_field_extraction.test.js && node ocr/ocr_merge.test.js",
+    "benchmark:ocr": "node scripts/ocr_benchmark.js"
   },
   "dependencies": {
     "cors": "^2.8.5",

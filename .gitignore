@@ -50,6 +50,10 @@ backend/uploads/
 # Node
 backend/node_modules/
 
+# Python virtual environments
+**/.venv/
+python/paddleocr_service/.venv/
+
 # Secrets — never commit keys, tokens, or connection strings
 .env
 .env.*

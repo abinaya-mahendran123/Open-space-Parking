@@ -3,6 +3,7 @@ import 'dart:typed_data';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:image_picker/image_picker.dart';
 
@@ -12,6 +13,7 @@ import 'package:open_space_parking/core/cloudinary/presentation/providers/cloudi
 import 'package:open_space_parking/core/cloudinary/presentation/widgets/cloudinary_upload_progress.dart';
 import 'package:open_space_parking/core/common/exceptions/app_exception.dart';
 import 'package:open_space_parking/core/services/api/government_id_ocr_service.dart';
+import 'package:open_space_parking/core/utils/camera_access.dart';
 import 'package:open_space_parking/core/utils/file_bytes_reader.dart';
 import 'package:open_space_parking/core/utils/profile_prefill.dart';
 import 'package:open_space_parking/core/utils/validators.dart';
@@ -86,11 +88,24 @@ class GovernmentIdOwnerDetailsFormState
     super.dispose();
   }
 
+  static final ImagePicker _imagePicker = ImagePicker();
+
   Future<void> _captureFromCamera() async {
     if (_isUploading || widget.ownerId.isEmpty) return;
 
+    if (!kIsWeb) {
+      final permission = await CameraAccess.ensure(context: context);
+      if (permission != CameraPermissionStatus.granted) {
+        if (!mounted) return;
+        setState(() {
+          _extractError = CameraAccess.messageFor(permission);
+        });
+        return;
+      }
+    }
+
     try {
-      final photo = await ImagePicker().pickImage(
+      final photo = await _imagePicker.pickImage(
         source: ImageSource.camera,
         imageQuality: 100,
         maxWidth: 3200,
@@ -111,6 +126,16 @@ class GovernmentIdOwnerDetailsFormState
         previewBytes: bytes,
         isPdf: false,
       );
+    } on PlatformException catch (e) {
+      if (!mounted) return;
+      final denied = e.code == 'camera_access_denied' ||
+          e.code == 'photo_access_denied' ||
+          e.message?.toLowerCase().contains('permission') == true;
+      setState(() {
+        _extractError = denied
+            ? 'Camera access denied. Allow camera permission and try again.'
+            : 'Could not open the camera. Please try again or choose a file.';
+      });
     } on AppException catch (e) {
       if (!mounted) return;
       setState(() {
@@ -119,8 +144,9 @@ class GovernmentIdOwnerDetailsFormState
     } catch (_) {
       if (!mounted) return;
       setState(() {
-        _extractError =
-            'Could not open the camera. Allow camera permission and try again.';
+        _extractError = kIsWeb
+            ? 'Could not open the camera. Allow camera access in your browser, or choose a file instead.'
+            : 'Could not open the camera. Allow camera permission and try again.';
       });
     }
   }
@@ -272,7 +298,11 @@ class GovernmentIdOwnerDetailsFormState
               ListTile(
                 leading: const CircleAvatar(child: Icon(Icons.camera_alt_outlined)),
                 title: const Text('Use Camera'),
-                subtitle: const Text('Open the phone camera and take a photo'),
+                subtitle: Text(
+                  kIsWeb
+                      ? 'Opens your device or browser camera to take a photo'
+                      : 'Opens the phone camera to capture your Aadhaar card',
+                ),
                 onTap: () {
                   Navigator.pop(ctx);
                   _captureFromCamera();
@@ -461,6 +491,7 @@ class GovernmentIdOwnerDetailsFormState
             uploadedUrl: _uploadedUrl,
             progress: _uploadProgress,
             onUpload: _showPickerOptions,
+            onCamera: CameraAccess.isSupported ? _captureFromCamera : null,
             onRemove: _removeUpload,
             onRescan: () => _extractDetails(),
           ),
@@ -524,6 +555,7 @@ class _AadhaarUploadCard extends StatelessWidget {
     required this.uploadedUrl,
     required this.progress,
     required this.onUpload,
+    this.onCamera,
     required this.onRemove,
     required this.onRescan,
   });
@@ -537,6 +569,7 @@ class _AadhaarUploadCard extends StatelessWidget {
   final String? uploadedUrl;
   final UploadProgress progress;
   final VoidCallback onUpload;
+  final VoidCallback? onCamera;
   final VoidCallback onRemove;
   final VoidCallback onRescan;
 
@@ -678,7 +711,7 @@ class _AadhaarUploadCard extends StatelessWidget {
                 const LinearProgressIndicator(),
                 const SizedBox(height: 6),
                 const Text(
-                  'Reading your Aadhaar card… this may take up to 60 seconds.',
+                  'Reading your Aadhaar card… usually a few seconds.',
                   style: TextStyle(fontSize: 12, color: Colors.grey),
                   textAlign: TextAlign.center,
                 ),
@@ -755,11 +788,24 @@ class _AadhaarUploadCard extends StatelessWidget {
                 ),
               ] else if (!isUploading) ...[
                 const SizedBox(height: 12),
-                FilledButton.tonalIcon(
-                  onPressed: onUpload,
-                  icon: const Icon(Icons.upload_outlined),
-                  label: const Text('Upload Aadhaar Card'),
-                ),
+                if (onCamera != null) ...[
+                  FilledButton.icon(
+                    onPressed: onCamera,
+                    icon: const Icon(Icons.camera_alt_outlined),
+                    label: const Text('Take Photo with Camera'),
+                  ),
+                  const SizedBox(height: 8),
+                  OutlinedButton.icon(
+                    onPressed: onUpload,
+                    icon: const Icon(Icons.upload_outlined),
+                    label: const Text('Upload from Files'),
+                  ),
+                ] else
+                  FilledButton.tonalIcon(
+                    onPressed: onUpload,
+                    icon: const Icon(Icons.upload_outlined),
+                    label: const Text('Upload Aadhaar Card'),
+                  ),
               ],
             ],
           ),
