@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'package:open_space_parking/core/bootstrap/app_bootstrap.dart';
@@ -307,24 +309,24 @@ class AuthStateNotifier extends StateNotifier<AuthState> {
     );
   }
 
+  /// Clears auth immediately so navigation never waits on secure storage / Google.
   Future<void> logout() async {
-    // Clear local auth first so GoRouter redirect can leave protected pages
-    // immediately. Provider sign-out runs in the background (can hang on device).
     state = const AuthState.unauthenticated();
     _authTokenProvider.clear();
-    try {
-      await _sessionService.clearSession().timeout(const Duration(seconds: 2));
-    } catch (_) {}
 
-    // Do not block UI on Google / Firebase sign-out.
-    Future<void>(() async {
+    // Secure storage and Google/Firebase can hang on low-RAM Windows / web.
+    // Never block the UI isolate on them.
+    unawaited(Future<void>(() async {
       try {
-        await sl<GoogleAuthService>().signOut().timeout(const Duration(seconds: 2));
+        await _sessionService.clearSession().timeout(const Duration(seconds: 1));
       } catch (_) {}
       try {
-        await sl<OtpAuthService>().signOut().timeout(const Duration(seconds: 2));
+        await sl<GoogleAuthService>().signOut().timeout(const Duration(seconds: 1));
       } catch (_) {}
-    });
+      try {
+        await sl<OtpAuthService>().signOut().timeout(const Duration(seconds: 1));
+      } catch (_) {}
+    }));
   }
 }
 

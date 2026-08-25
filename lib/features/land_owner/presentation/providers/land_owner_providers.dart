@@ -30,17 +30,20 @@ final requestHistoryProvider =
 
 final landOwnerProfileProvider =
     FutureProvider.family<OwnerDetails?, String>((ref, ownerId) async {
+  if (ownerId.trim().isEmpty) return null;
   ref.keepAlive();
   return ref.read(landOwnerRepositoryProvider).getOwnerProfile(ownerId);
 });
 
 final landOwnerPayoutProvider =
     FutureProvider.family<PayoutAccount?, String>((ref, ownerId) async {
+  if (ownerId.trim().isEmpty) return null;
   return ref.read(landOwnerRepositoryProvider).getPayoutAccount(ownerId);
 });
 
 final landOwnerNotificationsProvider =
     FutureProvider.family<List<LandOwnerNotification>, String>((ref, ownerId) async {
+  if (ownerId.trim().isEmpty) return const [];
   return ref.read(landOwnerNotificationRepositoryProvider).getNotifications(ownerId);
 });
 

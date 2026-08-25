@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -150,15 +152,19 @@ class _VehicleOwnerProfilePageState extends ConsumerState<VehicleOwnerProfilePag
 
     try {
       _clearAuthFormState();
-      await ref.read(authStateProvider.notifier).logout();
+      // Do not await — logout clears state sync and cleans storage in background.
+      unawaited(ref.read(authStateProvider.notifier).logout());
       if (!mounted) return;
-      // Use the widget's GoRouter so navigation always hits the live app router.
       GoRouter.of(context).go(RoutePaths.authEntry);
     } catch (_) {
       if (mounted) {
-        ref
-            .read(snackbarServiceProvider)
-            .showError('Could not log out. Try again.');
+        try {
+          GoRouter.of(context).go(RoutePaths.authEntry);
+        } catch (_) {
+          ref
+              .read(snackbarServiceProvider)
+              .showError('Could not log out. Try again.');
+        }
       }
     } finally {
       if (mounted) setState(() => _loggingOut = false);

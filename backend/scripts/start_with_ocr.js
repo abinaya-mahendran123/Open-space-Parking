@@ -1,6 +1,9 @@
 /**
  * Starts PaddleOCR HTTP worker (if installed), then the Node API.
- * Used as `npm start` on Render so OCR does not rely on a separate service.
+ *
+ * Important for Render: Node must bind PORT quickly for health checks.
+ * Do NOT wait for Paddle model downloads before starting Node — models
+ * warm in the background; OCR falls back to Tesseract until ready.
  */
 const { spawn } = require('child_process');
 const fs = require('fs');
@@ -63,35 +66,39 @@ function healthCheck(timeoutMs = 2500) {
   });
 }
 
-async function waitForHealthy(attempts = 40, delayMs = 1500) {
+/** Wait only until Flask answers — not until models finish downloading. */
+async function waitForFlaskUp(attempts = 30, delayMs = 1000) {
   for (let i = 0; i < attempts; i += 1) {
     const health = await healthCheck();
-    if (health && health.ok) return true;
+    if (health && health.ok) return health;
     await new Promise((r) => setTimeout(r, delayMs));
   }
-  return false;
+  return null;
 }
 
-/** Wait until Paddle models finished downloading (first boot can take several minutes). */
-async function waitForModelsReady(attempts = 180, delayMs = 2000) {
-  for (let i = 0; i < attempts; i += 1) {
+function watchModelsInBackground() {
+  let attempt = 0;
+  const timer = setInterval(async () => {
+    attempt += 1;
     const health = await healthCheck(5000);
     if (health && health.modelsReady) {
-      console.log('[start_with_ocr] PaddleOCR models ready');
-      return true;
+      console.log('[start_with_ocr] PaddleOCR models ready (background)');
+      clearInterval(timer);
+      return;
     }
     if (health && health.modelsError) {
       console.warn('[start_with_ocr] PaddleOCR warmup error:', health.modelsError);
-      return false;
+      clearInterval(timer);
+      return;
     }
-    if (i === 0 || i % 15 === 0) {
+    if (attempt === 1 || attempt % 30 === 0) {
       console.log(
-        `[start_with_ocr] Waiting for PaddleOCR model download/warmup... (${i + 1}/${attempts})`,
+        `[start_with_ocr] Models still downloading in background... (${attempt})`,
       );
     }
-    await new Promise((r) => setTimeout(r, delayMs));
-  }
-  return false;
+    // Stop polling after ~15 minutes; OCR will keep falling back to Tesseract.
+    if (attempt >= 450) clearInterval(timer);
+  }, 2000);
 }
 
 function startPaddle(pythonBin) {
@@ -100,7 +107,6 @@ function startPaddle(pythonBin) {
     ...process.env,
     PADDLEOCR_SERVICE_PORT: String(port),
     PADDLEOCR_SERVICE_HOST: process.env.PADDLEOCR_SERVICE_HOST || '127.0.0.1',
-    // Point Node client at this worker (and subprocess fallback to same venv).
     PADDLEOCR_SERVICE_URL: serviceUrl,
     PADDLEOCR_PYTHON: pythonBin,
     PADDLEOCR_SCRIPT: scriptPath,
@@ -172,8 +178,16 @@ async function main() {
   }
 
   const already = await healthCheck();
-  if (already && already.ok && already.modelsReady) {
-    console.log('[start_with_ocr] PaddleOCR already healthy at', serviceUrl);
+  if (already && already.ok) {
+    console.log('[start_with_ocr] PaddleOCR Flask already up at', serviceUrl);
+    if (!already.modelsReady) {
+      console.log(
+        '[start_with_ocr] Models still warming — Node starts now; OCR uses Tesseract until ready.',
+      );
+      watchModelsInBackground();
+    } else {
+      console.log('[start_with_ocr] PaddleOCR models already ready');
+    }
     startNode();
     return;
   }
@@ -183,33 +197,31 @@ async function main() {
     console.warn(
       '[start_with_ocr] PaddleOCR venv/script missing — Node will use Tesseract fallback.',
     );
+    startNode();
+    return;
+  }
+
+  startPaddle(pythonBin);
+  // Only wait for Flask /health — NOT for model download (that can take 10+ min).
+  const health = await waitForFlaskUp();
+  if (!health) {
     console.warn(
-      '[start_with_ocr] Run: npm run setup:ocr  (or include it in Render Build Command)',
+      '[start_with_ocr] PaddleOCR HTTP did not start — continuing with Tesseract fallback.',
     );
     startNode();
     return;
   }
 
-  if (!(already && already.ok)) {
-    startPaddle(pythonBin);
-    const healthy = await waitForHealthy();
-    if (!healthy) {
-      console.warn(
-        '[start_with_ocr] PaddleOCR HTTP did not start — continuing with Tesseract fallback.',
-      );
-      startNode();
-      return;
-    }
-  }
-
-  // First deploy downloads PP-OCR models; wait so the first Aadhaar scan does not time out.
-  const modelsReady = await waitForModelsReady();
-  if (!modelsReady) {
-    console.warn(
-      '[start_with_ocr] Models not ready yet — OCR may fall back to Tesseract until warmup finishes.',
-    );
-  } else {
+  if (health.modelsReady) {
     console.log('[start_with_ocr] PaddleOCR ready at', serviceUrl);
+  } else {
+    console.log(
+      '[start_with_ocr] Flask up; model download continues in background.',
+    );
+    console.log(
+      '[start_with_ocr] Starting Node now so Render health checks pass.',
+    );
+    watchModelsInBackground();
   }
 
   startNode();

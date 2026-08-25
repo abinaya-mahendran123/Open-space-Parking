@@ -1,12 +1,15 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 
 import 'package:open_space_parking/core/common/exceptions/app_exception.dart';
 import 'package:open_space_parking/core/providers/core_providers.dart';
+import 'package:open_space_parking/core/routes/route_paths.dart';
 import 'package:open_space_parking/core/utils/validators.dart';
 import 'package:open_space_parking/core/widgets/buttons/primary_button.dart';
 import 'package:open_space_parking/core/widgets/textfields/app_text_field.dart';
-import 'package:open_space_parking/core/widgets/dialogs/app_dialogs.dart';
 import 'package:open_space_parking/core/utils/profile_prefill.dart';
 import 'package:open_space_parking/features/authentication/domain/entities/auth_session.dart';
 import 'package:open_space_parking/features/authentication/presentation/providers/auth_state_provider.dart';
@@ -134,9 +137,29 @@ class _LandOwnerProfilePageState extends ConsumerState<LandOwnerProfilePage> {
   }
 
   Future<void> _logout() async {
-    final confirmed = await AppDialogs.confirmLogout(context);
-    if (!confirmed || !mounted) return;
-    await ref.read(authStateProvider.notifier).logout();
+    final result = await showDialog<bool>(
+      context: context,
+      useRootNavigator: true,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('Logout'),
+        content: const Text('Are you sure you want to logout?'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(dialogContext).pop(true),
+            child: const Text('Logout'),
+          ),
+        ],
+      ),
+    );
+    if (result != true || !mounted) return;
+
+    unawaited(ref.read(authStateProvider.notifier).logout());
+    if (!mounted) return;
+    GoRouter.of(context).go(RoutePaths.authEntry);
   }
 
   @override
