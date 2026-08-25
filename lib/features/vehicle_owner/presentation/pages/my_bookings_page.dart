@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import 'package:open_space_parking/core/routes/route_paths.dart';
+import 'package:open_space_parking/core/theme/app_spacing.dart';
 import 'package:open_space_parking/core/widgets/errors/app_error_widget.dart';
 import 'package:open_space_parking/core/widgets/loading/app_loading_widget.dart';
 import 'package:open_space_parking/features/authentication/presentation/providers/auth_state_provider.dart';
@@ -10,6 +11,7 @@ import 'package:open_space_parking/features/vehicle_owner/domain/entities/bookin
 import 'package:open_space_parking/features/vehicle_owner/presentation/providers/vehicle_owner_providers.dart';
 import 'package:open_space_parking/features/vehicle_owner/presentation/widgets/booking_card.dart';
 import 'package:open_space_parking/features/vehicle_owner/presentation/widgets/vehicle_owner_app_bar_actions.dart';
+import 'package:open_space_parking/features/vehicle_owner/presentation/widgets/vehicle_owner_empty_state.dart';
 
 class MyBookingsPage extends ConsumerWidget {
   const MyBookingsPage({super.key});
@@ -30,7 +32,7 @@ class MyBookingsPage extends ConsumerWidget {
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Booking History'),
+        title: const Text('History'),
         actions: const [VehicleOwnerAppBarActions()],
       ),
       body: bookingsAsync.when(
@@ -42,14 +44,12 @@ class MyBookingsPage extends ConsumerWidget {
         ),
         data: (bookings) {
           if (bookings.isEmpty) {
-            return const Center(
-              child: Padding(
-                padding: EdgeInsets.all(24),
-                child: Text(
-                  'No bookings yet. Search for parking and book your first space.',
-                  textAlign: TextAlign.center,
-                ),
-              ),
+            return VehicleOwnerEmptyState(
+              icon: Icons.history,
+              title: 'No bookings yet',
+              message: 'Book a parking slot from the Home tab.',
+              actionLabel: 'Find parking',
+              onAction: () => context.go(RoutePaths.vehicleOwnerDashboard),
             );
           }
 
@@ -60,19 +60,17 @@ class MyBookingsPage extends ConsumerWidget {
             onRefresh: () async =>
                 ref.invalidate(vehicleOwnerBookingsProvider(vehicleOwnerId)),
             child: ListView(
-              padding: const EdgeInsets.all(16),
+              padding: const EdgeInsets.all(AppSpacing.md),
               children: [
                 if (live.isNotEmpty) ...[
                   Text(
-                    'Parking QR (open until payment)',
-                    style: Theme.of(context).textTheme.titleMedium,
+                    'Active',
+                    style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                          fontWeight: FontWeight.w600,
+                          color: Theme.of(context).colorScheme.primary,
+                        ),
                   ),
-                  const SizedBox(height: 4),
-                  Text(
-                    'Tap the QR icon to show your ticket to security.',
-                    style: Theme.of(context).textTheme.bodySmall,
-                  ),
-                  const SizedBox(height: 12),
+                  const SizedBox(height: AppSpacing.sm),
                   ...live.map(
                     (booking) => BookingCard(
                       booking: booking,
@@ -80,14 +78,16 @@ class MyBookingsPage extends ConsumerWidget {
                       onShowQr: () => _openTicket(context, booking),
                     ),
                   ),
-                  if (past.isNotEmpty) const SizedBox(height: 8),
+                  if (past.isNotEmpty) const SizedBox(height: AppSpacing.md),
                 ],
                 if (past.isNotEmpty) ...[
                   Text(
-                    live.isNotEmpty ? 'Past bookings' : 'Booking history',
-                    style: Theme.of(context).textTheme.titleMedium,
+                    'Past',
+                    style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                          fontWeight: FontWeight.w600,
+                        ),
                   ),
-                  const SizedBox(height: 12),
+                  const SizedBox(height: AppSpacing.sm),
                   ...past.map(
                     (booking) => BookingCard(
                       booking: booking,

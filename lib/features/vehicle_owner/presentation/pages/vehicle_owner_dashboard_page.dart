@@ -4,11 +4,7 @@ import 'package:go_router/go_router.dart';
 
 import 'package:open_space_parking/core/routes/route_paths.dart';
 import 'package:open_space_parking/core/theme/app_spacing.dart';
-import 'package:open_space_parking/core/widgets/animations/app_fade_slide.dart';
-import 'package:open_space_parking/core/widgets/cards/app_action_card.dart';
 import 'package:open_space_parking/core/widgets/errors/app_error_widget.dart';
-import 'package:open_space_parking/core/widgets/layout/app_page_header.dart';
-import 'package:open_space_parking/core/widgets/layout/responsive_page.dart';
 import 'package:open_space_parking/core/widgets/loading/app_loading_widget.dart';
 import 'package:open_space_parking/core/widgets/loading/app_skeleton.dart';
 import 'package:open_space_parking/features/authentication/presentation/providers/auth_state_provider.dart';
@@ -20,24 +16,10 @@ import 'package:open_space_parking/features/vehicle_owner/presentation/widgets/v
 class VehicleOwnerDashboardPage extends ConsumerWidget {
   const VehicleOwnerDashboardPage({super.key});
 
-  void _openParking(
-    BuildContext context,
-    WidgetRef ref,
-    ParkingListing listing,
-  ) {
-    final key = _parkingRouteKey(listing);
+  void _openParking(BuildContext context, ParkingListing listing) {
+    final key = ParkingListingCard.routeKeyFor(listing);
     if (key.isEmpty) return;
     context.push(RoutePaths.vehicleOwnerParkingDetail(key));
-  }
-
-  static String _parkingRouteKey(ParkingListing listing) {
-    final id = listing.id.trim();
-    if (id.isNotEmpty &&
-        id != '[object Object]' &&
-        !id.contains('object Object')) {
-      return id;
-    }
-    return listing.ticketId.trim();
   }
 
   @override
@@ -50,121 +32,114 @@ class VehicleOwnerDashboardPage extends ConsumerWidget {
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Dashboard'),
+        title: const Text('Parking'),
         actions: const [VehicleOwnerAppBarActions()],
       ),
-      body: ResponsivePage(
-        maxWidth: 800,
-        scrollable: true,
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            AppPageHeader(
-              title: 'Hello, $name',
-              subtitle: 'Search and book open-space parking near you.',
-            ),
-            const SizedBox(height: AppSpacing.sectionGap),
-            bookingsAsync.when(
-              loading: () => const SizedBox.shrink(),
-              error: (_, __) => const SizedBox.shrink(),
-              data: (bookings) {
-                final live = bookings.where((b) => b.isQrLive).toList();
-                if (live.isEmpty) return const SizedBox.shrink();
-                final ticket = live.first;
-                return AppActionCard(
-                  icon: Icons.qr_code_2,
-                  title: 'Your parking QR',
-                  subtitle:
-                      'Slot ${ticket.assignedSlot ?? '-'} at ${ticket.displayParkingName}. '
-                      'Open this until you finish payment.',
-                  onTap: () => context.push(
-                    RoutePaths.vehicleOwnerParkingTicket(ticket.id),
-                  ),
-                );
-              },
-            ),
-            AppStaggeredList(
-              children: [
-                AppActionCard(
-                  icon: Icons.near_me_rounded,
-                  title: 'Nearby Parking',
-                  subtitle: 'Search on map or list with filters.',
-                  onTap: () => context.go(RoutePaths.vehicleOwnerSearch),
-                ),
-                AppActionCard(
-                  icon: Icons.favorite_rounded,
-                  title: 'Favorites',
-                  subtitle: 'View your saved parking spaces.',
-                  onTap: () => context.go(RoutePaths.vehicleOwnerFavorites),
-                ),
-                AppActionCard(
-                  icon: Icons.map_rounded,
-                  title: 'Parking Map',
-                  subtitle: 'Full-screen map with directions and navigation.',
-                  onTap: () => context.push(RoutePaths.nearbyParkingMap),
-                ),
-              ],
-            ),
-            const SizedBox(height: AppSpacing.sectionGap),
-            Row(
-              children: [
-                Expanded(
-                  child: Text(
-                    'Nearby Parking',
-                    style: Theme.of(context).textTheme.titleMedium,
-                  ),
-                ),
-                TextButton(
-                  onPressed: () => context.go(RoutePaths.vehicleOwnerSearch),
-                  child: const Text('See all'),
-                ),
-              ],
-            ),
-            listingsAsync.when(
-              loading: () => AppLoadingWidget(
+      body: RefreshIndicator(
+        onRefresh: () async => ref.invalidate(parkingListingsProvider),
+        child: listingsAsync.when(
+          loading: () => ListView(
+            physics: const AlwaysScrollableScrollPhysics(),
+            padding: const EdgeInsets.all(AppSpacing.md),
+            children: [
+              Text(
+                'Hello, $name',
+                style: Theme.of(context).textTheme.titleLarge,
+              ),
+              const SizedBox(height: AppSpacing.md),
+              AppLoadingWidget(
                 message: 'Loading parking spaces...',
                 useSkeleton: true,
                 skeleton: AppSkeleton.parkingCards(),
               ),
-              error: (_, __) => AppErrorWidget(
+            ],
+          ),
+          error: (_, __) => ListView(
+            physics: const AlwaysScrollableScrollPhysics(),
+            children: [
+              AppErrorWidget(
                 message: 'Could not load parking spaces.',
                 onRetry: () => ref.invalidate(parkingListingsProvider),
               ),
-              data: (listings) {
-                if (listings.isEmpty) {
-                  return Padding(
-                    padding: const EdgeInsets.only(top: AppSpacing.sm),
-                    child: Text(
-                      'No parking spaces to show yet. Open Nearby to search, '
-                      'or wait until a parking site is verified.',
-                      style: Theme.of(context).textTheme.bodyMedium,
-                    ),
-                  );
-                }
-
-                final preview = listings.take(3).toList();
-                return Column(
-                  children: [
-                    ...preview.map(
-                      (listing) => ParkingListingCard(
-                        listing: listing,
-                        onTap: () => _openParking(context, ref, listing),
-                      ),
-                    ),
-                    if (listings.length > 3)
-                      Align(
-                        alignment: Alignment.center,
-                        child: TextButton(
-                          onPressed: () =>
-                              context.go(RoutePaths.vehicleOwnerSearch),
-                          child: Text('View all ${listings.length} spaces'),
-                        ),
-                      ),
-                  ],
-                );
+            ],
+          ),
+          data: (listings) {
+            final liveBooking = bookingsAsync.maybeWhen(
+              data: (bookings) {
+                final live = bookings.where((b) => b.isQrLive).toList();
+                return live.isEmpty ? null : live.first;
               },
-            ),
-          ],
+              orElse: () => null,
+            );
+
+            return ListView(
+              physics: const AlwaysScrollableScrollPhysics(),
+              padding: const EdgeInsets.fromLTRB(
+                AppSpacing.md,
+                AppSpacing.sm,
+                AppSpacing.md,
+                AppSpacing.lg,
+              ),
+              children: [
+                if (liveBooking != null)
+                  Card(
+                    margin: const EdgeInsets.only(bottom: AppSpacing.md),
+                    child: ListTile(
+                      leading: const Icon(Icons.qr_code_2),
+                      title: const Text('Active parking'),
+                      subtitle: Text(
+                        'Slot ${liveBooking.assignedSlot ?? '-'} · ${liveBooking.displayParkingName}',
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                      trailing: const Icon(Icons.chevron_right),
+                      onTap: () => context.push(
+                        RoutePaths.vehicleOwnerParkingTicket(liveBooking.id),
+                      ),
+                    ),
+                  ),
+                Text(
+                  'Hello, $name',
+                  style: Theme.of(context).textTheme.titleLarge,
+                ),
+                const SizedBox(height: AppSpacing.md),
+                if (listings.isEmpty)
+                  Padding(
+                    padding: const EdgeInsets.only(top: AppSpacing.xl),
+                    child: Center(
+                      child: Column(
+                        children: [
+                          Icon(
+                            Icons.local_parking_outlined,
+                            size: 48,
+                            color: Theme.of(context).colorScheme.outline,
+                          ),
+                          const SizedBox(height: AppSpacing.md),
+                          Text(
+                            'No parking spaces nearby yet.',
+                            style: Theme.of(context).textTheme.titleMedium,
+                          ),
+                          const SizedBox(height: AppSpacing.sm),
+                          Text(
+                            'Pull down to refresh or use the Nearby tab for map search.',
+                            textAlign: TextAlign.center,
+                            style: Theme.of(context).textTheme.bodyMedium,
+                          ),
+                        ],
+                      ),
+                    ),
+                  )
+                else
+                  ...listings.map(
+                    (listing) => ParkingListingCard(
+                      listing: listing,
+                      compact: true,
+                      onTap: () => _openParking(context, listing),
+                    ),
+                  ),
+              ],
+            );
+          },
         ),
       ),
     );

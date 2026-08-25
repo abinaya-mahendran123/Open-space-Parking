@@ -41,9 +41,10 @@ class MongoIntegrationService {
       await _databaseService.connect();
     }
 
-    // Indexes and default users are owned by the Node backend on Supabase.
-    // Only run client-side bootstrap for rare direct-Mongo desktop debugging.
-    if (!_isHttpApi) {
+    // Never seed from the phone/web HTTP client — Render/Node owns that.
+    // Direct Mongo is desktop-only (`USE_DIRECT_MONGO=true`).
+    final httpApi = _isHttpApi || _databaseService is HttpMongoDatabaseService;
+    if (!httpApi) {
       if (ensureIndexes) {
         await _indexService.ensureAllIndexes();
       }

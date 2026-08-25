@@ -90,7 +90,10 @@ class FcmService {
       if (text.contains('permission-blocked') ||
           text.contains('permission-denied') ||
           text.contains('not granted') ||
-          text.contains('timeoutexception')) {
+          text.contains('timeoutexception') ||
+          text.contains('failed-service-worker-registration') ||
+          text.contains('unsupported mime type')) {
+        // Common on web when push SW is missing or notifications not allowed.
         return null;
       }
       AppLogger.w('Failed to get FCM token: $e');

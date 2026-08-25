@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 
 import 'package:open_space_parking/core/domain/domain_extensions.dart';
+import 'package:open_space_parking/core/theme/app_spacing.dart';
+import 'package:open_space_parking/core/widgets/cards/app_card.dart';
 import 'package:open_space_parking/features/vehicle_owner/domain/entities/booking.dart';
 import 'package:open_space_parking/features/vehicle_owner/domain/entities/booking_status.dart';
 
@@ -16,73 +18,107 @@ class BookingCard extends StatelessWidget {
   final VoidCallback onTap;
   final VoidCallback? onShowQr;
 
-  Color _statusColor(BookingStatus status) {
+  Color _statusColor(BookingStatus status, ColorScheme scheme) {
     switch (status) {
       case BookingStatus.confirmed:
-        return Colors.green;
+        return const Color(0xFF2E7D32);
       case BookingStatus.active:
-        return Colors.blue;
+        return scheme.primary;
       case BookingStatus.completed:
-        return Colors.teal;
+        return const Color(0xFF00695C);
       case BookingStatus.cancelled:
-        return Colors.red;
+        return scheme.error;
       case BookingStatus.pending:
-        return Colors.orange;
+        return const Color(0xFFEF6C00);
     }
+  }
+
+  String _statusLabel(Booking booking) {
+    if (booking.isAwaitingPayment) {
+      return 'Pay ₹${(booking.amountDue ?? 0).toStringAsFixed(0)}';
+    }
+    if (booking.isParked) return 'Parked · ${booking.elapsedClock()}';
+    if (booking.isAwaitingEntry) return 'Show QR at entry';
+    return booking.status.label;
   }
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final scheme = theme.colorScheme;
+    final statusColor = _statusColor(booking.status, scheme);
 
-    return Card(
-      margin: const EdgeInsets.only(bottom: 12),
-      child: ListTile(
-        onTap: onTap,
-        leading: CircleAvatar(
-          backgroundColor: _statusColor(booking.status).withValues(alpha: 0.15),
-          child: Icon(
-            Icons.local_parking,
-            color: _statusColor(booking.status),
+    return AppCard(
+      onTap: onTap,
+      margin: const EdgeInsets.only(bottom: AppSpacing.sm),
+      padding: const EdgeInsets.all(12),
+      child: Row(
+        children: [
+          Container(
+            width: 44,
+            height: 44,
+            decoration: BoxDecoration(
+              color: statusColor.withValues(alpha: 0.12),
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: Icon(
+              booking.isQrLive ? Icons.qr_code_2 : Icons.local_parking_outlined,
+              color: statusColor,
+            ),
           ),
-        ),
-        title: Text(booking.displayParkingName),
-        subtitle: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              'Slot ${booking.assignedSlot ?? '-'} • ${booking.vehicleNumber}',
-            ),
-            Text(
-              booking.isAwaitingPayment
-                  ? 'Pay ₹${(booking.amountDue ?? 0).toStringAsFixed(0)} • ${booking.displaySessionId}'
-                  : booking.isParked
-                      ? 'Session ${booking.displaySessionId}'
-                      : booking.status.label,
-              style: theme.textTheme.labelMedium?.copyWith(
-                color: _statusColor(booking.status),
-              ),
-            ),
-          ],
-        ),
-        trailing: booking.isQrLive
-            ? IconButton(
-                tooltip: 'Show parking QR',
-                onPressed: onShowQr ?? onTap,
-                icon: const Icon(Icons.qr_code_2),
-              )
-            : Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                crossAxisAlignment: CrossAxisAlignment.end,
-                children: [
-                  Text(
-                    '₹${booking.totalPrice.toStringAsFixed(0)}',
-                    style: theme.textTheme.titleSmall,
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  booking.shortDisplayParkingName,
+                  style: theme.textTheme.titleSmall?.copyWith(
+                    fontWeight: FontWeight.w600,
                   ),
-                  const Icon(Icons.chevron_right, size: 18),
-                ],
-              ),
-        isThreeLine: true,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  'Slot ${booking.assignedSlot ?? '-'} · ${booking.vehicleNumber}',
+                  style: theme.textTheme.bodySmall?.copyWith(
+                    color: scheme.onSurfaceVariant,
+                  ),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  _statusLabel(booking),
+                  style: theme.textTheme.labelSmall?.copyWith(
+                    color: statusColor,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          if (booking.isQrLive)
+            IconButton(
+              tooltip: 'Show QR',
+              onPressed: onShowQr ?? onTap,
+              icon: const Icon(Icons.qr_code_2),
+            )
+          else
+            Column(
+              crossAxisAlignment: CrossAxisAlignment.end,
+              children: [
+                Text(
+                  '₹${booking.totalPrice.toStringAsFixed(0)}',
+                  style: theme.textTheme.labelLarge?.copyWith(
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+                Icon(Icons.chevron_right, size: 18, color: scheme.outline),
+              ],
+            ),
+        ],
       ),
     );
   }

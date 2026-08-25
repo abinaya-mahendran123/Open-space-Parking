@@ -1,5 +1,6 @@
 import 'package:equatable/equatable.dart';
 
+import 'package:open_space_parking/core/utils/text_format.dart';
 import 'package:open_space_parking/features/land_owner/domain/entities/parking_type.dart';
 
 class ParkingListing extends Equatable {
@@ -72,15 +73,44 @@ class ParkingListing extends Equatable {
   String get displayName {
     final name = parkingName?.trim();
     if (name != null && name.isNotEmpty) return name;
-    if (address != null && address!.trim().isNotEmpty) return address!.trim();
     if (ticketId.trim().isNotEmpty) return ticketId;
+    if (address != null && address!.trim().isNotEmpty) return address!.trim();
     return 'Verified Parking';
+  }
+
+  /// Shorter label for list rows and detail headers.
+  String get shortDisplayName {
+    final name = parkingName?.trim();
+    if (name != null && name.isNotEmpty) {
+      return truncateText(name, 40);
+    }
+    if (ticketId.trim().isNotEmpty) {
+      return '${parkingType.label} · ${ticketId.trim()}';
+    }
+    return parkingType.label;
   }
 
   String get displayTitle => '$displayName — $ticketId';
 
   String get locationLabel =>
       address ?? '${latitude.toStringAsFixed(4)}, ${longitude.toStringAsFixed(4)}';
+
+  /// Shorter address for compact UI (first line / first segments only).
+  String get shortLocationLabel {
+    final addr = address?.trim();
+    if (addr == null || addr.isEmpty) {
+      return '${latitude.toStringAsFixed(2)}, ${longitude.toStringAsFixed(2)}';
+    }
+    final parts = addr
+        .split(',')
+        .map((part) => part.trim())
+        .where((part) => part.isNotEmpty)
+        .toList();
+    if (parts.length >= 2) {
+      return truncateText('${parts[0]}, ${parts[1]}', 50);
+    }
+    return truncateText(addr, 50);
+  }
 
   bool get hasVerifiedAmount => hourlyRate != null && hourlyRate! > 0;
 

@@ -37,6 +37,7 @@ class AppBootstrap {
       await sl<MongoIntegrationService>().initialize();
       mongoReady = true;
       apiStatus.value = ApiConnectionStatus.ready;
+      AppLogger.i('Client build 2026-08-21-v3 — data layer ready');
       if (useBackendApiDataLayer) {
         AppLogger.i('Backend API connected (Supabase via Node)');
       } else {

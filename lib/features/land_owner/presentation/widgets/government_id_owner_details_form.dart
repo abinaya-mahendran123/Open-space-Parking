@@ -442,6 +442,13 @@ class GovernmentIdOwnerDetailsFormState
                   color: colorScheme.onSurfaceVariant,
                 ),
           ),
+          const SizedBox(height: 6),
+          Text(
+            'Best results: bright light, whole card in frame, keep the QR sharp. Plastic Aadhaar often has no phone — enter phone yourself if blank.',
+            style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                  color: colorScheme.onSurfaceVariant,
+                ),
+          ),
           const SizedBox(height: 16),
           _AadhaarUploadCard(
             hasFile: _hasFile,

@@ -1,5 +1,6 @@
 import 'package:equatable/equatable.dart';
 
+import 'package:open_space_parking/core/utils/text_format.dart';
 import 'package:open_space_parking/features/land_owner/domain/entities/parking_type.dart';
 import 'package:open_space_parking/features/vehicle_owner/domain/entities/booking_status.dart';
 
@@ -96,6 +97,31 @@ class Booking extends Equatable {
     final address = parkingAddress?.trim();
     if (address != null && address.isNotEmpty) return address;
     return parkingType.label;
+  }
+
+  String get shortDisplayParkingName {
+    final name = parkingName?.trim();
+    if (name != null && name.isNotEmpty) {
+      return truncateText(name, 36);
+    }
+    if (ticketId.trim().isNotEmpty) {
+      return '${parkingType.label} · ${ticketId.trim()}';
+    }
+    return parkingType.label;
+  }
+
+  String? get shortParkingAddress {
+    final addr = parkingAddress?.trim();
+    if (addr == null || addr.isEmpty) return null;
+    final parts = addr
+        .split(',')
+        .map((part) => part.trim())
+        .where((part) => part.isNotEmpty)
+        .toList();
+    if (parts.length >= 2) {
+      return truncateText('${parts[0]}, ${parts[1]}', 48);
+    }
+    return truncateText(addr, 48);
   }
 
   String get displaySessionId {

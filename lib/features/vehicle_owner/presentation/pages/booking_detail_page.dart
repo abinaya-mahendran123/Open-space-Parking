@@ -7,7 +7,9 @@ import 'package:open_space_parking/core/domain/domain_extensions.dart';
 import 'package:open_space_parking/core/common/exceptions/app_exception.dart';
 import 'package:open_space_parking/core/providers/core_providers.dart';
 import 'package:open_space_parking/core/routes/route_paths.dart';
+import 'package:open_space_parking/core/theme/app_spacing.dart';
 import 'package:open_space_parking/core/widgets/buttons/primary_button.dart';
+import 'package:open_space_parking/core/widgets/cards/app_card.dart';
 import 'package:open_space_parking/core/widgets/errors/app_error_widget.dart';
 import 'package:open_space_parking/core/widgets/loading/app_loading_widget.dart';
 import 'package:open_space_parking/features/authentication/presentation/providers/auth_state_provider.dart';
@@ -26,7 +28,7 @@ class BookingDetailPage extends ConsumerStatefulWidget {
 }
 
 class _BookingDetailPageState extends ConsumerState<BookingDetailPage> {
-  static final _dateFormat = DateFormat('dd MMM yyyy, hh:mm a');
+  static final _dateFormat = DateFormat('dd MMM, hh:mm a');
 
   bool _cancelling = false;
 
@@ -34,8 +36,8 @@ class _BookingDetailPageState extends ConsumerState<BookingDetailPage> {
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
-        title: const Text('Cancel Booking'),
-        content: const Text('Are you sure you want to cancel this booking?'),
+        title: const Text('Cancel booking?'),
+        content: const Text('This cannot be undone.'),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context, false),
@@ -43,7 +45,7 @@ class _BookingDetailPageState extends ConsumerState<BookingDetailPage> {
           ),
           FilledButton(
             onPressed: () => Navigator.pop(context, true),
-            child: const Text('Yes, Cancel'),
+            child: const Text('Yes, cancel'),
           ),
         ],
       ),
@@ -84,9 +86,9 @@ class _BookingDetailPageState extends ConsumerState<BookingDetailPage> {
     final bookingAsync = ref.watch(bookingDetailProvider(widget.bookingId));
 
     return Scaffold(
-      appBar: AppBar(title: const Text('Booking Details')),
+      appBar: AppBar(title: const Text('Booking')),
       body: bookingAsync.when(
-        loading: () => const AppLoadingWidget(message: 'Loading booking...'),
+        loading: () => const AppLoadingWidget(message: 'Loading...'),
         error: (_, __) => AppErrorWidget(
           message: 'Could not load booking',
           onRetry: () => ref.invalidate(bookingDetailProvider(widget.bookingId)),
@@ -99,127 +101,112 @@ class _BookingDetailPageState extends ConsumerState<BookingDetailPage> {
           final canCancel = booking.status == BookingStatus.confirmed ||
               booking.status == BookingStatus.pending ||
               booking.status == BookingStatus.active;
+          final amount =
+              booking.paidAmount ?? booking.amountDue ?? booking.totalPrice;
 
           return SingleChildScrollView(
-            padding: const EdgeInsets.all(16),
+            padding: const EdgeInsets.all(AppSpacing.md),
             child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                Card(
-                  child: Padding(
-                    padding: const EdgeInsets.all(16),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          booking.displayParkingName,
-                          style: Theme.of(context).textTheme.headlineSmall,
+                AppCard(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        booking.shortDisplayParkingName,
+                        style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                              fontWeight: FontWeight.bold,
+                            ),
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                      const SizedBox(height: 8),
+                      _summaryLine('Slot', '${booking.assignedSlot ?? '-'}'),
+                      _summaryLine('Vehicle', booking.vehicleNumber),
+                      _summaryLine(
+                        'Status',
+                        booking.status.label,
+                        valueColor: Theme.of(context).colorScheme.primary,
+                      ),
+                      if (booking.shortParkingAddress != null)
+                        _summaryLine('Location', booking.shortParkingAddress!),
+                      _summaryLine(
+                        'Start',
+                        _dateFormat.format(
+                          (booking.checkedInAt ?? booking.startDateTime).toLocal(),
                         ),
-                        const SizedBox(height: 4),
-                        Text('Session: ${booking.displaySessionId}'),
-                        Text('Slot ${booking.assignedSlot ?? '-'}'),
-                        const SizedBox(height: 8),
-                        Chip(label: Text(booking.status.label)),
-                      ],
-                    ),
+                      ),
+                      if (booking.checkedOutAt != null)
+                        _summaryLine(
+                          'End',
+                          _dateFormat.format(booking.checkedOutAt!.toLocal()),
+                        ),
+                      const Divider(height: 24),
+                      Row(
+                        children: [
+                          Text(
+                            'Total',
+                            style: Theme.of(context).textTheme.titleSmall,
+                          ),
+                          const Spacer(),
+                          Text(
+                            '₹${amount.toStringAsFixed(0)}',
+                            style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                                  fontWeight: FontWeight.bold,
+                                  color: Theme.of(context).colorScheme.primary,
+                                ),
+                          ),
+                        ],
+                      ),
+                    ],
                   ),
                 ),
-                const SizedBox(height: 16),
-                _DetailTile(
-                  icon: Icons.schedule,
-                  label: 'Start',
-                  value: _dateFormat.format(
-                    (booking.checkedInAt ?? booking.startDateTime).toLocal(),
-                  ),
-                ),
-                if (booking.checkedOutAt != null ||
-                    (!booking.isParked && !booking.isAwaitingEntry))
-                  _DetailTile(
-                    icon: Icons.schedule,
-                    label: booking.checkedOutAt != null ? 'Stop' : 'End',
-                    value: _dateFormat.format(
-                      (booking.checkedOutAt ?? booking.endDateTime).toLocal(),
-                    ),
-                  ),
-                _DetailTile(
-                  icon: Icons.directions_car,
-                  label: 'Vehicle',
-                  value: booking.vehicleNumber,
-                ),
-                if (booking.vehicleModel != null)
-                  _DetailTile(
-                    icon: Icons.car_rental,
-                    label: 'Model',
-                    value: booking.vehicleModel!,
-                  ),
-                if (booking.parkingAddress != null)
-                  _DetailTile(
-                    icon: Icons.location_on,
-                    label: 'Address',
-                    value: booking.parkingAddress!,
-                  ),
-                if (booking.assignedSlot != null)
-                  _DetailTile(
-                    icon: Icons.pin,
-                    label: 'Slot',
-                    value: '${booking.assignedSlot}',
-                  ),
-                if (booking.actualDurationHours != null)
-                  _DetailTile(
-                    icon: Icons.timer_outlined,
-                    label: 'Duration',
-                    value: booking.billedDurationLabel,
-                  ),
-                _DetailTile(
-                  icon: Icons.payments,
-                  label: booking.paidAt != null ? 'Total Paid' : 'Amount',
-                  value:
-                      '₹${(booking.paidAmount ?? booking.amountDue ?? booking.totalPrice).toStringAsFixed(0)}',
-                ),
-                const SizedBox(height: 24),
-                if (booking.isQrLive) ...[
-                  FilledButton.icon(
+                const SizedBox(height: AppSpacing.lg),
+                if (booking.isQrLive)
+                  PrimaryButton(
+                    label: 'Show QR ticket',
+                    icon: Icons.qr_code_2,
                     onPressed: () => context.push(
                       RoutePaths.vehicleOwnerParkingTicket(booking.id),
                     ),
-                    icon: const Icon(Icons.qr_code),
-                    label: const Text('Show QR Ticket'),
                   ),
-                  const SizedBox(height: 8),
-                ],
                 if (booking.isAwaitingPayment) ...[
                   PrimaryButton(
-                    label:
-                        'Pay ₹${booking.amountDue!.toStringAsFixed(0)} with Razorpay',
+                    label: 'Pay ₹${booking.amountDue!.toStringAsFixed(0)}',
+                    icon: Icons.payment,
                     onPressed: () => context.push(
                       RoutePaths.vehicleOwnerPayBooking(booking.id),
                     ),
                   ),
-                  const SizedBox(height: 8),
+                  const SizedBox(height: AppSpacing.sm),
                 ],
-                if (booking.status == BookingStatus.completed) ...[
+                if (booking.status == BookingStatus.completed)
                   OutlinedButton.icon(
                     onPressed: () => context.push(
                       RoutePaths.vehicleOwnerBookingReceipt(booking.id),
                     ),
                     icon: const Icon(Icons.receipt_long),
-                    label: const Text('View Receipt'),
+                    label: const Text('View receipt'),
                   ),
-                  const SizedBox(height: 8),
-                ],
-                OutlinedButton.icon(
+                if (booking.isQrLive ||
+                    booking.isAwaitingPayment ||
+                    booking.status == BookingStatus.completed)
+                  const SizedBox(height: AppSpacing.sm),
+                OutlinedButton(
                   onPressed: _openParkingDetail,
-                  icon: const Icon(Icons.local_parking),
-                  label: const Text('View Parking Space'),
+                  child: const Text('View parking'),
                 ),
                 if (canCancel &&
                     !booking.isParked &&
                     !booking.isAwaitingPayment) ...[
-                  const SizedBox(height: 12),
-                  PrimaryButton(
-                    label: 'Cancel Booking',
-                    isLoading: _cancelling,
+                  const SizedBox(height: AppSpacing.md),
+                  TextButton(
                     onPressed: _cancelling ? null : () => _cancel(vehicleOwnerId),
+                    child: Text(
+                      _cancelling ? 'Cancelling...' : 'Cancel booking',
+                      style: TextStyle(color: Theme.of(context).colorScheme.error),
+                    ),
                   ),
                 ],
               ],
@@ -229,26 +216,35 @@ class _BookingDetailPageState extends ConsumerState<BookingDetailPage> {
       ),
     );
   }
-}
 
-class _DetailTile extends StatelessWidget {
-  const _DetailTile({
-    required this.icon,
-    required this.label,
-    required this.value,
-  });
-
-  final IconData icon;
-  final String label;
-  final String value;
-
-  @override
-  Widget build(BuildContext context) {
-    return ListTile(
-      contentPadding: EdgeInsets.zero,
-      leading: Icon(icon),
-      title: Text(label),
-      subtitle: Text(value),
+  Widget _summaryLine(String label, String value, {Color? valueColor}) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 8),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          SizedBox(
+            width: 72,
+            child: Text(
+              label,
+              style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                    color: Theme.of(context).colorScheme.onSurfaceVariant,
+                  ),
+            ),
+          ),
+          Expanded(
+            child: Text(
+              value,
+              style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                    fontWeight: FontWeight.w500,
+                    color: valueColor,
+                  ),
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+            ),
+          ),
+        ],
+      ),
     );
   }
 }

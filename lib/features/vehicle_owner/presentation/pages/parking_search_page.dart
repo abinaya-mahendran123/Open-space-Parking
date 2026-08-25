@@ -7,7 +7,6 @@ import 'package:open_space_parking/core/providers/core_providers.dart';
 import 'package:open_space_parking/core/routes/route_paths.dart';
 import 'package:open_space_parking/core/widgets/errors/app_error_widget.dart';
 import 'package:open_space_parking/core/widgets/loading/app_loading_widget.dart';
-import 'package:open_space_parking/features/maps/domain/entities/directions_request.dart';
 import 'package:open_space_parking/features/maps/domain/entities/location_permission_status.dart';
 import 'package:open_space_parking/features/maps/domain/entities/map_coordinate.dart';
 import 'package:open_space_parking/features/maps/domain/entities/map_marker_data.dart';
@@ -122,19 +121,6 @@ class _ParkingSearchPageState extends ConsumerState<ParkingSearchPage> {
     context.push(RoutePaths.vehicleOwnerParkingDetail(key));
   }
 
-  Future<void> _navigateTo(ParkingListing listing) async {
-    final origin = ref.read(mapSelectionProvider).currentLocation;
-    await ref.read(mapsRepositoryProvider).openNavigation(
-          DirectionsRequest(
-            destination: MapCoordinate(
-              latitude: listing.latitude,
-              longitude: listing.longitude,
-            ),
-            origin: origin,
-          ),
-        );
-  }
-
   void _applySearch() {
     final current = ref.read(searchFiltersProvider);
     ref.read(searchFiltersProvider.notifier).state = current.copyWith(
@@ -163,7 +149,7 @@ class _ParkingSearchPageState extends ConsumerState<ParkingSearchPage> {
               latitude: listing.latitude,
               longitude: listing.longitude,
             ),
-            title: listing.displayName,
+            title: listing.shortDisplayName,
             snippet: [
               listing.distanceLabel,
               listing.compatibilityLabel,
@@ -203,9 +189,12 @@ class _ParkingSearchPageState extends ConsumerState<ParkingSearchPage> {
               const SizedBox(height: 8),
               Text(
                 hasLocation
-                    ? "We couldn't find an approved parking space that is currently available and compatible with your vehicle.\n\nTry expanding your search area."
-                    : 'Allow location access or tap Current Location to find approved parking near you.',
+                    ? 'Try adjusting filters or search again.'
+                    : 'Turn on location to find parking near you.',
                 textAlign: TextAlign.center,
+                style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                      color: Theme.of(context).colorScheme.onSurfaceVariant,
+                    ),
               ),
             ],
           ),
@@ -235,21 +224,11 @@ class _ParkingSearchPageState extends ConsumerState<ParkingSearchPage> {
               },
             ),
             const SizedBox(height: 16),
-            Text(
-              'Recommended for Your Vehicle',
-              style: Theme.of(context).textTheme.titleSmall,
-            ),
-            const SizedBox(height: 4),
-            Text(
-              '${listings.length} approved parking location${listings.length == 1 ? '' : 's'} found',
-              style: Theme.of(context).textTheme.bodySmall,
-            ),
-            const SizedBox(height: 8),
             ...listings.map(
               (listing) => ParkingListingCard(
                 listing: listing,
+                compact: true,
                 onTap: () => _openParking(listing),
-                onNavigate: () => _navigateTo(listing),
               ),
             ),
           ],
@@ -269,8 +248,8 @@ class _ParkingSearchPageState extends ConsumerState<ParkingSearchPage> {
           final listing = listings[isRefreshing ? index - 1 : index];
           return ParkingListingCard(
             listing: listing,
+            compact: true,
             onTap: () => _openParking(listing),
-            onNavigate: () => _navigateTo(listing),
           );
         },
       ),
@@ -281,18 +260,13 @@ class _ParkingSearchPageState extends ConsumerState<ParkingSearchPage> {
   Widget build(BuildContext context) {
     final filters = ref.watch(searchFiltersProvider);
     final listingsAsync = ref.watch(parkingListingsProvider);
-    final mapState = ref.watch(mapSelectionProvider);
     final hasLocation =
         filters.userLatitude != null && filters.userLongitude != null;
     final cachedListings = listingsAsync.valueOrNull;
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Find Nearby Parking'),
-        leading: IconButton(
-          icon: const Icon(Icons.arrow_back),
-          onPressed: () => context.go(RoutePaths.vehicleOwnerDashboard),
-        ),
+        title: const Text('Map'),
         actions: [
           const VehicleOwnerLiveQrButton(),
           IconButton(
@@ -310,26 +284,13 @@ class _ParkingSearchPageState extends ConsumerState<ParkingSearchPage> {
       body: Column(
         children: [
           Padding(
-            padding: const EdgeInsets.all(16),
+            padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
             child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 const LocationPermissionBanner(),
-                Card(
-                  child: ListTile(
-                    leading: const Icon(Icons.my_location),
-                    title: const Text('Your Location'),
-                    subtitle: Text(
-                      hasLocation && mapState.currentLocation != null
-                          ? 'Current Location • ${mapState.currentLocation!.latitude.toStringAsFixed(4)}, ${mapState.currentLocation!.longitude.toStringAsFixed(4)}'
-                          : 'Location not available yet',
-                    ),
-                  ),
-                ),
-                const SizedBox(height: 12),
                 SearchBar(
                   controller: _searchController,
-                  hintText: 'Search by address or ticket ID',
+                  hintText: 'Search parking or ticket ID',
                   leading: const Icon(Icons.search),
                   trailing: [
                     IconButton(
@@ -342,7 +303,7 @@ class _ParkingSearchPageState extends ConsumerState<ParkingSearchPage> {
                   ],
                   onSubmitted: (_) => _applySearch(),
                 ),
-                const SizedBox(height: 12),
+                const SizedBox(height: 8),
                 Row(
                   children: [
                     Expanded(
@@ -354,9 +315,10 @@ class _ParkingSearchPageState extends ConsumerState<ParkingSearchPage> {
                                 height: 16,
                                 child: CircularProgressIndicator(strokeWidth: 2),
                               )
-                            : const Icon(Icons.my_location),
-                        label: Text(
-                          hasLocation ? 'Update Location' : 'Current Location',
+                            : const Icon(Icons.my_location, size: 18),
+                        label: Text(hasLocation ? 'Update' : 'Location'),
+                        style: FilledButton.styleFrom(
+                          padding: const EdgeInsets.symmetric(vertical: 10),
                         ),
                       ),
                     ),
@@ -364,9 +326,10 @@ class _ParkingSearchPageState extends ConsumerState<ParkingSearchPage> {
                     Expanded(
                       child: FilledButton.tonalIcon(
                         onPressed: _showFilters,
-                        icon: const Icon(Icons.tune),
-                        label: Text(
-                          filters.hasActiveFilters ? 'Filters •' : 'Filters',
+                        icon: const Icon(Icons.tune, size: 18),
+                        label: Text(filters.hasActiveFilters ? 'Filters •' : 'Filters'),
+                        style: FilledButton.styleFrom(
+                          padding: const EdgeInsets.symmetric(vertical: 10),
                         ),
                       ),
                     ),
