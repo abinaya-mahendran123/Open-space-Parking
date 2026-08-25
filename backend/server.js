@@ -215,8 +215,10 @@ function phoneLastFour(phone) {
 
 function phoneLastSix(phone) {
   const digits = phoneDigits(phone);
-  if (digits.length < 6) return '';
-  return digits.slice(-6);
+  // Use national 10-digit number so +91 does not change the password.
+  const national = digits.length > 10 ? digits.slice(-10) : digits;
+  if (national.length < 6) return '';
+  return national.slice(-6);
 }
 
 async function findActiveUserByPhone(phone) {
@@ -915,13 +917,19 @@ app.post('/api/auth/employee-phone-login', async (req, res) => {
     // Password rule: last 6 digits of the employee phone number.
     const expectedPassword = phoneLastSix(normalizedPhone);
     if (!expectedPassword || password !== expectedPassword) {
-      res.status(401).json({ error: 'Incorrect password. Please try again.' });
+      res.status(401).json({
+        error:
+          'Incorrect password. Use the last 6 digits of this mobile number.',
+      });
       return;
     }
 
     const employee = await findEmployeeByPhone(normalizedPhone);
     if (!employee) {
-      res.status(401).json({ error: 'Incorrect password. Please try again.' });
+      res.status(404).json({
+        error:
+          'No employee account found for this mobile number. Ask admin to add you first.',
+      });
       return;
     }
     if (employee.isActive !== true) {
@@ -1068,51 +1076,225 @@ app.post('/api/auth/phone-register', async (req, res) => {
   }
 });
 
+async function findActiveUserByGoogle({ email, googleId }) {
+  const normalizedEmail = String(email || '').trim().toLowerCase();
+  const trimmedGoogleId = String(googleId || '').trim();
+  if (trimmedGoogleId) {
+    const byGoogle = await db.collection('users').findOne({
+      googleId: trimmedGoogleId,
+      isDeleted: { $ne: true },
+    });
+    if (byGoogle) return byGoogle;
+  }
+  if (normalizedEmail) {
+    return findActiveUserByEmail(normalizedEmail);
+  }
+  return null;
+}
+
+async function verifyGoogleIdToken(idToken) {
+  const expectedAudience =
+    process.env.GOOGLE_WEB_CLIENT_ID ||
+    process.env.GOOGLE_SERVER_CLIENT_ID ||
+    '794049298844-v8f8okbjfb4memdcjugcpqfd58tk71j0.apps.googleusercontent.com';
+
+  const response = await fetch(
+    `https://oauth2.googleapis.com/tokeninfo?id_token=${encodeURIComponent(idToken)}`,
+  );
+  const payload = await response.json().catch(() => ({}));
+  if (!response.ok || !payload.email || !payload.sub) {
+    const error = new Error('Google sign-in could not be verified.');
+    error.statusCode = 401;
+    throw error;
+  }
+
+  const audience = payload.aud;
+  if (expectedAudience && audience && audience !== expectedAudience) {
+    const error = new Error('Google token audience is invalid.');
+    error.statusCode = 401;
+    throw error;
+  }
+
+  if (payload.email_verified !== 'true' && payload.email_verified !== true) {
+    const error = new Error('Google email is not verified.');
+    error.statusCode = 401;
+    throw error;
+  }
+
+  return {
+    email: String(payload.email).trim().toLowerCase(),
+    googleId: String(payload.sub).trim(),
+    displayName:
+      payload.name || String(payload.email).split('@')[0] || 'Google User',
+    emailVerified: true,
+  };
+}
+
 app.post('/api/auth/google', async (req, res) => {
   try {
-    const idToken = req.body.idToken;
+    const idToken = String(req.body?.idToken || '').trim();
     if (!idToken) {
       res.status(400).json({ error: 'Google sign-in token is required.' });
       return;
     }
 
-    const expectedAudience =
-      process.env.GOOGLE_WEB_CLIENT_ID ||
-      process.env.GOOGLE_SERVER_CLIENT_ID ||
-      '794049298844-v8f8okbjfb4memdcjugcpqfd58tk71j0.apps.googleusercontent.com';
+    const action = String(req.body?.action || 'verify').trim().toLowerCase();
+    const profile = await verifyGoogleIdToken(idToken);
 
-    const response = await fetch(
-      `https://oauth2.googleapis.com/tokeninfo?id_token=${encodeURIComponent(idToken)}`,
-    );
-    const payload = await response.json().catch(() => ({}));
-    if (!response.ok || !payload.email || !payload.sub) {
-      res.status(401).json({ error: 'Google sign-in could not be verified.' });
+    if (action === 'verify') {
+      res.json({
+        ok: true,
+        email: profile.email,
+        googleId: profile.googleId,
+        displayName: profile.displayName,
+        emailVerified: true,
+      });
       return;
     }
 
-    const audience = payload.aud;
-    if (expectedAudience && audience && audience !== expectedAudience) {
-      res.status(401).json({ error: 'Google token audience is invalid.' });
+    if (action === 'login') {
+      const user = await findActiveUserByGoogle(profile);
+      if (!user) {
+        res.status(404).json({
+          error: 'No account found for this Google email. Sign up first.',
+        });
+        return;
+      }
+
+      const role = String(user.role || '');
+      if (role === 'employee') {
+        res.status(403).json({
+          error: 'Employee must use employee portal login.',
+        });
+        return;
+      }
+      if (role === 'security') {
+        res.status(403).json({
+          error: 'Security must use the security gate login.',
+        });
+        return;
+      }
+
+      if (!user.googleId) {
+        await db.collection('users').updateOne(
+          { _id: user._id },
+          {
+            $set: {
+              googleId: profile.googleId,
+              authProvider: 'google',
+              updatedAt: new Date().toISOString(),
+            },
+          },
+        );
+        user.googleId = profile.googleId;
+        user.authProvider = 'google';
+      }
+
+      if (profile.displayName && !user.displayName) {
+        user.displayName = profile.displayName;
+      }
+
+      res.json(sessionPayload(user));
       return;
     }
 
-    if (
-      payload.email_verified !== 'true' &&
-      payload.email_verified !== true
-    ) {
-      res.status(401).json({ error: 'Google email is not verified.' });
+    if (action === 'register') {
+      let role = String(req.body?.role || 'vehicle_owner').trim();
+      if (role === 'vehicleOwner') role = 'vehicle_owner';
+      if (role === 'landOwner') role = 'land_owner';
+      if (role === 'admin' || role === 'employee' || role === 'security') {
+        res.status(403).json({ error: 'This role cannot be self-registered.' });
+        return;
+      }
+      if (role !== 'vehicle_owner' && role !== 'land_owner') {
+        role = 'vehicle_owner';
+      }
+
+      const displayName = String(
+        req.body?.displayName || profile.displayName || '',
+      ).trim() || profile.email.split('@')[0];
+
+      const existing = await findActiveUserByGoogle(profile);
+      if (existing) {
+        const existingRole = String(existing.role || '');
+        if (existingRole === 'employee') {
+          res.status(403).json({
+            error: 'Employee must use employee portal login.',
+          });
+          return;
+        }
+        if (existingRole === 'security') {
+          res.status(403).json({
+            error: 'Security must use the security gate login.',
+          });
+          return;
+        }
+        if (!existing.googleId) {
+          await db.collection('users').updateOne(
+            { _id: existing._id },
+            {
+              $set: {
+                googleId: profile.googleId,
+                authProvider: 'google',
+                updatedAt: new Date().toISOString(),
+              },
+            },
+          );
+          existing.googleId = profile.googleId;
+        }
+        res.json(sessionPayload(existing));
+        return;
+      }
+
+      const now = new Date().toISOString();
+      const user = {
+        _id: new ObjectId(),
+        email: profile.email,
+        googleId: profile.googleId,
+        displayName,
+        role,
+        authProvider: 'google',
+        isDeleted: false,
+        createdAt: now,
+        updatedAt: now,
+      };
+      await db.collection('users').insertOne(user);
+
+      if (role === 'land_owner') {
+        await db.collection('land_owner_profiles').insertOne({
+          _id: new ObjectId(),
+          ownerId: asHexId(user._id),
+          ownerDetails: {
+            fullName: displayName,
+            phone: '',
+            email: profile.email,
+            address: '',
+          },
+          createdAt: now,
+          updatedAt: now,
+          isDeleted: false,
+        });
+      } else {
+        await db.collection('vehicle_owner_profiles').insertOne({
+          _id: new ObjectId(),
+          vehicleOwnerId: asHexId(user._id),
+          fullName: displayName,
+          email: profile.email,
+          createdAt: now,
+          updatedAt: now,
+          isDeleted: false,
+        });
+      }
+
+      res.json(sessionPayload(user));
       return;
     }
 
-    res.json({
-      ok: true,
-      email: payload.email,
-      googleId: payload.sub,
-      displayName: payload.name || String(payload.email).split('@')[0],
-      emailVerified: true,
+    res.status(400).json({
+      error: 'Invalid Google auth action. Use verify, login, or register.',
     });
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    res.status(error.statusCode || 500).json({ error: error.message });
   }
 });
 

@@ -32,7 +32,11 @@ class AuthMethodButton extends StatelessWidget {
         child: Row(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            leading,
+            SizedBox(
+              width: 24,
+              height: 24,
+              child: Center(child: leading),
+            ),
             const SizedBox(width: 12),
             Flexible(
               child: Text(
@@ -52,7 +56,7 @@ class AuthMethodButton extends StatelessWidget {
 }
 
 class GoogleLogoIcon extends StatelessWidget {
-  const GoogleLogoIcon({super.key, this.size = 20});
+  const GoogleLogoIcon({super.key, this.size = 22});
 
   final double size;
 
@@ -63,6 +67,8 @@ class GoogleLogoIcon extends StatelessWidget {
       height: size,
       child: CustomPaint(
         painter: _GoogleLogoPainter(),
+        // Keep strokes fully visible inside the button.
+        child: const SizedBox.expand(),
       ),
     );
   }
@@ -71,48 +77,58 @@ class GoogleLogoIcon extends StatelessWidget {
 class _GoogleLogoPainter extends CustomPainter {
   @override
   void paint(Canvas canvas, Size size) {
-    final w = size.width;
-    final h = size.height;
-    final center = Offset(w / 2, h / 2);
-    final radius = w * 0.42;
+    final stroke = size.shortestSide * 0.16;
+    // Inset so the stroke width never gets clipped by the box edge.
+    final radius = (size.shortestSide - stroke) / 2 - 0.5;
+    final center = Offset(size.width / 2, size.height / 2);
+    final arcRect = Rect.fromCircle(center: center, radius: radius);
 
-    final blue = Paint()..color = const Color(0xFF4285F4);
-    final red = Paint()..color = const Color(0xFFEA4335);
-    final yellow = Paint()..color = const Color(0xFFFBBC05);
-    final green = Paint()..color = const Color(0xFF34A853);
+    final blue = Paint()
+      ..color = const Color(0xFF4285F4)
+      ..strokeWidth = stroke
+      ..style = PaintingStyle.stroke
+      ..strokeCap = StrokeCap.butt
+      ..isAntiAlias = true;
+    final red = Paint()
+      ..color = const Color(0xFFEA4335)
+      ..strokeWidth = stroke
+      ..style = PaintingStyle.stroke
+      ..strokeCap = StrokeCap.butt
+      ..isAntiAlias = true;
+    final yellow = Paint()
+      ..color = const Color(0xFFFBBC05)
+      ..strokeWidth = stroke
+      ..style = PaintingStyle.stroke
+      ..strokeCap = StrokeCap.butt
+      ..isAntiAlias = true;
+    final green = Paint()
+      ..color = const Color(0xFF34A853)
+      ..strokeWidth = stroke
+      ..style = PaintingStyle.stroke
+      ..strokeCap = StrokeCap.butt
+      ..isAntiAlias = true;
 
-    canvas.drawArc(
-      Rect.fromCircle(center: center, radius: radius),
-      -0.4,
-      1.2,
-      false,
-      blue..strokeWidth = w * 0.18..style = PaintingStyle.stroke,
-    );
-    canvas.drawArc(
-      Rect.fromCircle(center: center, radius: radius),
-      0.8,
-      1.0,
-      false,
-      green..strokeWidth = w * 0.18..style = PaintingStyle.stroke,
-    );
-    canvas.drawArc(
-      Rect.fromCircle(center: center, radius: radius),
-      1.8,
-      1.0,
-      false,
-      yellow..strokeWidth = w * 0.18..style = PaintingStyle.stroke,
-    );
-    canvas.drawArc(
-      Rect.fromCircle(center: center, radius: radius),
-      2.8,
-      1.0,
-      false,
-      red..strokeWidth = w * 0.18..style = PaintingStyle.stroke,
-    );
+    // Classic Google "G" ring segments (angles in radians).
+    canvas.drawArc(arcRect, -0.45, 1.25, false, blue);
+    canvas.drawArc(arcRect, 0.85, 1.05, false, green);
+    canvas.drawArc(arcRect, 1.95, 1.0, false, yellow);
+    canvas.drawArc(arcRect, 3.0, 0.95, false, red);
 
-    canvas.drawRect(
-      Rect.fromLTWH(w * 0.48, h * 0.38, w * 0.42, w * 0.16),
-      blue..style = PaintingStyle.fill,
+    final barHeight = stroke * 0.95;
+    final barLeft = center.dx - stroke * 0.15;
+    final barRight = center.dx + radius;
+    canvas.drawRRect(
+      RRect.fromLTRBR(
+        barLeft,
+        center.dy - barHeight / 2,
+        barRight,
+        center.dy + barHeight / 2,
+        Radius.circular(barHeight / 4),
+      ),
+      Paint()
+        ..color = const Color(0xFF4285F4)
+        ..style = PaintingStyle.fill
+        ..isAntiAlias = true,
     );
   }
 

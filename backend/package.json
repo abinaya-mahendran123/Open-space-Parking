@@ -6,10 +6,12 @@
   "main": "server.js",
   "scripts": {
     "prestart": "node ensure-mongo.js",
-    "start": "node server.js",
+    "start": "node scripts/start_with_ocr.js",
+    "start:node-only": "node server.js",
+    "setup:ocr": "node scripts/setup_paddleocr.js",
     "migrate:supabase": "node migrate-mongo-to-supabase.js",
     "sync:tables": "node backfill-named-tables.js",
-    "dev": "node ensure-mongo.js && node server.js",
+    "dev": "node ensure-mongo.js && node scripts/start_with_ocr.js",
     "test:ocr": "node ocr/ocr_field_extraction.test.js && node ocr/ocr_merge.test.js",
     "benchmark:ocr": "node scripts/ocr_benchmark.js"
   },

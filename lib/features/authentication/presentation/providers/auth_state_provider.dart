@@ -275,6 +275,7 @@ class AuthStateNotifier extends StateNotifier<AuthState> {
         email: profile.email,
         googleId: profile.googleId,
         displayName: profile.displayName,
+        idToken: profile.idToken,
       ),
     );
   }
@@ -301,24 +302,29 @@ class AuthStateNotifier extends StateNotifier<AuthState> {
         googleId: profile.googleId,
         displayName: profile.displayName,
         role: role,
+        idToken: profile.idToken,
       ),
     );
   }
 
   Future<void> logout() async {
-    // Clear auth state first so GoRouter cannot bounce users back while
-    // session storage and identity providers are still clearing.
+    // Clear local auth first so GoRouter redirect can leave protected pages
+    // immediately. Provider sign-out runs in the background (can hang on device).
     state = const AuthState.unauthenticated();
     _authTokenProvider.clear();
     try {
-      await _sessionService.clearSession().timeout(const Duration(seconds: 3));
+      await _sessionService.clearSession().timeout(const Duration(seconds: 2));
     } catch (_) {}
-    try {
-      await sl<GoogleAuthService>().signOut().timeout(const Duration(seconds: 3));
-    } catch (_) {}
-    try {
-      await sl<OtpAuthService>().signOut().timeout(const Duration(seconds: 3));
-    } catch (_) {}
+
+    // Do not block UI on Google / Firebase sign-out.
+    Future<void>(() async {
+      try {
+        await sl<GoogleAuthService>().signOut().timeout(const Duration(seconds: 2));
+      } catch (_) {}
+      try {
+        await sl<OtpAuthService>().signOut().timeout(const Duration(seconds: 2));
+      } catch (_) {}
+    });
   }
 }
 

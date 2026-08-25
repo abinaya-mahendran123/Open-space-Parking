@@ -491,7 +491,6 @@ class GovernmentIdOwnerDetailsFormState
             uploadedUrl: _uploadedUrl,
             progress: _uploadProgress,
             onUpload: _showPickerOptions,
-            onCamera: CameraAccess.isSupported ? _captureFromCamera : null,
             onRemove: _removeUpload,
             onRescan: () => _extractDetails(),
           ),
@@ -555,7 +554,6 @@ class _AadhaarUploadCard extends StatelessWidget {
     required this.uploadedUrl,
     required this.progress,
     required this.onUpload,
-    this.onCamera,
     required this.onRemove,
     required this.onRescan,
   });
@@ -569,7 +567,6 @@ class _AadhaarUploadCard extends StatelessWidget {
   final String? uploadedUrl;
   final UploadProgress progress;
   final VoidCallback onUpload;
-  final VoidCallback? onCamera;
   final VoidCallback onRemove;
   final VoidCallback onRescan;
 
@@ -788,24 +785,11 @@ class _AadhaarUploadCard extends StatelessWidget {
                 ),
               ] else if (!isUploading) ...[
                 const SizedBox(height: 12),
-                if (onCamera != null) ...[
-                  FilledButton.icon(
-                    onPressed: onCamera,
-                    icon: const Icon(Icons.camera_alt_outlined),
-                    label: const Text('Take Photo with Camera'),
-                  ),
-                  const SizedBox(height: 8),
-                  OutlinedButton.icon(
-                    onPressed: onUpload,
-                    icon: const Icon(Icons.upload_outlined),
-                    label: const Text('Upload from Files'),
-                  ),
-                ] else
-                  FilledButton.tonalIcon(
-                    onPressed: onUpload,
-                    icon: const Icon(Icons.upload_outlined),
-                    label: const Text('Upload Aadhaar Card'),
-                  ),
+                FilledButton.tonalIcon(
+                  onPressed: onUpload,
+                  icon: const Icon(Icons.upload_outlined),
+                  label: const Text('Upload Aadhaar Card'),
+                ),
               ],
             ],
           ),

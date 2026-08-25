@@ -94,15 +94,52 @@ PADDLEOCR_LANGS=en,ta,hi
 
 ### Render / production
 
-PaddleOCR is CPU/RAM intensive (~500 MB+ with models). Recommended:
+Your Render logs showed:
 
-- **Option A:** Second Render **Background Worker** or private service running `python main.py`, with `PADDLEOCR_SERVICE_URL` pointing to it from the Node service.
-- **Option B:** Single VPS with Node + Python managed by systemd/supervisor.
-- **Option C:** Subprocess fallback on the same host (higher latency on cold model load).
+```text
+ModuleNotFoundError: No module named 'cv2'
+connect ECONNREFUSED 127.0.0.1:8765
+```
 
-Do not assume PaddleOCR runs on Render free tier without verifying instance RAM (≥2 GB recommended).
+That means Node was deployed, but **Python OCR deps were never installed** and the **Paddle worker was never started**.
 
-See `backend/ocr/README.md` for architecture details.
+#### Fix (same web service)
+
+1. In Render → your API service → **Settings**:
+   - **Root Directory**: leave **empty** (repo root), not `backend`
+   - **Build Command**:
+     ```bash
+     cd backend && npm install && npm run setup:ocr
+     ```
+   - **Start Command**:
+     ```bash
+     cd backend && npm start
+     ```
+2. Env vars (optional but recommended):
+   ```env
+   PADDLEOCR_SERVICE_URL=http://127.0.0.1:8765
+   PADDLEOCR_SERVICE_PORT=8765
+   PADDLEOCR_LANGS=en,ta,hi
+   ```
+3. **Manual Deploy** → Clear build cache & deploy
+
+Build installs `opencv-python-headless` (provides `cv2`) into `python/paddleocr_service/.venv`.  
+Start launches PaddleOCR on port 8765, then Node.
+
+#### RAM note
+
+PaddleOCR needs ~1–2 GB. On free/small instances it may still fall back to Tesseract. Prefer **Starter** (or larger) if Aadhaar OCR must use Paddle.
+
+#### Skip Paddle (Tesseract only)
+
+```env
+SKIP_PADDLEOCR_SETUP=1
+SKIP_PADDLEOCR_WORKER=1
+```
+
+See `backend/ocr/README.md` and `python/paddleocr_service/README.md`.
+
+Or use `render.yaml` at the repo root with Blueprint deploy.
 
 ## Flutter production build
 

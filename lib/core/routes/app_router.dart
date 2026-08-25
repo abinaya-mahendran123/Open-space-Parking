@@ -84,20 +84,10 @@ final appRouterProvider = Provider<GoRouter>((ref) {
       }
 
       if (status == AuthStatus.unauthenticated) {
-        if (RoutePaths.isSecurityRoute(location)) {
-          return RoutePaths.authEntry;
+        if (inAuthFlow || location == RoutePaths.employeeLogin) {
+          return null;
         }
-        if (isAdminPath) {
-          return RoutePaths.authEntry;
-        }
-        if (isEmployeePath && location != RoutePaths.employeeLogin) {
-          return RoutePaths.authEntry;
-        }
-        if (landOwnerRoutes.contains(location) || isVehicleOwnerPath) {
-          return RoutePaths.authEntry;
-        }
-        if (RoutePaths.isMapsRoute(location)) return RoutePaths.authEntry;
-        return null;
+        return RoutePaths.authEntry;
       }
 
       if (status != AuthStatus.authenticated) return null;

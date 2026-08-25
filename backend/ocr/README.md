@@ -46,7 +46,19 @@ python main.py
 
 Node env: `PADDLEOCR_SERVICE_URL=http://127.0.0.1:8765`
 
-If the HTTP service is unavailable, Node falls back to a Python subprocess (same `main.py` CLI).
+### Production (Render)
+
+```bash
+cd backend
+npm run setup:ocr   # install cv2 + paddle into python/paddleocr_service/.venv
+npm start           # starts Paddle worker + Node API
+```
+
+Render **Build Command**: `cd backend && npm install && npm run setup:ocr`  
+Render **Start Command**: `cd backend && npm start`  
+(Root Directory = repo root, not `backend`)
+
+If the HTTP service is unavailable, Node falls back to a Python subprocess (same `main.py` CLI), then Tesseract.js.
 
 ## Tests
 

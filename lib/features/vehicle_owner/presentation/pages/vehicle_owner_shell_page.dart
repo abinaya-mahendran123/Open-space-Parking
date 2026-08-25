@@ -66,20 +66,9 @@ class _VehicleOwnerShellPageState extends ConsumerState<VehicleOwnerShellPage> {
       onDestinationSelected: _selectTab,
       destinations: const [
         NavigationDestination(
-<<<<<<< HEAD
           icon: Icon(Icons.local_parking_outlined),
           selectedIcon: Icon(Icons.local_parking),
           label: 'Parking',
-        ),
-        NavigationDestination(
-          icon: Icon(Icons.map_outlined),
-          selectedIcon: Icon(Icons.map),
-          label: 'Map',
-=======
-          icon: Icon(Icons.near_me_outlined),
-          selectedIcon: Icon(Icons.near_me),
-          label: 'Nearby',
->>>>>>> 4d74481cebd25527cb39e1c58ace47a1fc53d593
         ),
         NavigationDestination(
           icon: Icon(Icons.favorite_outline),

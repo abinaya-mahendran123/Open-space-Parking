@@ -1,0 +1,29 @@
+# Render Blueprint — Open Space Parking API + PaddleOCR on one service.
+# Dashboard: New → Blueprint → connect this repo, or copy Build/Start below manually.
+#
+# Important:
+# - Root Directory in Render MUST be the repo root (not /backend),
+#   so python/paddleocr_service is available at build time.
+# - Free tier often OOMs on PaddleOCR; use at least 2 GB RAM if possible.
+# - If OCR setup fails, Node still starts and falls back to Tesseract.js.
+
+services:
+  - type: web
+    name: open-space-parking-api
+    runtime: node
+    plan: starter
+    rootDir: .
+    buildCommand: cd backend && npm install && npm run setup:ocr
+    startCommand: cd backend && npm start
+    healthCheckPath: /api/health
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: PADDLEOCR_SERVICE_URL
+        value: http://127.0.0.1:8765
+      - key: PADDLEOCR_SERVICE_PORT
+        value: "8765"
+      - key: PADDLEOCR_LANGS
+        value: en,ta,hi
+      # Set these in the Render dashboard (do not commit secrets):
+      # DATABASE_URL, JWT_SECRET, CLOUDINARY_*, RAZORPAY_*, etc.

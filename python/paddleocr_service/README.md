@@ -54,10 +54,32 @@ python main.py --image /path/to/image.jpg --langs en,ta,hi
 
 ## Render deployment
 
-PaddleOCR is CPU/RAM heavy. Recommended options:
+Node + PaddleOCR can run on **one** Render web service.
 
-1. **Two Render services**: Node web service + Python worker service (private network URL).
-2. **Single VPS** with both processes managed by systemd/supervisor.
-3. **Subprocess on same host** only if instance has ≥2 GB RAM and acceptable cold-start latency.
+### Build / Start (required)
 
-Do not assume PaddleOCR works on Render free tier without verifying instance size.
+In the Render dashboard (Root Directory = **repo root**, empty):
+
+| Setting | Value |
+|---------|--------|
+| Build Command | `cd backend && npm install && npm run setup:ocr` |
+| Start Command | `cd backend && npm start` |
+
+`setup:ocr` creates `python/paddleocr_service/.venv` and installs `opencv-python-headless` (fixes `No module named 'cv2'`).  
+`npm start` runs `scripts/start_with_ocr.js`, which starts this Flask app on `:8765`, then Node.
+
+### Env
+
+```env
+PADDLEOCR_SERVICE_URL=http://127.0.0.1:8765
+PADDLEOCR_SERVICE_PORT=8765
+PADDLEOCR_LANGS=en,ta,hi
+```
+
+### Options
+
+1. **Two Render services**: Node web + Python worker (set `PADDLEOCR_SERVICE_URL` to the worker URL; set `SKIP_PADDLEOCR_WORKER=1` on Node).
+2. **Single VPS** with systemd/supervisor.
+3. **Tesseract only**: `SKIP_PADDLEOCR_SETUP=1` and `SKIP_PADDLEOCR_WORKER=1`.
+
+PaddleOCR needs ~1–2 GB RAM. Free tier often falls back to Tesseract after OOM.

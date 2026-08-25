@@ -49,6 +49,7 @@ abstract class AuthRepository {
     required String email,
     required String googleId,
     required String displayName,
+    String? idToken,
   });
 
   Future<AuthSession> registerWithGoogle({
@@ -56,5 +57,6 @@ abstract class AuthRepository {
     required String googleId,
     required String displayName,
     required UserRole role,
+    String? idToken,
   });
 }

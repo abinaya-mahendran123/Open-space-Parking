@@ -1,16 +1,15 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 
 import 'package:open_space_parking/core/common/exceptions/app_exception.dart';
 import 'package:open_space_parking/core/providers/core_providers.dart';
-import 'package:open_space_parking/core/routes/app_router.dart';
 import 'package:open_space_parking/core/routes/route_paths.dart';
 import 'package:open_space_parking/core/theme/app_spacing.dart';
 import 'package:open_space_parking/core/utils/validators.dart';
 import 'package:open_space_parking/core/widgets/buttons/primary_button.dart';
 import 'package:open_space_parking/core/widgets/cards/app_card.dart';
 import 'package:open_space_parking/core/widgets/textfields/app_text_field.dart';
-import 'package:open_space_parking/core/widgets/dialogs/app_dialogs.dart';
 import 'package:open_space_parking/core/utils/profile_prefill.dart';
 import 'package:open_space_parking/features/authentication/domain/entities/auth_session.dart';
 import 'package:open_space_parking/features/authentication/presentation/providers/auth_form_providers.dart';
@@ -107,32 +106,63 @@ class _VehicleOwnerProfilePageState extends ConsumerState<VehicleOwnerProfilePag
     }
   }
 
-<<<<<<< HEAD
   void _clearAuthFormState() {
     ref.read(phoneAuthStepProvider.notifier).state = PhoneAuthStep.enterPhone;
     ref.read(verifiedPhoneProvider.notifier).state = null;
     ref.read(authLoadingProvider.notifier).state = false;
   }
 
+  Future<bool> _confirmLogout() async {
+    final result = await showDialog<bool>(
+      context: context,
+      useRootNavigator: true,
+      barrierDismissible: true,
+      builder: (dialogContext) {
+        return AlertDialog(
+          title: const Text('Logout'),
+          content: const Text('Are you sure you want to logout?'),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(dialogContext).pop(false),
+              child: const Text('Cancel'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.of(dialogContext).pop(true),
+              child: const Text('Logout'),
+            ),
+          ],
+        );
+      },
+    );
+    return result == true;
+  }
+
   Future<void> _logout() async {
     if (_loggingOut) return;
+
+    final confirmed = await _confirmLogout();
+    if (!confirmed || !mounted) return;
 
     setState(() {
       _loggingOut = true;
       _editing = false;
     });
 
-    _clearAuthFormState();
-    await ref.read(authStateProvider.notifier).logout();
-    if (!mounted) return;
-
-    ref.read(appRouterProvider).go(RoutePaths.authEntry);
-=======
-  Future<void> _logout() async {
-    final confirmed = await AppDialogs.confirmLogout(context);
-    if (!confirmed || !mounted) return;
-    await ref.read(authStateProvider.notifier).logout();
->>>>>>> 4d74481cebd25527cb39e1c58ace47a1fc53d593
+    try {
+      _clearAuthFormState();
+      await ref.read(authStateProvider.notifier).logout();
+      if (!mounted) return;
+      // Use the widget's GoRouter so navigation always hits the live app router.
+      GoRouter.of(context).go(RoutePaths.authEntry);
+    } catch (_) {
+      if (mounted) {
+        ref
+            .read(snackbarServiceProvider)
+            .showError('Could not log out. Try again.');
+      }
+    } finally {
+      if (mounted) setState(() => _loggingOut = false);
+    }
   }
 
   @override
@@ -140,14 +170,6 @@ class _VehicleOwnerProfilePageState extends ConsumerState<VehicleOwnerProfilePag
     final auth = ref.watch(authStateProvider);
     final vehicleOwnerId = auth.session?.userId ?? '';
     final profileAsync = ref.watch(vehicleOwnerProfileProvider(vehicleOwnerId));
-
-    ref.listen<AuthState>(authStateProvider, (previous, next) {
-      if (previous?.status == AuthStatus.authenticated &&
-          next.status == AuthStatus.unauthenticated &&
-          mounted) {
-        ref.read(appRouterProvider).go(RoutePaths.authEntry);
-      }
-    });
 
     return Scaffold(
       appBar: AppBar(
@@ -238,7 +260,6 @@ class _VehicleOwnerProfilePageState extends ConsumerState<VehicleOwnerProfilePag
           icon: Icons.edit_outlined,
           onPressed: _startEditing,
         ),
-<<<<<<< HEAD
         const SizedBox(height: AppSpacing.sm),
         PrimaryButton(
           label: 'Logout',
@@ -246,13 +267,6 @@ class _VehicleOwnerProfilePageState extends ConsumerState<VehicleOwnerProfilePag
           variant: PrimaryButtonVariant.outlined,
           isLoading: _loggingOut,
           onPressed: _loggingOut ? null : _logout,
-=======
-        const SizedBox(height: AppSpacing.md),
-        OutlinedButton.icon(
-          onPressed: _logout,
-          icon: const Icon(Icons.logout),
-          label: const Text('Logout'),
->>>>>>> 4d74481cebd25527cb39e1c58ace47a1fc53d593
         ),
         const SizedBox(height: AppSpacing.lg),
       ],

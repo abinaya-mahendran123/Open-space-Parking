@@ -75,8 +75,10 @@ class AppDialogs {
                           children: [
                             Expanded(
                               child: OutlinedButton(
-                                onPressed: () =>
-                                    Navigator.of(context).pop(false),
+                                onPressed: () => Navigator.of(
+                                  context,
+                                  rootNavigator: true,
+                                ).pop(false),
                                 child: Text(cancelText),
                               ),
                             ),
@@ -89,8 +91,10 @@ class AppDialogs {
                                         foregroundColor: colorScheme.onError,
                                       )
                                     : null,
-                                onPressed: () =>
-                                    Navigator.of(context).pop(true),
+                                onPressed: () => Navigator.of(
+                                  context,
+                                  rootNavigator: true,
+                                ).pop(true),
                                 child: Text(confirmText),
                               ),
                             ),
