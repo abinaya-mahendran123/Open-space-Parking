@@ -128,7 +128,7 @@ void main() {
       when(
         () => authRepository.loginEmployee(
           phone: '9876543210',
-          password: AuthFixtures.testPassword,
+          password: '543210',
         ),
       ).thenAnswer(
         (_) async => AuthFixtures.session(
@@ -139,7 +139,7 @@ void main() {
 
       await notifier.loginEmployee(
         phone: '9876543210',
-        password: AuthFixtures.testPassword,
+        password: '543210',
       );
 
       expect(notifier.state.session?.role, UserRole.employee);

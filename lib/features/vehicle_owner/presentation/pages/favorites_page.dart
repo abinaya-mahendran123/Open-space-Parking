@@ -23,6 +23,13 @@ class FavoritesPage extends ConsumerWidget {
     return Scaffold(
       appBar: AppBar(
         title: const Text('Favorites'),
+<<<<<<< HEAD
+=======
+        leading: IconButton(
+          icon: const Icon(Icons.arrow_back),
+          onPressed: () => context.go(RoutePaths.vehicleOwnerSearch),
+        ),
+>>>>>>> 4d74481cebd25527cb39e1c58ace47a1fc53d593
         actions: const [VehicleOwnerAppBarActions()],
       ),
       body: favoritesAsync.when(

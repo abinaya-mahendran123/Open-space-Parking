@@ -37,11 +37,18 @@ class AuthFixtures {
   static Map<String, dynamic> employeeDocument({
     String email = 'employee@test.com',
     String phone = '9876543210',
-    String password = testPassword,
+    String? password,
     String salt = testSalt,
     bool isActive = true,
     ObjectId? id,
   }) {
+    // Default employee password = last 6 digits of phone.
+    final resolvedPassword = password ??
+        (phone.replaceAll(RegExp(r'\D'), '').length >= 6
+            ? phone.replaceAll(RegExp(r'\D'), '').substring(
+                  phone.replaceAll(RegExp(r'\D'), '').length - 6,
+                )
+            : '000000');
     return {
       '_id': id ?? ObjectId(),
       'email': email.trim().toLowerCase(),
@@ -49,7 +56,7 @@ class AuthFixtures {
       'fullName': 'Test Employee',
       'isActive': isActive,
       'passwordSalt': salt,
-      'passwordHash': passwordHash(password, salt: salt),
+      'passwordHash': passwordHash(resolvedPassword, salt: salt),
     };
   }
 

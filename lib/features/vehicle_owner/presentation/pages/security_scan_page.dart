@@ -10,6 +10,7 @@ import 'package:open_space_parking/core/common/exceptions/app_exception.dart';
 import 'package:open_space_parking/core/di/service_locator.dart';
 import 'package:open_space_parking/core/providers/core_providers.dart';
 import 'package:open_space_parking/core/routes/route_paths.dart';
+import 'package:open_space_parking/core/widgets/dialogs/app_dialogs.dart';
 import 'package:open_space_parking/features/authentication/presentation/providers/auth_form_providers.dart';
 import 'package:open_space_parking/features/authentication/presentation/providers/auth_state_provider.dart';
 import 'package:open_space_parking/features/vehicle_owner/domain/entities/booking.dart';
@@ -183,6 +184,9 @@ class _SecurityScanPageState extends ConsumerState<SecurityScanPage> {
   }
 
   Future<void> _logout() async {
+    final confirmed = await AppDialogs.confirmLogout(context);
+    if (!confirmed || !mounted) return;
+
     if (_view == _SecurityView.scanner) {
       setState(() {
         _view = _SecurityView.desk;

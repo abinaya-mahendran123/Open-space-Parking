@@ -40,6 +40,13 @@ class PhoneUtils {
     return digits.substring(digits.length - 4);
   }
 
+  /// Last 6 digits of a phone number (employee password).
+  static String lastSixDigits(String phone) {
+    final digits = digitsOnly(phone);
+    if (digits.length < 6) return '';
+    return digits.substring(digits.length - 6);
+  }
+
   static bool isGateSecurityPhone(String phone) {
     final digits = digitsOnly(phone);
     final lastTen =

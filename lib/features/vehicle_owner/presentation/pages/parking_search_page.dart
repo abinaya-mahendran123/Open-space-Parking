@@ -266,7 +266,11 @@ class _ParkingSearchPageState extends ConsumerState<ParkingSearchPage> {
 
     return Scaffold(
       appBar: AppBar(
+<<<<<<< HEAD
         title: const Text('Map'),
+=======
+        title: const Text('Find Nearby Parking'),
+>>>>>>> 4d74481cebd25527cb39e1c58ace47a1fc53d593
         actions: [
           const VehicleOwnerLiveQrButton(),
           IconButton(

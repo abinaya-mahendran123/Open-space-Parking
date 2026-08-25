@@ -213,6 +213,12 @@ function phoneLastFour(phone) {
   return digits.slice(-4);
 }
 
+function phoneLastSix(phone) {
+  const digits = phoneDigits(phone);
+  if (digits.length < 6) return '';
+  return digits.slice(-6);
+}
+
 async function findActiveUserByPhone(phone) {
   const lastTen = phoneKey(phone);
   if (!lastTen) return null;
@@ -906,6 +912,13 @@ app.post('/api/auth/employee-phone-login', async (req, res) => {
       return;
     }
 
+    // Password rule: last 6 digits of the employee phone number.
+    const expectedPassword = phoneLastSix(normalizedPhone);
+    if (!expectedPassword || password !== expectedPassword) {
+      res.status(401).json({ error: 'Incorrect password. Please try again.' });
+      return;
+    }
+
     const employee = await findEmployeeByPhone(normalizedPhone);
     if (!employee) {
       res.status(401).json({ error: 'Incorrect password. Please try again.' });
@@ -918,17 +931,27 @@ app.post('/api/auth/employee-phone-login', async (req, res) => {
       });
       return;
     }
-    if (!employee.passwordSalt || !employee.passwordHash) {
-      res.status(401).json({
-        error: 'Employee login is not configured. Contact your administrator.',
-      });
-      return;
-    }
 
-    const computed = hashPassword(password, employee.passwordSalt);
-    if (computed !== employee.passwordHash) {
-      res.status(401).json({ error: 'Incorrect password. Please try again.' });
-      return;
+    // Keep stored hash in sync with the last-6 rule (also upgrades older hashes).
+    const salt = employee.passwordSalt || generateSalt();
+    const hash = hashPassword(expectedPassword, salt);
+    if (
+      !employee.passwordSalt ||
+      !employee.passwordHash ||
+      employee.passwordHash !== hash
+    ) {
+      await db.collection('employees').updateOne(
+        { _id: employee._id },
+        {
+          $set: {
+            passwordHash: hash,
+            passwordSalt: salt,
+            updatedAt: new Date().toISOString(),
+          },
+        },
+      );
+      employee.passwordHash = hash;
+      employee.passwordSalt = salt;
     }
 
     res.json(employeeSessionPayload(employee));

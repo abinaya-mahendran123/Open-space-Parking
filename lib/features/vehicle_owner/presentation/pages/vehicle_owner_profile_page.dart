@@ -10,6 +10,7 @@ import 'package:open_space_parking/core/utils/validators.dart';
 import 'package:open_space_parking/core/widgets/buttons/primary_button.dart';
 import 'package:open_space_parking/core/widgets/cards/app_card.dart';
 import 'package:open_space_parking/core/widgets/textfields/app_text_field.dart';
+import 'package:open_space_parking/core/widgets/dialogs/app_dialogs.dart';
 import 'package:open_space_parking/core/utils/profile_prefill.dart';
 import 'package:open_space_parking/features/authentication/domain/entities/auth_session.dart';
 import 'package:open_space_parking/features/authentication/presentation/providers/auth_form_providers.dart';
@@ -106,6 +107,7 @@ class _VehicleOwnerProfilePageState extends ConsumerState<VehicleOwnerProfilePag
     }
   }
 
+<<<<<<< HEAD
   void _clearAuthFormState() {
     ref.read(phoneAuthStepProvider.notifier).state = PhoneAuthStep.enterPhone;
     ref.read(verifiedPhoneProvider.notifier).state = null;
@@ -125,6 +127,12 @@ class _VehicleOwnerProfilePageState extends ConsumerState<VehicleOwnerProfilePag
     if (!mounted) return;
 
     ref.read(appRouterProvider).go(RoutePaths.authEntry);
+=======
+  Future<void> _logout() async {
+    final confirmed = await AppDialogs.confirmLogout(context);
+    if (!confirmed || !mounted) return;
+    await ref.read(authStateProvider.notifier).logout();
+>>>>>>> 4d74481cebd25527cb39e1c58ace47a1fc53d593
   }
 
   @override
@@ -230,6 +238,7 @@ class _VehicleOwnerProfilePageState extends ConsumerState<VehicleOwnerProfilePag
           icon: Icons.edit_outlined,
           onPressed: _startEditing,
         ),
+<<<<<<< HEAD
         const SizedBox(height: AppSpacing.sm),
         PrimaryButton(
           label: 'Logout',
@@ -237,6 +246,13 @@ class _VehicleOwnerProfilePageState extends ConsumerState<VehicleOwnerProfilePag
           variant: PrimaryButtonVariant.outlined,
           isLoading: _loggingOut,
           onPressed: _loggingOut ? null : _logout,
+=======
+        const SizedBox(height: AppSpacing.md),
+        OutlinedButton.icon(
+          onPressed: _logout,
+          icon: const Icon(Icons.logout),
+          label: const Text('Logout'),
+>>>>>>> 4d74481cebd25527cb39e1c58ace47a1fc53d593
         ),
         const SizedBox(height: AppSpacing.lg),
       ],

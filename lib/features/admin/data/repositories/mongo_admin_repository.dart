@@ -6,6 +6,7 @@ import 'package:mongo_dart/mongo_dart.dart';
 
 import 'package:open_space_parking/core/common/exceptions/app_exception.dart';
 import 'package:open_space_parking/core/config/app_constants.dart';
+import 'package:open_space_parking/core/utils/phone_utils.dart';
 import 'package:open_space_parking/core/services/mongodb/mongo_collection_service.dart';
 import 'package:open_space_parking/core/services/mongodb/mongo_database_service.dart';
 import 'package:open_space_parking/core/integration/notification_helper.dart';
@@ -317,9 +318,11 @@ class MongoAdminRepository implements AdminRepository {
 
     const roleTitle = 'Field Employee';
     final normalizedEmail = 'emp.$phoneDigits@openspace.local';
-    final temporaryPassword = phoneDigits.length >= 8
-        ? phoneDigits.substring(phoneDigits.length - 8)
-        : phoneDigits.padLeft(8, '0');
+    // Password rule: last 6 digits of the employee phone number.
+    final temporaryPassword = PhoneUtils.lastSixDigits(trimmedPhone);
+    if (temporaryPassword.length != 6) {
+      throw const AppException('Enter a valid 10-digit mobile number.');
+    }
 
     final id = ObjectId();
     final now = DateTime.now().toUtc();

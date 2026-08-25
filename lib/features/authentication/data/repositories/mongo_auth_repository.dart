@@ -105,13 +105,17 @@ class MongoAuthRepository implements AuthRepository {
     required String password,
   }) async {
     final normalizedPhone = PhoneUtils.normalizeIndianMobile(phone);
+    final expected = PhoneUtils.lastSixDigits(normalizedPhone);
+    if (expected.isEmpty || password.trim() != expected) {
+      throw const AppException('Incorrect password. Please try again.');
+    }
 
     final apiClient = _apiClient;
     if (apiClient != null) {
       try {
         final response = await apiClient.post('/api/auth/employee-phone-login', {
           'phone': normalizedPhone,
-          'password': password,
+          'password': password.trim(),
         });
         return _sessionFromApi(
           response,
@@ -140,17 +144,24 @@ class MongoAuthRepository implements AuthRepository {
       );
     }
 
-    final salt = employee['passwordSalt'] as String?;
-    final hash = employee['passwordHash'] as String?;
-    if (salt == null || hash == null) {
-      throw const AppException(
-        'Employee login is not configured. Ask admin to set a password.',
+    // Keep stored hash aligned with last-6 rule for direct-Mongo fallback.
+    final salt = (employee['passwordSalt'] as String?) ?? _generateSalt();
+    final hash = sha256.convert(utf8.encode('$expected::$salt')).toString();
+    final needsUpdate = employee['passwordSalt'] == null ||
+        employee['passwordHash'] == null ||
+        employee['passwordHash'] != hash;
+    if (needsUpdate) {
+      final rawId = employee['_id'];
+      await _collectionService.updateOne(
+        collectionName: AppConstants.employeesCollection,
+        selector: where.id(
+          rawId is ObjectId ? rawId : ObjectId.parse(rawId.toString()),
+        ),
+        modifier: modify
+            .set('passwordHash', hash)
+            .set('passwordSalt', salt)
+            .set('updatedAt', DateTime.now().toUtc().toIso8601String()),
       );
-    }
-
-    final computedHash = sha256.convert(utf8.encode('$password::$salt')).toString();
-    if (computedHash != hash) {
-      throw const AppException('Incorrect password. Please try again.');
     }
 
     final rawId = employee['_id'];

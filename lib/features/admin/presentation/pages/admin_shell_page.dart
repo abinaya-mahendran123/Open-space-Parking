@@ -5,6 +5,7 @@ import 'package:go_router/go_router.dart';
 import 'package:open_space_parking/core/routes/route_paths.dart';
 import 'package:open_space_parking/core/utils/responsive.dart';
 import 'package:open_space_parking/core/widgets/layout/app_shell_scaffold.dart';
+import 'package:open_space_parking/core/widgets/dialogs/app_dialogs.dart';
 import 'package:open_space_parking/features/admin/presentation/pages/admin_dashboard_page.dart';
 import 'package:open_space_parking/features/admin/presentation/pages/admin_employees_page.dart';
 import 'package:open_space_parking/features/admin/presentation/pages/admin_statistics_page.dart';
@@ -101,6 +102,12 @@ class _AdminShellPageState extends ConsumerState<AdminShellPage> {
     ref.read(ticketFilterProvider.notifier).setStatus(status);
   }
 
+  Future<void> _logout() async {
+    final confirmed = await AppDialogs.confirmLogout(context);
+    if (!confirmed || !mounted) return;
+    await ref.read(authStateProvider.notifier).logout();
+  }
+
   void _onSelect(int index) {
     setState(() => _currentIndex = index);
     switch (index) {
@@ -151,7 +158,7 @@ class _AdminShellPageState extends ConsumerState<AdminShellPage> {
             actions: [
               IconButton(
                 tooltip: 'Logout',
-                onPressed: () => ref.read(authStateProvider.notifier).logout(),
+                onPressed: _logout,
                 icon: const Icon(Icons.logout),
               ),
             ],
@@ -199,7 +206,7 @@ class _AdminShellPageState extends ConsumerState<AdminShellPage> {
         actions: [
           IconButton(
             tooltip: 'Logout',
-            onPressed: () => ref.read(authStateProvider.notifier).logout(),
+            onPressed: _logout,
             icon: const Icon(Icons.logout),
           ),
         ],
