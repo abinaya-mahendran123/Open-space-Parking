@@ -1,4 +1,6 @@
 import 'dart:async';
+import 'dart:convert';
+import 'dart:typed_data';
 
 import 'package:open_space_parking/core/common/exceptions/app_exception.dart';
 import 'package:open_space_parking/core/common/exceptions/network_exception.dart';
@@ -38,6 +40,7 @@ class GovernmentIdOcrService {
     required String frontUrl,
     required String backUrl,
     required GovernmentIdType idType,
+    Uint8List? imageBytes,
   }) async {
     try {
       await _ensureApiAwake();
@@ -45,6 +48,7 @@ class GovernmentIdOcrService {
         frontUrl: frontUrl,
         backUrl: backUrl,
         idType: idType,
+        imageBytes: imageBytes,
       );
     } on AppException catch (error) {
       if (!_looksUnreachable(error.message)) rethrow;
@@ -54,6 +58,7 @@ class GovernmentIdOcrService {
         frontUrl: frontUrl,
         backUrl: backUrl,
         idType: idType,
+        imageBytes: imageBytes,
       );
     } on TimeoutException {
       throw const AppException(
@@ -88,14 +93,24 @@ class GovernmentIdOcrService {
     required String frontUrl,
     required String backUrl,
     required GovernmentIdType idType,
+    Uint8List? imageBytes,
   }) async {
+    final body = <String, dynamic>{
+      'frontUrl': frontUrl,
+      'backUrl': backUrl,
+      'idType': idType.apiValue,
+    };
+
+    // Prefer inline bytes so OCR still works after Render redeploys wipe /uploads.
+    if (imageBytes != null && imageBytes.isNotEmpty) {
+      final b64 = base64Encode(imageBytes);
+      body['frontBase64'] = b64;
+      body['backBase64'] = b64;
+    }
+
     final response = await _apiClient.post(
       '/api/ocr/government-id',
-      {
-        'frontUrl': frontUrl,
-        'backUrl': backUrl,
-        'idType': idType.apiValue,
-      },
+      body,
       timeout: _ocrTimeout,
     );
 

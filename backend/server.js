@@ -57,6 +57,8 @@ const MONGO_URI =
   (DATABASE_URL ? '' : 'mongodb://127.0.0.1:27017/open_space_parking');
 
 const app = express();
+// Render (and similar) terminate TLS; trust X-Forwarded-* so upload URLs use https.
+app.set('trust proxy', 1);
 const corsOrigins = parseCorsOrigins();
 app.use(
   cors(
@@ -74,7 +76,7 @@ app.use(
       : { origin: true },
   ),
 );
-app.use(express.json({ limit: '10mb' }));
+app.use(express.json({ limit: '20mb' }));
 app.use((error, _req, res, next) => {
   if (error instanceof SyntaxError && error.status === 400 && 'body' in error) {
     res.status(400).json({ error: 'Invalid JSON request body.' });
@@ -662,16 +664,23 @@ app.post('/api/digilocker/fetch-document', handleFetchDocument);
 
 app.post('/api/ocr/government-id', async (req, res) => {
   try {
-    const { frontUrl, backUrl, idType } = req.body || {};
+    const { frontUrl, backUrl, idType, frontBase64, backBase64 } = req.body || {};
     const extracted = await extractGovernmentIdDetails({
       frontUrl,
       backUrl,
       idType,
+      frontBase64,
+      backBase64,
     });
     res.json(extracted);
   } catch (error) {
     const message = error?.message || 'Could not extract details from ID images.';
-    const status = message.includes('required') || message.includes('Unsupported') ? 400 : 500;
+    const status =
+      message.includes('required') ||
+      message.includes('Unsupported') ||
+      message.includes('missing on the server')
+        ? 400
+        : 500;
     res.status(status).json({ error: message });
   }
 });
@@ -1379,7 +1388,11 @@ app.post('/api/uploads', upload.single('file'), (req, res) => {
     }
 
     const host = req.get('host');
-    const protocol = req.protocol;
+    const protocol = (
+      String(req.get('x-forwarded-proto') || req.protocol || 'https')
+        .split(',')[0]
+        .trim() || 'https'
+    );
     const url = `${protocol}://${host}/uploads/${req.file.filename}`;
     const extension = path.extname(req.file.originalname).slice(1).toLowerCase();
 

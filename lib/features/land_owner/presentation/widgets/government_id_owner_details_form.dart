@@ -338,6 +338,7 @@ class GovernmentIdOwnerDetailsFormState
         frontUrl: _uploadedUrl!,
         backUrl: _uploadedUrl!,
         idType: GovernmentIdType.aadhaar,
+        imageBytes: _previewBytes,
       );
 
       if (!mounted) return;

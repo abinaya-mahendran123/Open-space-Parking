@@ -1,5 +1,7 @@
+const fs = require('fs');
 const http = require('http');
 const https = require('https');
+const path = require('path');
 
 const { splitSideBySide } = require('./ocr_preprocess');
 const { extractAadhaarFromQr } = require('./aadhaar_qr');
@@ -14,10 +16,47 @@ const { runOcrPipeline } = require('./ocr/ocr_pipeline');
 const { terminateWorkers } = require('./ocr/tesseract_engine');
 const { logOcr } = require('./ocr/ocr_logging');
 
+const localUploadDir = path.join(__dirname, 'uploads');
+
+function decodeDataUrlOrBase64(value) {
+  const text = String(value || '').trim();
+  if (!text) return null;
+  const dataUrl = text.match(/^data:[^;]+;base64,(.+)$/i);
+  const b64 = dataUrl ? dataUrl[1] : text;
+  try {
+    const buf = Buffer.from(b64, 'base64');
+    return buf.length > 32 ? buf : null;
+  } catch (_) {
+    return null;
+  }
+}
+
+/** Prefer reading /uploads/* from disk — Render restarts wipe remote URLs mid-session. */
+function readLocalUploadIfPresent(url) {
+  try {
+    const parsed = new URL(String(url || ''));
+    const match = parsed.pathname.match(/\/uploads\/([^/]+)$/i);
+    if (!match) return null;
+    const fileName = path.basename(decodeURIComponent(match[1]));
+    if (!fileName || fileName === '.' || fileName === '..') return null;
+    const filePath = path.join(localUploadDir, fileName);
+    if (!fs.existsSync(filePath)) return null;
+    return fs.readFileSync(filePath);
+  } catch (_) {
+    return null;
+  }
+}
+
 function fetchBuffer(url, redirects = 0) {
   return new Promise((resolve, reject) => {
     if (redirects > 5) {
       reject(new Error('Too many redirects while fetching image.'));
+      return;
+    }
+
+    const local = readLocalUploadIfPresent(url);
+    if (local) {
+      resolve(local);
       return;
     }
 
@@ -195,7 +234,11 @@ async function bufferToOcrImage(buffer, sourceUrl) {
   }
 }
 
-async function fetchImageBufferForOcr(url) {
+async function fetchImageBufferForOcr(url, inlineBase64) {
+  const inline = decodeDataUrlOrBase64(inlineBase64);
+  if (inline) {
+    return bufferToOcrImage(inline, url || '');
+  }
   const buffer = await fetchBuffer(url);
   return bufferToOcrImage(buffer, url);
 }
@@ -227,17 +270,25 @@ async function tryExtractFromPdfUrl(url, idType) {
   }
 }
 
-async function extractGovernmentIdDetails({ frontUrl, backUrl, idType }) {
+async function extractGovernmentIdDetails({
+  frontUrl,
+  backUrl,
+  idType,
+  frontBase64,
+  backBase64,
+}) {
   if (!ID_TYPES.has(idType)) {
     throw new Error('Unsupported government ID type.');
   }
-  if (!frontUrl) {
-    throw new Error('Image URL is required.');
+  if (!frontUrl && !frontBase64) {
+    throw new Error('Image URL or image data is required.');
   }
 
   const started = Date.now();
 
-  const pdfTextExtracted = await tryExtractFromPdfUrl(frontUrl, idType);
+  const pdfTextExtracted = frontUrl
+    ? await tryExtractFromPdfUrl(frontUrl, idType)
+    : null;
   if (
     pdfTextExtracted &&
     pdfTextExtracted.fullName &&
@@ -247,42 +298,56 @@ async function extractGovernmentIdDetails({ frontUrl, backUrl, idType }) {
     return pdfTextExtracted;
   }
 
-  const sameUrl = frontUrl === backUrl;
+  const sameUrl =
+    (!frontUrl && !backUrl) ||
+    (frontUrl && backUrl && frontUrl === backUrl) ||
+    (!backUrl && !!frontUrl) ||
+    (!!frontBase64 && (!backBase64 || backBase64 === frontBase64));
   let frontBuffer;
   let backBuffer;
   let extraBackBuffer = null;
   let fullRawBuffer = null;
 
-  if (sameUrl) {
-    fullRawBuffer = await fetchImageBufferForOcr(frontUrl);
-    if (!fullRawBuffer) {
-      if (pdfTextExtracted) return pdfTextExtracted;
-      throw new Error(
-        'Could not read this Aadhaar PDF automatically. Upload a clear PNG/JPG photo of the card (or a screenshot of the PDF), then tap Re-scan.',
-      );
-    }
-    const split = await splitSideBySide(fullRawBuffer);
-    if (split) {
-      frontBuffer = split.frontBuffer;
-      backBuffer = split.backBuffer;
-      if (split.bottomRight) extraBackBuffer = split.bottomRight;
+  try {
+    if (sameUrl) {
+      fullRawBuffer = await fetchImageBufferForOcr(frontUrl, frontBase64);
+      if (!fullRawBuffer) {
+        if (pdfTextExtracted) return pdfTextExtracted;
+        throw new Error(
+          'Could not read this Aadhaar PDF automatically. Upload a clear PNG/JPG photo of the card (or a screenshot of the PDF), then tap Re-scan.',
+        );
+      }
+      const split = await splitSideBySide(fullRawBuffer);
+      if (split) {
+        frontBuffer = split.frontBuffer;
+        backBuffer = split.backBuffer;
+        if (split.bottomRight) extraBackBuffer = split.bottomRight;
+      } else {
+        frontBuffer = fullRawBuffer;
+        backBuffer = fullRawBuffer;
+      }
     } else {
-      frontBuffer = fullRawBuffer;
-      backBuffer = fullRawBuffer;
+      const [frontConverted, backConverted] = await Promise.all([
+        fetchImageBufferForOcr(frontUrl, frontBase64),
+        fetchImageBufferForOcr(backUrl || frontUrl, backBase64 || frontBase64),
+      ]);
+      if (!frontConverted) {
+        if (pdfTextExtracted) return pdfTextExtracted;
+        throw new Error(
+          'Could not read this Aadhaar PDF automatically. Upload a clear PNG/JPG photo of the card (or a screenshot of the PDF), then tap Re-scan.',
+        );
+      }
+      frontBuffer = frontConverted;
+      backBuffer = backConverted || frontConverted;
     }
-  } else {
-    const [frontConverted, backConverted] = await Promise.all([
-      fetchImageBufferForOcr(frontUrl),
-      fetchImageBufferForOcr(backUrl || frontUrl),
-    ]);
-    if (!frontConverted) {
-      if (pdfTextExtracted) return pdfTextExtracted;
+  } catch (error) {
+    const message = error?.message || String(error);
+    if (message.includes('HTTP 404')) {
       throw new Error(
-        'Could not read this Aadhaar PDF automatically. Upload a clear PNG/JPG photo of the card (or a screenshot of the PDF), then tap Re-scan.',
+        'Uploaded image is missing on the server (common after a redeploy). Tap Replace, upload the Aadhaar again, then Re-scan.',
       );
     }
-    frontBuffer = frontConverted;
-    backBuffer = backConverted || frontConverted;
+    throw error;
   }
 
   let qrExtracted = null;
@@ -290,7 +355,7 @@ async function extractGovernmentIdDetails({ frontUrl, backUrl, idType }) {
     const qrCandidates = [];
     if (fullRawBuffer) qrCandidates.push(fullRawBuffer);
     else qrCandidates.push(frontBuffer);
-    if (sameUrl) {
+    if (sameUrl && frontUrl) {
       try {
         const rawBuffer = await fetchBuffer(frontUrl);
         if (!isPdfBuffer(rawBuffer)) qrCandidates.unshift(rawBuffer);
