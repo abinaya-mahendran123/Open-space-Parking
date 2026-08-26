@@ -126,17 +126,20 @@ That means Node was deployed, but **Python OCR deps were never installed** and t
 Build installs `opencv-python-headless` (provides `cv2`) into `python/paddleocr_service/.venv`.  
 Start launches PaddleOCR on port 8765, then Node.
 
-#### RAM note
+#### RAM note / Skip Paddle (recommended on free tier)
 
-PaddleOCR needs ~1–2 GB. On free/small instances it may still fall back to Tesseract. Prefer **Starter** (or larger) if Aadhaar OCR must use Paddle.
+PaddleOCR needs ~1–2 GB. On free/small instances it often **OOMs and restarts** right after models load, so OCR never finishes.
 
-#### Skip Paddle (Tesseract only)
+On Render, `start_with_ocr.js` **skips Paddle by default** unless you set `ENABLE_PADDLEOCR=1` (use a plan with ≥2 GB RAM).
+
+Or force skip:
 
 ```env
 SKIP_PADDLEOCR_SETUP=1
 SKIP_PADDLEOCR_WORKER=1
 ```
 
+Tesseract.js still runs Aadhaar OCR.
 See `backend/ocr/README.md` and `python/paddleocr_service/README.md`.
 
 Or use `render.yaml` at the repo root with Blueprint deploy.

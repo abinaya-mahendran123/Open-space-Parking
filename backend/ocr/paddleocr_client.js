@@ -198,15 +198,42 @@ function runSubprocess(imagePath, langs, timeoutMs) {
 }
 
 async function recognizeBuffer(buffer, options = {}) {
-  const timeoutMs = options.timeoutMs || DEFAULT_TIMEOUT_MS;
+  if (process.env.SKIP_PADDLEOCR_WORKER === '1') {
+    const err = new Error('PaddleOCR worker disabled (SKIP_PADDLEOCR_WORKER=1)');
+    logOcr('paddle_skip', { reason: err.message });
+    throw err;
+  }
+
+  const timeoutMs = Math.min(
+    options.timeoutMs || DEFAULT_TIMEOUT_MS,
+    Number(process.env.PADDLEOCR_HTTP_TIMEOUT_MS || 45000),
+  );
   const langs = options.langs || paddleLangs();
   const serviceUrl = (options.serviceUrl || DEFAULT_SERVICE_URL).replace(/\/$/, '');
+  const allowSubprocess = process.env.PADDLEOCR_ALLOW_SUBPROCESS === '1';
 
   await acquireSlot();
   const started = Date.now();
   let tempPath = null;
 
   try {
+    // Prefer HTTP worker. If it's down or still warming, fail fast → Tesseract.
+    try {
+      const health = await getJson(`${serviceUrl}/health`, 2500);
+      if (!health || !health.ok) {
+        throw new Error('PaddleOCR health check failed');
+      }
+      if (health.modelsReady === false) {
+        throw new Error(
+          health.modelsError ||
+            'PaddleOCR models are still downloading/loading. Retry in a minute.',
+        );
+      }
+    } catch (healthError) {
+      logOcr('paddle_skip', { reason: healthError.message || String(healthError) });
+      throw healthError;
+    }
+
     tempPath = await writeTempImage(buffer);
 
     try {
@@ -223,31 +250,11 @@ async function recognizeBuffer(buffer, options = {}) {
     } catch (httpError) {
       const reason = httpError.message || String(httpError);
       logOcr('paddle_http_failed', { reason });
+      if (!allowSubprocess) throw httpError;
+    }
 
-      // Models still warming / first-download race — wait and retry once.
-      if (
-        reason.includes('503') ||
-        reason.includes('still downloading') ||
-        reason.includes('timeout')
-      ) {
-        await new Promise((r) => setTimeout(r, 8000));
-        try {
-          const retry = await postJson(
-            `${serviceUrl}/ocr`,
-            { imagePath: tempPath, langs },
-            timeoutMs,
-          );
-          logOcr('engine=paddleocr mode=http_retry', {
-            paddleTimeMs: Date.now() - started,
-            langsUsed: retry.langsUsed,
-          });
-          return { ...retry, mode: 'http_retry' };
-        } catch (retryError) {
-          logOcr('paddle_http_retry_failed', {
-            reason: retryError.message || String(retryError),
-          });
-        }
-      }
+    if (!allowSubprocess) {
+      throw new Error('PaddleOCR HTTP failed and subprocess fallback is disabled');
     }
 
     const result = await runSubprocess(tempPath, langs, timeoutMs);

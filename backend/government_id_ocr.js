@@ -286,9 +286,11 @@ async function extractGovernmentIdDetails({
 
   const started = Date.now();
 
-  const pdfTextExtracted = frontUrl
-    ? await tryExtractFromPdfUrl(frontUrl, idType)
-    : null;
+  // Prefer inline bytes (survives Render redeploys). Skip URL PDF probe when present.
+  const pdfTextExtracted =
+    frontUrl && !frontBase64
+      ? await tryExtractFromPdfUrl(frontUrl, idType)
+      : null;
   if (
     pdfTextExtracted &&
     pdfTextExtracted.fullName &&

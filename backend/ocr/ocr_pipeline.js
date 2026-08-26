@@ -15,6 +15,9 @@ const { paddleResultToText, averageConfidence } = require('./paddleocr_text');
 const { logOcr } = require('./ocr_logging');
 
 async function runPaddleOnBuffer(buffer, idType) {
+  if (process.env.SKIP_PADDLEOCR_WORKER === '1') {
+    return null;
+  }
   try {
     const standard = await preprocessVariant(buffer, 'standard');
     let paddleResult = await paddleRecognize(standard);
@@ -52,6 +55,7 @@ async function runPaddleOnBuffer(buffer, idType) {
 }
 
 async function runTesseractOnly(frontBuffer, backBuffer, extraBackBuffer, sameBuffer, idType) {
+  logOcr('tesseract_start', { sameBuffer, idType });
   let frontTess;
   let backTess;
   if (sameBuffer) {
@@ -225,13 +229,18 @@ async function runOcrPipeline({
   idType,
 }) {
   const started = Date.now();
-  logOcr('pipeline_start', { idType, sameBuffer });
+  const skipPaddle = process.env.SKIP_PADDLEOCR_WORKER === '1';
+  logOcr('pipeline_start', { idType, sameBuffer, skipPaddle });
 
-  const paddle = await runPaddleFrontBack(frontBuffer, backBuffer, idType, sameBuffer);
+  const paddle = skipPaddle
+    ? null
+    : await runPaddleFrontBack(frontBuffer, backBuffer, idType, sameBuffer);
 
   let result;
   if (!paddle) {
-    logOcr('fallback=tesseract', { reason: 'paddle_unavailable' });
+    logOcr('fallback=tesseract', {
+      reason: skipPaddle ? 'paddle_disabled' : 'paddle_unavailable',
+    });
     result = await runTesseractOnly(
       frontBuffer,
       backBuffer,

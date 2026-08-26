@@ -233,6 +233,24 @@ function shutdown(code = 0) {
 }
 
 async function main() {
+  // Render free/small instances OOM once Paddle models load (~1–2 GB), which
+  // kills the whole service mid-OCR. Opt in with ENABLE_PADDLEOCR=1 on a
+  // plan with enough RAM; otherwise Tesseract-only is reliable.
+  const onRender = Boolean(process.env.RENDER || process.env.RENDER_SERVICE_ID);
+  const skipPaddle =
+    process.env.SKIP_PADDLEOCR_WORKER === '1' ||
+    (onRender && process.env.ENABLE_PADDLEOCR !== '1');
+
+  if (skipPaddle) {
+    console.log(
+      onRender && process.env.ENABLE_PADDLEOCR !== '1'
+        ? '[start_with_ocr] Render detected — skipping PaddleOCR (set ENABLE_PADDLEOCR=1 if you have ≥2GB RAM). Using Tesseract.'
+        : '[start_with_ocr] SKIP_PADDLEOCR_WORKER=1 — Node only (Tesseract OCR)',
+    );
+    startNode();
+    return;
+  }
+
   // Critical for Render: bind public PORT before any heavy OCR work.
   startNode();
 
