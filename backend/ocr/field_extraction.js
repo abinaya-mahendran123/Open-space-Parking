@@ -124,6 +124,13 @@ function cleanAddressLine(raw, options = {}) {
  */
 function finalizeAddress(addr) {
   return addr
+    // OCR often turns "S/O :" into "/ :" or "/:"
+    .replace(/^[\s/|:.-]+/, '')
+    .replace(/^(?:s\s*\/\s*o|d\s*\/\s*o|w\s*\/\s*o|c\s*\/\s*o)\s*[:.\-]?\s*/i, (m) =>
+      m.replace(/\s+/g, ''),
+    )
+    .replace(/^\/\s*:\s*/i, 'S/O: ')
+    .replace(/^:\s*/, '')
     // Remove noise tokens that survived line-level cleaning
     .replace(ADDRESS_NOISE_TOKEN, ' ')
     // Collapse ",  ," style double commas
@@ -239,7 +246,9 @@ function extractAddress(text, options = {}) {
   }
 
   // ── Strategy 2b: S/O anchor (most Aadhaar addresses start here) ───────────
-  const soIdx = rawLines.findIndex((l) => /^(s\/o|d\/o|w\/o|c\/o)/i.test(stripNonLatin(l).trim()));
+  const soIdx = rawLines.findIndex((l) =>
+    /^(s\/o|d\/o|w\/o|c\/o|\/\s*:|\/:)/i.test(stripNonLatin(l).trim()),
+  );
   if (soIdx !== -1) {
     const collected = [];
     for (let i = soIdx; i < rawLines.length && collected.length < 15; i++) {
@@ -344,15 +353,21 @@ function isNameCandidate(line) {
   if (latinRatio < 0.8) return false;
   if ((line.match(/[a-zA-Z]/g) || []).length < 3) return false;
 
-  // Reject OCR mashups: one huge word with no spaces and odd length.
   const words = line.trim().split(/\s+/);
+  // Reject OCR mush like "Ef Org Or Did" (many tiny tokens).
+  const shortWords = words.filter((w) => w.length <= 2).length;
+  if (shortWords >= 2) return false;
+  if (words.length >= 3 && words.every((w) => w.length <= 3)) return false;
+  // Reject OCR mashups: one huge word with no spaces and odd length.
   if (words.length === 1 && words[0].length > 14) return false;
   // "Govemmentofingia Pee" style: first word too long and not title-case clean.
   if (words[0].length > 12 && !/^[A-Z][a-z]+$/.test(words[0])) return false;
 
   if (/^[A-Z][a-z]+(?: [A-Z][a-z]+){0,4}$/.test(line)) return true;
   if (/^[A-Z][A-Z ]{2,39}$/.test(line)) return true;
-  if (/^[a-zA-Z]+(?: [a-zA-Z]+){0,4}$/.test(line)) return true;
+  if (/^[a-zA-Z]+(?: [a-zA-Z]+){0,4}$/.test(line) && words.some((w) => w.length >= 4)) {
+    return true;
+  }
   return false;
 }
 
@@ -388,7 +403,9 @@ function scoreNameCandidate(name) {
 
   if (words.length >= 2 && words.length <= 4) score += 8;
   if (words.some((w) => w.length > 14)) score -= 25;
-  if (/\b(india|government|govemment|uidai|aadhaar|madurai|tamil)\b/i.test(name)) {
+  if (words.filter((w) => w.length <= 2).length >= 2) score -= 40;
+  if (words.length >= 3 && words.every((w) => w.length <= 3)) score -= 50;
+  if (/\b(india|government|govemment|uidai|aadhaar|madurai|tamil|org|did)\b/i.test(name)) {
     score -= 80;
   }
   return score;
@@ -501,11 +518,23 @@ function extractPhone(text, idType) {
     .replace(/\b\d{4}[\s]?\d{4}[\s]?\d{4}[\s]?\d{4}\b/g, '')
     .replace(/\b\d{4}[\s]?\d{4}[\s]?\d{4}\b/g, '');
 
-  // Step 2: labeled mobile line takes highest priority
+  // Step 2: labeled mobile line (allow spaces / OCR typos like Moblle)
   const labelMatch = cleaned.match(
-    /(?:mobile|mob\.?|phone|ph\.?|contact)\s*(?:no\.?|number)?\s*[:\-]?\s*([6-9]\d{9})/i,
+    /(?:mob(?:ile|lle|le)?|phone|ph\.?|contact)\s*(?:no\.?|number)?\s*[:\-.]?\s*([6-9][\d\s\-.]{8,14}\d)/i,
   );
-  if (labelMatch) return labelMatch[1];
+  if (labelMatch) {
+    const digits = labelMatch[1].replace(/\D/g, '');
+    if (/^[6-9]\d{9}$/.test(digits)) return digits;
+  }
+
+  // Also accept "Mobile 8148401544" mid-line (address block footers).
+  const inlineMatch = cleaned.match(
+    /\b(?:mob(?:ile|lle|le)?|phone)\b[^0-9]{0,12}([6-9][\d\s\-.]{8,14}\d)/i,
+  );
+  if (inlineMatch) {
+    const digits = inlineMatch[1].replace(/\D/g, '');
+    if (/^[6-9]\d{9}$/.test(digits)) return digits;
+  }
 
   // Plastic Aadhaar usually has no phone — do not guess from random digits.
   if (idType === 'aadhaar') return '';

@@ -56,15 +56,16 @@ async function runPaddleOnBuffer(buffer, idType) {
 
 async function runTesseractOnly(frontBuffer, backBuffer, extraBackBuffer, sameBuffer, idType) {
   logOcr('tesseract_start', { sameBuffer, idType });
+  const deep = idType === 'aadhaar';
   let frontTess;
   let backTess;
   if (sameBuffer) {
-    frontTess = await recognizeMultiPass(frontBuffer, { deep: false, idType });
+    frontTess = await recognizeMultiPass(frontBuffer, { deep, idType });
     backTess = frontTess;
   } else {
     [frontTess, backTess] = await Promise.all([
-      recognizeMultiPass(frontBuffer, { deep: false, idType }),
-      recognizeMultiPass(backBuffer, { deep: false, idType }),
+      recognizeMultiPass(frontBuffer, { deep, idType }),
+      recognizeMultiPass(backBuffer, { deep, idType }),
     ]);
   }
 

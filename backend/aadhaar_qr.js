@@ -160,16 +160,15 @@ function tryJsQr(data, width, height) {
 async function buildQrVariants(buffer) {
   const meta = await sharp(buffer).rotate().metadata();
   const w = meta.width || 800;
-  const targetWidth = Math.max(Math.min(w, 1600), 1000);
+  const targetWidth = Math.max(Math.min(Math.max(w, 1200), 2200), 1400);
 
   const makeVariant = (pipeline) =>
     pipeline
-      .resize({ width: targetWidth, withoutEnlargement: false })
+      .resize({ width: targetWidth, withoutEnlargement: false, kernel: 'lanczos3' })
       .ensureAlpha()
       .raw()
       .toBuffer({ resolveWithObject: true });
 
-  // Fewer variants — stop early in decodeQrFromBuffer once one works.
   const results = await Promise.allSettled([
     makeVariant(sharp(buffer).rotate().greyscale().normalize()),
     makeVariant(
@@ -177,9 +176,19 @@ async function buildQrVariants(buffer) {
         .rotate()
         .greyscale()
         .normalize()
-        .linear(1.5, -(128 * 0.4)),
+        .sharpen()
+        .linear(1.6, -(128 * 0.45)),
     ),
-    makeVariant(sharp(buffer).rotate().greyscale().normalize().threshold(128)),
+    makeVariant(sharp(buffer).rotate().greyscale().normalize().threshold(110)),
+    makeVariant(sharp(buffer).rotate().greyscale().normalize().threshold(140)),
+    makeVariant(
+      sharp(buffer)
+        .rotate()
+        .greyscale()
+        .normalize()
+        .median(3)
+        .threshold(128),
+    ),
   ]);
 
   return results
@@ -200,10 +209,17 @@ async function buildQrCropVariants(buffer) {
     const crops = [
       // bottom-right (most common on letter / plastic back)
       {
-        left: Math.floor(w * 0.55),
-        top: Math.floor(h * 0.45),
-        width: Math.floor(w * 0.45),
-        height: Math.floor(h * 0.55),
+        left: Math.floor(w * 0.5),
+        top: Math.floor(h * 0.35),
+        width: Math.floor(w * 0.5),
+        height: Math.floor(h * 0.65),
+      },
+      // tight bottom-right QR pocket
+      {
+        left: Math.floor(w * 0.62),
+        top: Math.floor(h * 0.48),
+        width: Math.floor(w * 0.38),
+        height: Math.floor(h * 0.52),
       },
       // right half
       { left: Math.floor(w / 2), top: 0, width: Math.floor(w / 2), height: h },
@@ -218,7 +234,8 @@ async function buildQrCropVariants(buffer) {
           .extract(crop)
           .greyscale()
           .normalize()
-          .resize({ width: 700, withoutEnlargement: false })
+          .sharpen()
+          .resize({ width: 900, withoutEnlargement: false, kernel: 'lanczos3' })
           .ensureAlpha()
           .raw()
           .toBuffer({ resolveWithObject: true }),

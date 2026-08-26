@@ -475,7 +475,10 @@ class GovernmentIdOwnerDetailsFormState
           ),
           const SizedBox(height: 6),
           Text(
-            'Best results: bright light, whole card in frame, keep the QR sharp. Plastic Aadhaar often has no phone — enter phone yourself if blank.',
+            'Upload the full Aadhaar (front + back, or one clear photo of the whole card). '
+            'Name and 12-digit number are on the front; address/QR/phone on the back. '
+            'Best results: bright light, whole card in frame, sharp QR. '
+            'Plastic Aadhaar often has no phone — enter phone yourself if blank.',
             style: Theme.of(context).textTheme.bodySmall?.copyWith(
                   color: colorScheme.onSurfaceVariant,
                 ),

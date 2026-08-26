@@ -46,6 +46,18 @@ function testPhoneLabeled() {
   assert.strictEqual(phone, '9876543210');
 }
 
+function testNameRejectsGarbageTokens() {
+  const text = 'Ef Org Or Did\nS/O: Parent\n12 Sample Street';
+  const name = extractName(text);
+  assert.strictEqual(name, '');
+}
+
+function testPhoneLabeledSpaced() {
+  const text = 'Mobile: 8148 401 544\nDistrict: Namakkal';
+  const phone = extractPhone(text, 'aadhaar');
+  assert.strictEqual(phone, '8148401544');
+}
+
 function testAadhaarVerhoeff() {
   // Known valid test Aadhaar from UIDAI examples (synthetic fixture)
   const valid = '999999990019';
@@ -99,6 +111,8 @@ const tests = [
   testAddressEnglish,
   testAddressPreservesUnicode,
   testPhoneLabeled,
+  testNameRejectsGarbageTokens,
+  testPhoneLabeledSpaced,
   testAadhaarVerhoeff,
   testQrComplete,
   testMergeQrPreference,
