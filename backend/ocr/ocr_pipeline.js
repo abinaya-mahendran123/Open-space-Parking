@@ -60,7 +60,20 @@ async function runPaddleOnBuffer(buffer, idType) {
 
 async function runTesseractOnly(frontBuffer, backBuffer, extraBackBuffer, sameBuffer, idType) {
   logOcr('tesseract_start', { sameBuffer, idType });
-  // Fast path first — deep OCR often exceeds Render's gateway timeout (HTTP 502).
+  let passes = 0;
+  let digitUid = '';
+
+  // UID first — most common miss, and must finish before gateway timeout.
+  if (idType === 'aadhaar') {
+    logOcr('tesseract_aadhaar_digits');
+    digitUid =
+      (await recognizeAadhaarNumber(frontBuffer)) ||
+      (!sameBuffer ? await recognizeAadhaarNumber(backBuffer) : '') ||
+      (extraBackBuffer ? await recognizeAadhaarNumber(extraBackBuffer) : '');
+    if (digitUid) passes += 1;
+  }
+
+  // One fast full-page pass for name / phone / address.
   let frontTess;
   let backTess;
   if (sameBuffer) {
@@ -73,40 +86,15 @@ async function runTesseractOnly(frontBuffer, backBuffer, extraBackBuffer, sameBu
     ]);
   }
 
-  let combined = mergeExtracted(frontTess.text, backTess.text, idType, {
+  const combined = mergeExtracted(frontTess.text, backTess.text, idType, {
     preserveUnicode: false,
   });
-  let passes = (frontTess.passes || 0) + (sameBuffer ? 0 : backTess.passes || 0);
+  passes += (frontTess.passes || 0) + (sameBuffer ? 0 : backTess.passes || 0);
 
-  if (extraBackBuffer && (!combined.address || combined.address.length < 20)) {
-    const extraTess = await recognizeMultiPass(extraBackBuffer, { deep: false, idType });
-    combined = mergeExtracted(
-      frontTess.text,
-      `${backTess.text}\n${extraTess.text}`,
-      idType,
-      { preserveUnicode: false },
-    );
-    passes += extraTess.passes || 0;
+  const pageUid = String(combined.governmentIdNumber || '').replace(/\D/g, '');
+  if (idType === 'aadhaar' && digitUid && !/^\d{12}$/.test(pageUid)) {
+    combined.governmentIdNumber = digitUid;
   }
-
-  // Dedicated Aadhaar UID pass when full-page OCR missed the 12 digits.
-  if (
-    idType === 'aadhaar' &&
-    (!combined.governmentIdNumber ||
-      !String(combined.governmentIdNumber).replace(/\D/g, '').match(/^\d{12}$/))
-  ) {
-    logOcr('tesseract_aadhaar_digits');
-    const uid =
-      (await recognizeAadhaarNumber(frontBuffer)) ||
-      (!sameBuffer ? await recognizeAadhaarNumber(backBuffer) : '') ||
-      (extraBackBuffer ? await recognizeAadhaarNumber(extraBackBuffer) : '');
-    if (uid) {
-      combined.governmentIdNumber = uid;
-      combined.aadhaarNumber = uid;
-      passes += 1;
-    }
-  }
-
   if (idType === 'aadhaar' && combined.governmentIdNumber) {
     combined.aadhaarNumber = combined.governmentIdNumber;
   }
@@ -177,7 +165,7 @@ async function applyTesseractFallback({
       return recognizeForMissingFields(buffer, idType, merged);
     }
     return recognizeMultiPass(buffer, {
-      deep: fallbackPlan.reason === 'weak_score',
+      deep: false,
       idType,
     });
   };
@@ -234,7 +222,7 @@ async function applyTesseractFallback({
     (!merged.address || merged.address.length < 20) &&
     !fallbackPlan.targeted
   ) {
-    const extraTess = await recognizeMultiPass(extraBackBuffer, { deep: true, idType });
+    const extraTess = await recognizeMultiPass(extraBackBuffer, { deep: false, idType });
     enginesUsed.push('tesseract');
     const extraFields = mergeExtracted('', extraTess.text, idType, { preserveUnicode: false });
     merged = mergeEngineResults(merged, extraFields, idType);

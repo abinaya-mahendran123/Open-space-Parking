@@ -650,6 +650,7 @@ app.get('/api/health', (_req, res) => {
       : 'mongodb (set DATABASE_URL for production)',
     razorpay: RAZORPAY_DEMO ? 'demo' : 'live',
     companyAccountConfigured: Boolean(RAZORPAY_COMPANY_ACCOUNT_ID),
+    ocrBuild: 'fast-uid-2026-08-26',
   });
 });
 

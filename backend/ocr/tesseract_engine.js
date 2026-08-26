@@ -49,33 +49,34 @@ async function recognizeWithPsm(worker, buffer, psm, extraParams = {}) {
 
 /**
  * Fast digits-focused pass for the printed 12-digit Aadhaar number.
+ * Kept short (≤4 recognizes) so Render does not return HTTP 502.
  */
 async function recognizeAadhaarNumber(buffer) {
   const worker = await getWorkerEng();
   let bands = await cropAadhaarNumberBands(buffer);
   if (!bands.length) bands = [buffer];
+  // At most 2 crops × 2 PSMs.
+  bands = bands.slice(0, 2);
 
   let best = '';
-  for (const band of bands) {
-    for (const psm of ['7', '6', '11']) {
-      try {
+  try {
+    for (const band of bands) {
+      for (const psm of ['7', '6']) {
         const result = await recognizeWithPsm(worker, band, psm, {
           tessedit_char_whitelist: '0123456789 ',
         });
         const id = extractIdNumber(result.text, 'aadhaar');
-        if (id && isValidAadhaarChecksum(id)) {
-          await worker.setParameters({ tessedit_char_whitelist: '' });
-          return id;
-        }
+        if (id && isValidAadhaarChecksum(id)) return id;
         if (id && id.length === 12 && !best) best = id;
-      } catch (_) {
-        // keep going
       }
     }
+  } catch (_) {
+    // keep going
+  } finally {
+    try {
+      await worker.setParameters({ tessedit_char_whitelist: '' });
+    } catch (_) {}
   }
-  try {
-    await worker.setParameters({ tessedit_char_whitelist: '' });
-  } catch (_) {}
   return best;
 }
 
@@ -154,7 +155,7 @@ async function recognizeForMissingFields(buffer, idType, existingFields) {
     return null;
   }
 
-  const deep = missingAddress || missingName || missingId;
+  const deep = false;
   return recognizeMultiPass(buffer, { deep, idType });
 }
 

@@ -1,8 +1,8 @@
 const sharp = require('sharp');
 
-// Fast path uses 2 variants. Deep path adds harder lighting cases.
-const FAST_VARIANTS = ['standard', 'contrast'];
-const DEEP_VARIANTS = ['standard', 'contrast', 'bright'];
+// Keep fast path to 1 variant — Render free tier gateway times out (~60s) otherwise.
+const FAST_VARIANTS = ['standard'];
+const DEEP_VARIANTS = ['standard', 'contrast'];
 const VARIANTS = FAST_VARIANTS;
 
 async function withAutoScale(image) {
@@ -10,15 +10,15 @@ async function withAutoScale(image) {
   const width = meta.width || 0;
   if (width <= 0) return image;
 
-  // Phone camera / compressed uploads are often too small for reliable OCR.
-  if (width < 1800) {
+  // Cap resolution for speed on hosted free tier (still sharp enough for OCR).
+  if (width < 1200) {
     return image.resize({
-      width: Math.min(Math.max(width * 2, 1800), 2800),
+      width: Math.min(Math.max(width * 2, 1200), 1600),
       withoutEnlargement: false,
     });
   }
-  if (width > 3200) {
-    return image.resize({ width: 2800, withoutEnlargement: true });
+  if (width > 1600) {
+    return image.resize({ width: 1600, withoutEnlargement: true });
   }
   return image;
 }
@@ -178,27 +178,19 @@ async function cropAadhaarNumberBands(buffer) {
     const height = meta.height || 0;
     if (width < 80 || height < 80) return [];
 
+    // Prefer bottom / lower bands where the 12-digit UID is printed.
     const bands = [
-      // lower third (common on letter / plastic)
-      {
-        left: Math.floor(width * 0.05),
-        top: Math.floor(height * 0.55),
-        width: Math.floor(width * 0.9),
-        height: Math.floor(height * 0.4),
-      },
-      // bottom strip under address / QR
       {
         left: Math.floor(width * 0.08),
-        top: Math.floor(height * 0.72),
-        width: Math.floor(width * 0.55),
-        height: Math.floor(height * 0.25),
+        top: Math.floor(height * 0.68),
+        width: Math.floor(width * 0.7),
+        height: Math.floor(height * 0.28),
       },
-      // mid band (some prints put UID higher)
       {
-        left: Math.floor(width * 0.1),
-        top: Math.floor(height * 0.35),
-        width: Math.floor(width * 0.8),
-        height: Math.floor(height * 0.25),
+        left: Math.floor(width * 0.05),
+        top: Math.floor(height * 0.5),
+        width: Math.floor(width * 0.9),
+        height: Math.floor(height * 0.4),
       },
     ];
 
