@@ -1,6 +1,10 @@
 const { preprocessVariant } = require('../ocr_preprocess');
 const { recognizeBuffer: paddleRecognize } = require('./paddleocr_client');
-const { recognizeMultiPass, recognizeForMissingFields } = require('./tesseract_engine');
+const {
+  recognizeMultiPass,
+  recognizeForMissingFields,
+  recognizeAadhaarNumber,
+} = require('./tesseract_engine');
 const {
   fieldsFromPaddle,
   mergeEngineResults,
@@ -56,16 +60,16 @@ async function runPaddleOnBuffer(buffer, idType) {
 
 async function runTesseractOnly(frontBuffer, backBuffer, extraBackBuffer, sameBuffer, idType) {
   logOcr('tesseract_start', { sameBuffer, idType });
-  const deep = idType === 'aadhaar';
+  // Fast path first — deep OCR often exceeds Render's gateway timeout (HTTP 502).
   let frontTess;
   let backTess;
   if (sameBuffer) {
-    frontTess = await recognizeMultiPass(frontBuffer, { deep, idType });
+    frontTess = await recognizeMultiPass(frontBuffer, { deep: false, idType });
     backTess = frontTess;
   } else {
     [frontTess, backTess] = await Promise.all([
-      recognizeMultiPass(frontBuffer, { deep, idType }),
-      recognizeMultiPass(backBuffer, { deep, idType }),
+      recognizeMultiPass(frontBuffer, { deep: false, idType }),
+      recognizeMultiPass(backBuffer, { deep: false, idType }),
     ]);
   }
 
@@ -75,7 +79,7 @@ async function runTesseractOnly(frontBuffer, backBuffer, extraBackBuffer, sameBu
   let passes = (frontTess.passes || 0) + (sameBuffer ? 0 : backTess.passes || 0);
 
   if (extraBackBuffer && (!combined.address || combined.address.length < 20)) {
-    const extraTess = await recognizeMultiPass(extraBackBuffer, { deep: true, idType });
+    const extraTess = await recognizeMultiPass(extraBackBuffer, { deep: false, idType });
     combined = mergeExtracted(
       frontTess.text,
       `${backTess.text}\n${extraTess.text}`,
@@ -83,6 +87,28 @@ async function runTesseractOnly(frontBuffer, backBuffer, extraBackBuffer, sameBu
       { preserveUnicode: false },
     );
     passes += extraTess.passes || 0;
+  }
+
+  // Dedicated Aadhaar UID pass when full-page OCR missed the 12 digits.
+  if (
+    idType === 'aadhaar' &&
+    (!combined.governmentIdNumber ||
+      !String(combined.governmentIdNumber).replace(/\D/g, '').match(/^\d{12}$/))
+  ) {
+    logOcr('tesseract_aadhaar_digits');
+    const uid =
+      (await recognizeAadhaarNumber(frontBuffer)) ||
+      (!sameBuffer ? await recognizeAadhaarNumber(backBuffer) : '') ||
+      (extraBackBuffer ? await recognizeAadhaarNumber(extraBackBuffer) : '');
+    if (uid) {
+      combined.governmentIdNumber = uid;
+      combined.aadhaarNumber = uid;
+      passes += 1;
+    }
+  }
+
+  if (idType === 'aadhaar' && combined.governmentIdNumber) {
+    combined.aadhaarNumber = combined.governmentIdNumber;
   }
 
   return {

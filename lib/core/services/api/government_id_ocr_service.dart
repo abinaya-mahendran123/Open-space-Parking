@@ -51,6 +51,16 @@ class GovernmentIdOcrService {
         imageBytes: imageBytes,
       );
     } on AppException catch (error) {
+      if (_looksGatewayTimeout(error.message)) {
+        await Future<void>.delayed(const Duration(seconds: 3));
+        await _ensureApiAwake();
+        return _postExtract(
+          frontUrl: frontUrl,
+          backUrl: backUrl,
+          idType: idType,
+          imageBytes: imageBytes,
+        );
+      }
       if (!_looksUnreachable(error.message)) rethrow;
       await EnvironmentConfig.refreshReachableApiUrl();
       await _ensureApiAwake();
@@ -129,5 +139,13 @@ class GovernmentIdOcrService {
     return text.contains('cannot reach') ||
         text.contains('internet') ||
         text.contains('wake');
+  }
+
+  bool _looksGatewayTimeout(String message) {
+    final text = message.toLowerCase();
+    return text.contains('http 502') ||
+        text.contains('http 504') ||
+        text.contains('bad gateway') ||
+        text.contains('gateway timeout');
   }
 }

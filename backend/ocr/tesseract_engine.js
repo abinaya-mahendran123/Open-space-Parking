@@ -1,7 +1,9 @@
-const { buildPreprocessedBuffers } = require('../ocr_preprocess');
+const { buildPreprocessedBuffers, cropAadhaarNumberBands } = require('../ocr_preprocess');
 const {
   mergeExtracted,
   scoreOcrExtraction,
+  extractIdNumber,
+  isValidAadhaarChecksum,
 } = require('./field_extraction');
 
 const OCR_PSMS = ['6', '4'];
@@ -35,13 +37,46 @@ async function getWorkerHin() {
   return _workerHin;
 }
 
-async function recognizeWithPsm(worker, buffer, psm) {
+async function recognizeWithPsm(worker, buffer, psm, extraParams = {}) {
   await worker.setParameters({
     tessedit_pageseg_mode: psm,
     preserve_interword_spaces: '1',
+    ...extraParams,
   });
   const { data } = await worker.recognize(buffer);
   return { text: data.text || '', confidence: data.confidence || 0 };
+}
+
+/**
+ * Fast digits-focused pass for the printed 12-digit Aadhaar number.
+ */
+async function recognizeAadhaarNumber(buffer) {
+  const worker = await getWorkerEng();
+  let bands = await cropAadhaarNumberBands(buffer);
+  if (!bands.length) bands = [buffer];
+
+  let best = '';
+  for (const band of bands) {
+    for (const psm of ['7', '6', '11']) {
+      try {
+        const result = await recognizeWithPsm(worker, band, psm, {
+          tessedit_char_whitelist: '0123456789 ',
+        });
+        const id = extractIdNumber(result.text, 'aadhaar');
+        if (id && isValidAadhaarChecksum(id)) {
+          await worker.setParameters({ tessedit_char_whitelist: '' });
+          return id;
+        }
+        if (id && id.length === 12 && !best) best = id;
+      } catch (_) {
+        // keep going
+      }
+    }
+  }
+  try {
+    await worker.setParameters({ tessedit_char_whitelist: '' });
+  } catch (_) {}
+  return best;
 }
 
 /**
@@ -138,6 +173,7 @@ async function terminateWorkers() {
 module.exports = {
   recognizeMultiPass,
   recognizeForMissingFields,
+  recognizeAadhaarNumber,
   terminateWorkers,
   GOOD_EXTRACTION_SCORE,
   OCR_PSMS,

@@ -31,15 +31,6 @@ subprojects {
     project.evaluationDependsOn(":app")
 }
 
-// Offline / flaky DNS: skip AGP annotation extract (needs lint-gradle from dl.google.com).
-subprojects {
-    tasks.configureEach {
-        if (name.startsWith("extract") && name.endsWith("Annotations")) {
-            enabled = false
-        }
-    }
-}
-
 // OneDrive/Windows often locks merge output folders during clean.
 subprojects {
     tasks.configureEach {

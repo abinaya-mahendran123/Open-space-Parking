@@ -152,6 +152,10 @@ class ApiClient {
       return 'The hosted API is missing this endpoint. '
           'Redeploy the latest backend to Render, then try again.';
     }
+    if (response.statusCode == 502 || response.statusCode == 504) {
+      return 'Server timed out while reading the ID (HTTP ${response.statusCode}). '
+          'Try again in a moment — a second scan is usually faster.';
+    }
     return 'Invalid API response (HTTP ${response.statusCode}).';
   }
 

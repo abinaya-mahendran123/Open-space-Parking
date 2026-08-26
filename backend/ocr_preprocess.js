@@ -167,6 +167,63 @@ async function buildPaddleRetryBuffer(buffer) {
   return preprocessVariant(buffer, 'contrast');
 }
 
+/**
+ * Crops where the 12-digit Aadhaar number usually appears (bottom / mid bands).
+ * Used for a fast digits-only Tesseract pass when full OCR misses the UID.
+ */
+async function cropAadhaarNumberBands(buffer) {
+  try {
+    const meta = await sharp(buffer).rotate().metadata();
+    const width = meta.width || 0;
+    const height = meta.height || 0;
+    if (width < 80 || height < 80) return [];
+
+    const bands = [
+      // lower third (common on letter / plastic)
+      {
+        left: Math.floor(width * 0.05),
+        top: Math.floor(height * 0.55),
+        width: Math.floor(width * 0.9),
+        height: Math.floor(height * 0.4),
+      },
+      // bottom strip under address / QR
+      {
+        left: Math.floor(width * 0.08),
+        top: Math.floor(height * 0.72),
+        width: Math.floor(width * 0.55),
+        height: Math.floor(height * 0.25),
+      },
+      // mid band (some prints put UID higher)
+      {
+        left: Math.floor(width * 0.1),
+        top: Math.floor(height * 0.35),
+        width: Math.floor(width * 0.8),
+        height: Math.floor(height * 0.25),
+      },
+    ];
+
+    const outs = [];
+    for (const band of bands) {
+      const w = Math.max(20, Math.min(band.width, width - band.left));
+      const h = Math.max(20, Math.min(band.height, height - band.top));
+      if (band.left + w > width || band.top + h > height) continue;
+      const cropped = await sharp(buffer)
+        .rotate()
+        .extract({ left: band.left, top: band.top, width: w, height: h })
+        .greyscale()
+        .normalize()
+        .sharpen()
+        .resize({ width: Math.min(Math.max(w * 2, 900), 1600), withoutEnlargement: false })
+        .jpeg({ quality: 90 })
+        .toBuffer();
+      outs.push(cropped);
+    }
+    return outs;
+  } catch (_) {
+    return [];
+  }
+}
+
 module.exports = {
   VARIANTS,
   preprocessVariant,
@@ -174,4 +231,5 @@ module.exports = {
   buildPaddlePrimaryBuffer,
   buildPaddleRetryBuffer,
   splitSideBySide,
+  cropAadhaarNumberBands,
 };

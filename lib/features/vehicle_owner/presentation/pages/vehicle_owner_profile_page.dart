@@ -1,5 +1,3 @@
-import 'dart:async';
-
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -152,9 +150,9 @@ class _VehicleOwnerProfilePageState extends ConsumerState<VehicleOwnerProfilePag
 
     try {
       _clearAuthFormState();
-      // Do not await — logout clears state sync and cleans storage in background.
-      unawaited(ref.read(authStateProvider.notifier).logout());
+      await ref.read(authStateProvider.notifier).logout();
       if (!mounted) return;
+      // Use root go after auth cleared so redirect cannot bounce back to dashboard.
       GoRouter.of(context).go(RoutePaths.authEntry);
     } catch (_) {
       if (mounted) {

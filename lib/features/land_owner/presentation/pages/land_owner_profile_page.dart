@@ -1,5 +1,3 @@
-import 'dart:async';
-
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -157,7 +155,7 @@ class _LandOwnerProfilePageState extends ConsumerState<LandOwnerProfilePage> {
     );
     if (result != true || !mounted) return;
 
-    unawaited(ref.read(authStateProvider.notifier).logout());
+    await ref.read(authStateProvider.notifier).logout();
     if (!mounted) return;
     GoRouter.of(context).go(RoutePaths.authEntry);
   }

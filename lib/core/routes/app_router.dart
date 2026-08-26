@@ -134,6 +134,10 @@ final appRouterProvider = Provider<GoRouter>((ref) {
         if (location == RoutePaths.roleSelection) {
           return RoutePaths.landOwnerDashboard;
         }
+        // Do not bounce logout away from /auth — otherwise logout appears stuck.
+        if (location == RoutePaths.authEntry) {
+          return null;
+        }
         if (location == RoutePaths.appHome ||
             (inAuthFlow && location != RoutePaths.forgotPassword)) {
           return RoutePaths.landOwnerDashboard;
@@ -146,6 +150,9 @@ final appRouterProvider = Provider<GoRouter>((ref) {
             location == RoutePaths.vehicleOwnerDashboard) {
           return RoutePaths.vehicleOwnerSearch;
         }
+        if (location == RoutePaths.authEntry) {
+          return null;
+        }
         if (location == RoutePaths.appHome ||
             (inAuthFlow && location != RoutePaths.forgotPassword)) {
           return RoutePaths.vehicleOwnerSearch;
@@ -154,6 +161,9 @@ final appRouterProvider = Provider<GoRouter>((ref) {
           return RoutePaths.vehicleOwnerSearch;
         }
       } else {
+        if (location == RoutePaths.authEntry) {
+          return null;
+        }
         if (landOwnerRoutes.contains(location) || isVehicleOwnerPath) {
           return RoutePaths.appHome;
         }
