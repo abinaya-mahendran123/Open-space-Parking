@@ -85,7 +85,7 @@ class _LandOwnerShellPageState extends ConsumerState<LandOwnerShellPage> {
         NavigationDestination(
           icon: Icon(Icons.person_outline),
           selectedIcon: Icon(Icons.person),
-          label: 'Profile',
+          label: 'Account',
         ),
       ],
     );

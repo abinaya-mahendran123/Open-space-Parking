@@ -127,3 +127,16 @@ final employeeUnreadCountProvider =
   if (employeeId.isEmpty) return 0;
   return ref.read(employeeRepositoryProvider).getUnreadCount(employeeId);
 });
+
+/// Admin-assigned mobile for the signed-in employee (session, then DB).
+final employeeAssignedPhoneProvider = FutureProvider<String>((ref) async {
+  final session = ref.watch(authStateProvider).session;
+  if (session == null || session.role != UserRole.employee) return '';
+
+  final fromSession = session.phone.trim();
+  if (fromSession.isNotEmpty) return fromSession;
+
+  final employeeId = session.userId;
+  if (employeeId.isEmpty) return '';
+  return await ref.read(employeeRepositoryProvider).getPhone(employeeId) ?? '';
+});

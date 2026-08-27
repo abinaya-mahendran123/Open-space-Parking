@@ -24,7 +24,9 @@ import 'package:open_space_parking/features/authentication/presentation/widgets/
 enum _AuthSubview { picker, phone, email }
 
 class AuthPage extends ConsumerStatefulWidget {
-  const AuthPage({super.key});
+  const AuthPage({super.key, required this.mode});
+
+  final AuthFormMode mode;
 
   @override
   ConsumerState<AuthPage> createState() => _AuthPageState();
@@ -113,10 +115,10 @@ class _AuthPageState extends ConsumerState<AuthPage> {
     _checkingAccountLabel = null;
   }
 
-  void _onModeChanged(AuthFormMode mode) {
-    ref.read(authFormModeProvider.notifier).state = mode;
+  void _backToWelcome() {
     _resetPhoneFlow();
-    setState(() => _subview = _AuthSubview.picker);
+    if (!mounted) return;
+    context.go(RoutePaths.authEntry);
   }
 
   void _backToPicker() {
@@ -302,18 +304,18 @@ class _AuthPageState extends ConsumerState<AuthPage> {
       return;
     }
 
-    final mode = ref.read(authFormModeProvider);
     final loading = ref.read(authLoadingProvider.notifier);
     final snackbar = ref.read(snackbarServiceProvider);
+    final isSignUp = widget.mode == AuthFormMode.signUp;
 
     loading.state = true;
     try {
       await ref.read(authStateProvider.notifier).verifyPhoneOtp(
             phone: _phoneController.text.trim(),
             otp: _otpController.text.trim(),
-            mode: mode,
-            displayName: mode == AuthFormMode.signUp ? _nameController.text.trim() : null,
-            role: mode == AuthFormMode.signUp ? _signUpRole : null,
+            mode: widget.mode,
+            displayName: isSignUp ? _nameController.text.trim() : null,
+            role: isSignUp ? _signUpRole : null,
           );
 
       ref.read(pendingRegistrationProvider.notifier).state = null;
@@ -330,14 +332,14 @@ class _AuthPageState extends ConsumerState<AuthPage> {
   Future<void> _submitEmail() async {
     if (!_formKey.currentState!.validate()) return;
 
-    final mode = ref.read(authFormModeProvider);
     final loading = ref.read(authLoadingProvider.notifier);
     final snackbar = ref.read(snackbarServiceProvider);
     final authNotifier = ref.read(authStateProvider.notifier);
+    final isSignUp = widget.mode == AuthFormMode.signUp;
 
     loading.state = true;
     try {
-      if (mode == AuthFormMode.signUp) {
+      if (isSignUp) {
         await authNotifier.registerAccount(
           email: _emailController.text.trim(),
           password: _passwordController.text,
@@ -347,10 +349,10 @@ class _AuthPageState extends ConsumerState<AuthPage> {
 
         ref.read(pendingRegistrationProvider.notifier).state = null;
         ref.read(postAuthRoleSelectionProvider.notifier).state = false;
-        ref.read(authFormModeProvider.notifier).state = AuthFormMode.signIn;
         _passwordController.clear();
         _nameController.clear();
-        _backToPicker();
+        if (!mounted) return;
+        context.go(RoutePaths.login);
         snackbar.showSuccess('Account created. Sign in to continue.');
         return;
       }
@@ -365,7 +367,7 @@ class _AuthPageState extends ConsumerState<AuthPage> {
       snackbar.showError(e.message);
     } catch (_) {
       snackbar.showError(
-        mode == AuthFormMode.signUp
+        isSignUp
             ? 'Sign up failed. Please try again.'
             : 'Sign in failed. Please try again.',
       );
@@ -375,12 +377,12 @@ class _AuthPageState extends ConsumerState<AuthPage> {
   }
 
   Future<void> _signInWithGoogle() async {
-    final mode = ref.read(authFormModeProvider);
     final loading = ref.read(authLoadingProvider.notifier);
     final snackbar = ref.read(snackbarServiceProvider);
     final authNotifier = ref.read(authStateProvider.notifier);
+    final isSignUp = widget.mode == AuthFormMode.signUp;
 
-    if (mode == AuthFormMode.signUp &&
+    if (isSignUp &&
         (_signUpRole == UserRole.admin || _signUpRole == UserRole.employee)) {
       snackbar.showError('Select Vehicle Owner or Land Owner.');
       return;
@@ -388,7 +390,7 @@ class _AuthPageState extends ConsumerState<AuthPage> {
 
     loading.state = true;
     try {
-      if (mode == AuthFormMode.signUp) {
+      if (isSignUp) {
         await authNotifier.signUpWithGoogle(role: _signUpRole);
       } else {
         await authNotifier.signInWithGoogle();
@@ -421,14 +423,16 @@ class _AuthPageState extends ConsumerState<AuthPage> {
 
   @override
   Widget build(BuildContext context) {
-    final mode = ref.watch(authFormModeProvider);
     final phoneStep = ref.watch(phoneAuthStepProvider);
     final isLoading = ref.watch(authLoadingProvider);
-    final isSignUp = mode == AuthFormMode.signUp;
+    final isSignUp = widget.mode == AuthFormMode.signUp;
     final colorScheme = Theme.of(context).colorScheme;
 
     return AuthScaffold(
-      title: 'Open Space Parking',
+      title: isSignUp ? 'Sign Up' : 'Sign In',
+      onBack: isLoading
+          ? null
+          : (_subview == _AuthSubview.picker ? _backToWelcome : _backToPicker),
       child: Form(
         key: _formKey,
         child: Column(
@@ -440,35 +444,7 @@ class _AuthPageState extends ConsumerState<AuthPage> {
                   : 'Welcome back. Sign in to continue.',
               style: Theme.of(context).textTheme.bodyLarge,
             ),
-            const SizedBox(height: 20),
-            SegmentedButton<AuthFormMode>(
-              segments: const [
-                ButtonSegment(
-                  value: AuthFormMode.signIn,
-                  label: Text('Sign In'),
-                  icon: Icon(Icons.login),
-                ),
-                ButtonSegment(
-                  value: AuthFormMode.signUp,
-                  label: Text('Sign Up'),
-                  icon: Icon(Icons.person_add_outlined),
-                ),
-              ],
-              selected: {mode},
-              onSelectionChanged: (selection) => _onModeChanged(selection.first),
-            ),
             const SizedBox(height: 24),
-            if (_subview != _AuthSubview.picker) ...[
-              Align(
-                alignment: Alignment.centerLeft,
-                child: TextButton.icon(
-                  onPressed: isLoading ? null : _backToPicker,
-                  icon: const Icon(Icons.arrow_back, size: 18),
-                  label: const Text('Back'),
-                ),
-              ),
-              const SizedBox(height: 8),
-            ],
             if (_subview == _AuthSubview.picker) ...[
               if (isSignUp) ...[
                 AppTextField(

@@ -12,6 +12,7 @@ import 'package:open_space_parking/core/providers/core_providers.dart';
 import 'package:open_space_parking/core/routes/route_paths.dart';
 import 'package:open_space_parking/core/utils/camera_access.dart';
 import 'package:open_space_parking/core/widgets/dialogs/app_dialogs.dart';
+import 'package:open_space_parking/features/account/presentation/pages/role_account_pages.dart';
 import 'package:open_space_parking/features/authentication/presentation/providers/auth_form_providers.dart';
 import 'package:open_space_parking/features/authentication/presentation/providers/auth_state_provider.dart';
 import 'package:open_space_parking/features/vehicle_owner/domain/entities/booking.dart';
@@ -272,12 +273,26 @@ class _SecurityScanPageState extends ConsumerState<SecurityScanPage> {
         backgroundColor: onScanner ? Colors.black : null,
         appBar: AppBar(
           title: Text(onScanner ? 'Scan parking QR' : 'Security gate'),
-          leading: IconButton(
-            tooltip: onScanner ? 'Back to gate desk' : 'Sign out',
-            onPressed: onScanner ? _returnToDesk : _logout,
-            icon: Icon(onScanner ? Icons.arrow_back : Icons.logout),
-          ),
+          leading: onScanner
+              ? IconButton(
+                  tooltip: 'Back to gate desk',
+                  onPressed: _returnToDesk,
+                  icon: const Icon(Icons.arrow_back),
+                )
+              : null,
           actions: [
+            if (!onScanner)
+              IconButton(
+                tooltip: 'My Account',
+                onPressed: () {
+                  Navigator.of(context).push(
+                    MaterialPageRoute<void>(
+                      builder: (_) => const SecurityProfilePage(),
+                    ),
+                  );
+                },
+                icon: const Icon(Icons.person_outline),
+              ),
             if (onScanner)
               IconButton(
                 tooltip: 'Sign out',
@@ -330,9 +345,15 @@ class _SecurityScanPageState extends ConsumerState<SecurityScanPage> {
             ),
             const SizedBox(height: 12),
             OutlinedButton.icon(
-              onPressed: _logout,
-              icon: const Icon(Icons.logout),
-              label: const Text('Sign out'),
+              onPressed: () {
+                Navigator.of(context).push(
+                  MaterialPageRoute<void>(
+                    builder: (_) => const SecurityProfilePage(),
+                  ),
+                );
+              },
+              icon: const Icon(Icons.person_outline),
+              label: const Text('My Account'),
             ),
           ],
         ),

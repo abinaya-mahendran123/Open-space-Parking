@@ -20,11 +20,10 @@ class EnvironmentConfig {
       defaultValue: 'dev',
     );
 
-    // Chrome: localhost is this PC. Phone: localhost is the phone unless
-    // `adb reverse` is set, so we also probe 127.0.0.1, emulator, and LAN IP.
+    // Prefer local API in development so Chrome (random port) uses this PC's backend.
     const configuredApiUrl = String.fromEnvironment(
       'BASE_API_URL',
-      defaultValue: 'https://open-space-parking.onrender.com',
+      defaultValue: 'http://127.0.0.1:3000',
     );
     const hostLanIp = String.fromEnvironment(
       'HOST_LAN_IP',
@@ -34,7 +33,10 @@ class EnvironmentConfig {
     _configuredApiUrl = configuredApiUrl;
     _hostLanIp = hostLanIp;
 
-    baseApiUrl = kIsWeb
+    // Web release builds keep the configured URL (usually Render).
+    // Debug / non-web: discover a reachable host, preferring localhost so
+    // local backend changes (e.g. login error messages) are actually used.
+    baseApiUrl = (kIsWeb && kReleaseMode)
         ? configuredApiUrl
         : await resolveReachableApiUrl(
             configured: configuredApiUrl,
@@ -120,7 +122,7 @@ class EnvironmentConfig {
 
   /// Retry API discovery (USB reverse or LAN) after a failed request.
   static Future<String> refreshReachableApiUrl() async {
-    if (kIsWeb) return baseApiUrl;
+    if (kIsWeb && kReleaseMode) return baseApiUrl;
     baseApiUrl = await resolveReachableApiUrl(
       configured: _configuredApiUrl,
       lanIp: _hostLanIp,
@@ -142,11 +144,12 @@ class EnvironmentConfig {
     }
 
     final configuredTrimmed = configured.trim().replaceAll(RegExp(r'/+$'), '');
-    final preferHosted = configuredTrimmed.startsWith('https://');
+    // In debug, always try local first so unfinished backend work is visible.
+    // Hosted-only preference is for release / production traffic.
+    final preferHostedOnly =
+        configuredTrimmed.startsWith('https://') && kReleaseMode;
 
-    // When an explicit hosted API is configured (Render), do NOT race localhost.
-    // USB `adb reverse` makes 127.0.0.1 "healthy" first and steals OTP traffic.
-    if (preferHosted) {
+    if (preferHostedOnly) {
       add(configuredTrimmed);
       add('https://open-space-parking.onrender.com');
     } else {
@@ -195,10 +198,35 @@ class EnvironmentConfig {
     List<String> candidates,
   ) async {
     if (candidates.isEmpty) return null;
-    final completer = Completer<String?>();
-    var pending = candidates.length;
 
+    // Prefer local hosts sequentially so a warm Render never wins the race.
+    final local = <String>[];
+    final remote = <String>[];
     for (final base in candidates) {
+      if (base.contains('127.0.0.1') ||
+          base.contains('localhost') ||
+          base.contains('10.0.2.2')) {
+        local.add(base);
+      } else {
+        remote.add(base);
+      }
+    }
+
+    for (final base in local) {
+      try {
+        final response = await client
+            .get(Uri.parse('$base/api/health'))
+            .timeout(_healthTimeoutFor(base));
+        if (response.statusCode == 200) return base;
+      } catch (_) {}
+    }
+
+    if (remote.isEmpty) return null;
+
+    final completer = Completer<String?>();
+    var pending = remote.length;
+
+    for (final base in remote) {
       () async {
         try {
           final response = await client

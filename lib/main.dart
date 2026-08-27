@@ -10,6 +10,7 @@ import 'package:open_space_parking/core/firebase/firebase_bootstrap.dart';
 import 'package:open_space_parking/core/providers/core_providers.dart';
 import 'package:open_space_parking/core/routes/app_router.dart';
 import 'package:open_space_parking/core/theme/app_theme.dart';
+import 'package:open_space_parking/core/theme/theme_mode_provider.dart';
 import 'package:open_space_parking/features/notification/presentation/widgets/notification_bootstrap.dart';
 
 Future<void> main() async {
@@ -61,6 +62,8 @@ class OpenSpaceParkingApp extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final router = ref.watch(appRouterProvider);
     final snackbarService = ref.watch(snackbarServiceProvider);
+    // Watch only the mode — light/dark ThemeData are cached statics.
+    final themeMode = ref.watch(themeModeProvider);
 
     return NotificationBootstrap(
       child: MaterialApp.router(
@@ -69,7 +72,7 @@ class OpenSpaceParkingApp extends ConsumerWidget {
         scaffoldMessengerKey: snackbarService.messengerKey,
         theme: AppTheme.light,
         darkTheme: AppTheme.dark,
-        themeMode: ThemeMode.system,
+        themeMode: themeMode,
         themeAnimationDuration: AppTheme.animationDuration,
         themeAnimationCurve: AppTheme.animationCurve,
         routerConfig: router,

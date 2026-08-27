@@ -9,7 +9,9 @@ import 'package:open_space_parking/features/admin/presentation/pages/admin_ticke
 import 'package:open_space_parking/features/authentication/domain/entities/user_role.dart';
 import 'package:open_space_parking/features/authentication/presentation/pages/app_home_page.dart';
 import 'package:open_space_parking/features/authentication/presentation/pages/auth_page.dart';
+import 'package:open_space_parking/features/authentication/presentation/pages/auth_welcome_page.dart';
 import 'package:open_space_parking/features/authentication/presentation/pages/forgot_password_page.dart';
+import 'package:open_space_parking/features/authentication/presentation/providers/auth_form_providers.dart';
 import 'package:open_space_parking/features/authentication/presentation/pages/role_selection_page.dart';
 import 'package:open_space_parking/features/authentication/presentation/pages/splash_page.dart';
 import 'package:open_space_parking/features/authentication/presentation/providers/auth_state_provider.dart';
@@ -174,10 +176,16 @@ final appRouterProvider = Provider<GoRouter>((ref) {
     },
     routes: [
       GoRoute(path: RoutePaths.splash, builder: (_, __) => const SplashPage()),
-      GoRoute(path: RoutePaths.authEntry, builder: (_, __) => const AuthPage()),
+      GoRoute(path: RoutePaths.authEntry, builder: (_, __) => const AuthWelcomePage()),
+      GoRoute(
+        path: RoutePaths.login,
+        builder: (_, __) => const AuthPage(mode: AuthFormMode.signIn),
+      ),
+      GoRoute(
+        path: RoutePaths.register,
+        builder: (_, __) => const AuthPage(mode: AuthFormMode.signUp),
+      ),
       GoRoute(path: RoutePaths.roleSelection, builder: (_, __) => const RoleSelectionPage()),
-      GoRoute(path: RoutePaths.login, redirect: (_, __) => RoutePaths.authEntry),
-      GoRoute(path: RoutePaths.register, redirect: (_, __) => RoutePaths.authEntry),
       GoRoute(path: RoutePaths.forgotPassword, builder: (_, __) => const ForgotPasswordPage()),
       GoRoute(path: RoutePaths.appHome, builder: (_, __) => const AppHomePage()),
 
@@ -220,6 +228,10 @@ final appRouterProvider = Provider<GoRouter>((ref) {
         path: RoutePaths.adminStatistics,
         builder: (_, __) => const AdminShellPage(initialIndex: 3),
       ),
+      GoRoute(
+        path: RoutePaths.adminProfile,
+        redirect: (_, __) => RoutePaths.adminPortal,
+      ),
 
       // Isolated Employee Portal
       GoRoute(
@@ -241,6 +253,10 @@ final appRouterProvider = Provider<GoRouter>((ref) {
       GoRoute(
         path: RoutePaths.employeeNotifications,
         builder: (_, __) => const EmployeeShellPage(initialIndex: 3),
+      ),
+      GoRoute(
+        path: RoutePaths.employeeProfile,
+        redirect: (_, __) => RoutePaths.employeeDashboard,
       ),
       GoRoute(
         path: '/employee/tickets/:ticketId',

@@ -5,7 +5,14 @@ class AppTypography {
 
   static const String fontFamily = 'PlusJakartaSans';
 
+  static final TextTheme light = _build(Brightness.light);
+  static final TextTheme dark = _build(Brightness.dark);
+
   static TextTheme textTheme(Brightness brightness) {
+    return brightness == Brightness.dark ? dark : light;
+  }
+
+  static TextTheme _build(Brightness brightness) {
     final base = (brightness == Brightness.dark
             ? ThemeData.dark(useMaterial3: true)
             : ThemeData.light(useMaterial3: true))

@@ -5,13 +5,12 @@ import 'package:go_router/go_router.dart';
 import 'package:open_space_parking/core/routes/route_paths.dart';
 import 'package:open_space_parking/core/utils/responsive.dart';
 import 'package:open_space_parking/core/widgets/layout/app_shell_scaffold.dart';
-import 'package:open_space_parking/core/widgets/dialogs/app_dialogs.dart';
+import 'package:open_space_parking/features/account/presentation/pages/role_account_pages.dart';
 import 'package:open_space_parking/features/admin/presentation/pages/admin_dashboard_page.dart';
 import 'package:open_space_parking/features/admin/presentation/pages/admin_employees_page.dart';
 import 'package:open_space_parking/features/admin/presentation/pages/admin_statistics_page.dart';
 import 'package:open_space_parking/features/admin/presentation/pages/admin_tickets_page.dart';
 import 'package:open_space_parking/features/admin/presentation/providers/admin_providers.dart';
-import 'package:open_space_parking/features/authentication/presentation/providers/auth_state_provider.dart';
 import 'package:open_space_parking/features/land_owner/domain/entities/request_status.dart';
 
 class AdminShellPage extends ConsumerStatefulWidget {
@@ -30,6 +29,13 @@ class AdminShellPage extends ConsumerStatefulWidget {
 
 class _AdminShellPageState extends ConsumerState<AdminShellPage> {
   late int _currentIndex;
+
+  static const _pages = [
+    AdminDashboardPage(),
+    AdminTicketsPage(),
+    AdminEmployeesPage(),
+    AdminStatisticsPage(),
+  ];
 
   static const _destinations = [
     NavigationDestination(
@@ -57,8 +63,7 @@ class _AdminShellPageState extends ConsumerState<AdminShellPage> {
   @override
   void initState() {
     super.initState();
-    _currentIndex = widget.initialIndex;
-    // Apply status filter from dashboard card tap (after first frame)
+    _currentIndex = widget.initialIndex.clamp(0, _pages.length - 1);
     if (widget.ticketStatusFilter != null) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
         _applyStatusFilter(widget.ticketStatusFilter!);
@@ -70,7 +75,9 @@ class _AdminShellPageState extends ConsumerState<AdminShellPage> {
   void didUpdateWidget(covariant AdminShellPage oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.initialIndex != widget.initialIndex) {
-      setState(() => _currentIndex = widget.initialIndex);
+      setState(
+        () => _currentIndex = widget.initialIndex.clamp(0, _pages.length - 1),
+      );
     }
     if (oldWidget.ticketStatusFilter != widget.ticketStatusFilter &&
         widget.ticketStatusFilter != null) {
@@ -83,29 +90,17 @@ class _AdminShellPageState extends ConsumerState<AdminShellPage> {
     switch (statusParam) {
       case 'submitted':
         status = RequestStatus.submitted;
-        break;
       case 'under_review':
         status = RequestStatus.underReview;
-        break;
       case 'approved':
         status = RequestStatus.approved;
-        break;
       case 'rejected':
         status = RequestStatus.rejected;
-        break;
       case 'unassigned':
       case 'docs_pending':
-        // No direct status for these — show all tickets so user can see context
         status = null;
-        break;
     }
     ref.read(ticketFilterProvider.notifier).setStatus(status);
-  }
-
-  Future<void> _logout() async {
-    final confirmed = await AppDialogs.confirmLogout(context);
-    if (!confirmed || !mounted) return;
-    await ref.read(authStateProvider.notifier).logout();
   }
 
   void _onSelect(int index) {
@@ -113,31 +108,46 @@ class _AdminShellPageState extends ConsumerState<AdminShellPage> {
     switch (index) {
       case 0:
         context.go(RoutePaths.adminPortal);
-        break;
       case 1:
         context.go(RoutePaths.adminTickets);
-        break;
       case 2:
         context.go(RoutePaths.adminEmployees);
-        break;
       case 3:
         context.go(RoutePaths.adminStatistics);
-        break;
     }
+  }
+
+  void _openProfile() {
+    Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (_) => Scaffold(
+          appBar: AppBar(title: const Text('My Account')),
+          body: const AdminProfilePage(),
+        ),
+      ),
+    );
   }
 
   @override
   Widget build(BuildContext context) {
     final isWide = context.isDesktop || context.isTablet;
-    final pages = [
-      const AdminDashboardPage(),
-      const AdminTicketsPage(),
-      const AdminEmployeesPage(),
-      const AdminStatisticsPage(),
-    ];
+    final safeIndex = _currentIndex.clamp(0, _pages.length - 1);
+    final body = _pages[safeIndex];
+    final atHome = safeIndex == 0;
 
-    final body = pages[_currentIndex];
-    final atHome = _currentIndex == 0;
+    final appBar = AppBar(
+      title: const Text('Admin Portal'),
+      actions: [
+        Padding(
+          padding: const EdgeInsets.only(right: 8),
+          child: TextButton.icon(
+            onPressed: _openProfile,
+            icon: const Icon(Icons.person_outline),
+            label: const Text('Profile'),
+          ),
+        ),
+      ],
+    );
 
     Widget wrap(Widget child) {
       return PopScope(
@@ -153,20 +163,11 @@ class _AdminShellPageState extends ConsumerState<AdminShellPage> {
     if (isWide) {
       return wrap(
         Scaffold(
-          appBar: AppBar(
-            title: const Text('Admin Portal'),
-            actions: [
-              IconButton(
-                tooltip: 'Logout',
-                onPressed: _logout,
-                icon: const Icon(Icons.logout),
-              ),
-            ],
-          ),
+          appBar: appBar,
           body: Row(
             children: [
               NavigationRail(
-                selectedIndex: _currentIndex,
+                selectedIndex: safeIndex,
                 onDestinationSelected: _onSelect,
                 labelType: NavigationRailLabelType.all,
                 destinations: const [
@@ -201,18 +202,9 @@ class _AdminShellPageState extends ConsumerState<AdminShellPage> {
     }
 
     return AppShellScaffold(
-      appBar: AppBar(
-        title: const Text('Admin Portal'),
-        actions: [
-          IconButton(
-            tooltip: 'Logout',
-            onPressed: _logout,
-            icon: const Icon(Icons.logout),
-          ),
-        ],
-      ),
+      appBar: appBar,
       body: body,
-      selectedIndex: _currentIndex,
+      selectedIndex: safeIndex,
       onDestinationSelected: _onSelect,
       destinations: _destinations,
     );

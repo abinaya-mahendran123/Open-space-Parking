@@ -59,4 +59,7 @@ abstract class EmployeeRepository {
   Future<int> getUnreadCount(String employeeId);
 
   Future<String?> getFullName(String employeeId);
+
+  /// Mobile number assigned by admin when the employee was created.
+  Future<String?> getPhone(String employeeId);
 }

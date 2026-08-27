@@ -124,11 +124,22 @@ function parseCorsOrigins() {
     .filter(Boolean);
 }
 
+/** Flutter web debug uses a random localhost port — always allow those. */
+function isLocalDevOrigin(origin) {
+  try {
+    const url = new URL(String(origin || ''));
+    return url.hostname === 'localhost' || url.hostname === '127.0.0.1';
+  } catch (_) {
+    return false;
+  }
+}
+
 module.exports = {
   attachSessionToken,
   verifyAuthToken,
   requireAuth,
   requireRole,
   parseCorsOrigins,
+  isLocalDevOrigin,
   signAuthToken,
 };

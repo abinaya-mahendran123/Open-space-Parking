@@ -7,6 +7,7 @@ import 'package:mongo_dart/mongo_dart.dart';
 import 'package:open_space_parking/core/common/exceptions/app_exception.dart';
 import 'package:open_space_parking/core/config/app_constants.dart';
 import 'package:open_space_parking/core/utils/phone_utils.dart';
+import 'package:open_space_parking/core/utils/profile_prefill.dart';
 import 'package:open_space_parking/core/services/mongodb/mongo_collection_service.dart';
 import 'package:open_space_parking/core/services/mongodb/mongo_database_service.dart';
 import 'package:open_space_parking/core/integration/notification_helper.dart';
@@ -317,7 +318,8 @@ class MongoAdminRepository implements AdminRepository {
     }
 
     const roleTitle = 'Field Employee';
-    final normalizedEmail = 'emp.$phoneDigits@openspace.local';
+    // Do not invent placeholder emails (e.g. emp.<phone>@openspace.local).
+    const normalizedEmail = '';
     // Password rule: last 6 digits of the employee phone number.
     final temporaryPassword = PhoneUtils.lastSixDigits(trimmedPhone);
     if (temporaryPassword.length != 6) {
@@ -476,7 +478,8 @@ class MongoAdminRepository implements AdminRepository {
   Employee _mapEmployee(Map<String, dynamic> map) {
     final rawId = map['_id'];
     final id = rawId is ObjectId ? rawId.oid : rawId.toString();
-    return Employee.fromMap(map, id: id);
+    final email = ProfilePrefill.realEmail(map['email'] as String?) ?? '';
+    return Employee.fromMap({...map, 'email': email}, id: id);
   }
 
   String _generateSalt() {

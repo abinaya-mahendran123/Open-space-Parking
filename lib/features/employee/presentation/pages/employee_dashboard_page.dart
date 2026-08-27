@@ -3,7 +3,6 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'package:open_space_parking/core/theme/app_spacing.dart';
 import 'package:open_space_parking/core/utils/responsive.dart';
-import 'package:open_space_parking/core/widgets/cards/app_action_card.dart';
 import 'package:open_space_parking/core/widgets/cards/app_stat_card.dart';
 import 'package:open_space_parking/core/widgets/errors/app_error_widget.dart';
 import 'package:open_space_parking/core/widgets/layout/app_page_header.dart';
@@ -108,31 +107,6 @@ class EmployeeDashboardPage extends ConsumerWidget {
                         ],
                       );
                     },
-                  ),
-                  const SizedBox(height: AppSpacing.sectionGap),
-                  const AppSectionHeader(title: 'Quick Actions'),
-                  AppActionCard(
-                    icon: Icons.assignment_outlined,
-                    title: 'Assigned Projects',
-                    subtitle: 'View and update active construction tickets.',
-                    onTap: () =>
-                        ref.read(employeeShellTabProvider.notifier).state = 1,
-                  ),
-                  const SizedBox(height: AppSpacing.md),
-                  AppActionCard(
-                    icon: Icons.task_alt_outlined,
-                    title: 'Completed Projects',
-                    subtitle: 'Browse finished parking implementations.',
-                    onTap: () =>
-                        ref.read(employeeShellTabProvider.notifier).state = 2,
-                  ),
-                  const SizedBox(height: AppSpacing.md),
-                  AppActionCard(
-                    icon: Icons.notifications_outlined,
-                    title: 'Notifications',
-                    subtitle: 'Alerts for assignments and updates.',
-                    onTap: () =>
-                        ref.read(employeeShellTabProvider.notifier).state = 3,
                   ),
                 ],
               );
