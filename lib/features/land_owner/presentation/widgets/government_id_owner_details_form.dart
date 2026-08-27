@@ -15,6 +15,7 @@ import 'package:open_space_parking/core/common/exceptions/app_exception.dart';
 import 'package:open_space_parking/core/services/api/government_id_ocr_service.dart';
 import 'package:open_space_parking/core/utils/camera_access.dart';
 import 'package:open_space_parking/core/utils/file_bytes_reader.dart';
+import 'package:open_space_parking/core/utils/ocr_image_bytes.dart';
 import 'package:open_space_parking/core/utils/profile_prefill.dart';
 import 'package:open_space_parking/core/utils/validators.dart';
 import 'package:open_space_parking/core/widgets/textfields/app_text_field.dart';
@@ -107,23 +108,24 @@ class GovernmentIdOwnerDetailsFormState
     try {
       final photo = await _imagePicker.pickImage(
         source: ImageSource.camera,
-        imageQuality: 100,
-        maxWidth: 3200,
+        imageQuality: 85,
+        maxWidth: 1600,
         preferredCameraDevice: CameraDevice.rear,
       );
       if (photo == null) return;
 
       final bytes = await photo.readAsBytes();
       if (bytes.isEmpty) return;
+      final ocrBytes = await downscaleForOcr(bytes);
 
       final name = photo.name.trim().isNotEmpty
           ? photo.name
           : 'aadhaar_camera_${DateTime.now().millisecondsSinceEpoch}.jpg';
 
       await _uploadSelectedFile(
-        fileBytes: bytes,
+        fileBytes: ocrBytes,
         fileName: name,
-        previewBytes: bytes,
+        previewBytes: ocrBytes,
         isPdf: false,
       );
     } on PlatformException catch (e) {
@@ -183,6 +185,7 @@ class GovernmentIdOwnerDetailsFormState
       fileBytes = await readFileBytes(path);
       if (!isPdf) {
         previewBytes = await compute(_copyToUint8List, fileBytes);
+        previewBytes = await downscaleForOcr(previewBytes!);
       }
     }
 
@@ -374,7 +377,8 @@ class GovernmentIdOwnerDetailsFormState
         setState(() {
           _extractError =
               'Could not read ${missing.join(', ')} clearly. '
-              'Tip: use bright light, fill the frame with the card, and keep the QR code sharp — or type the missing fields below.';
+              'Use a clear photo of the full card (not PDF). '
+              'You can type any missing fields below and Continue.';
         });
       } else {
         setState(() {
