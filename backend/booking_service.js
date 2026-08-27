@@ -116,8 +116,83 @@ function listingCapacity(listing) {
 }
 
 function listingHourlyRate(listing) {
-  const rate = Number(listing.hourlyRate ?? listing.verifiedHourlyRate ?? 0);
-  return Number.isFinite(rate) ? rate : 0;
+  if (!listing) return 0;
+  const prefs = listing.parkingPreferences || {};
+  const candidates = [
+    listing.hourlyRate,
+    listing.verifiedHourlyRate,
+    listing.amountPerHour,
+    listing.parkingFee,
+    prefs.hourlyRate,
+    prefs.amountPerHour,
+    prefs.parkingFee,
+  ];
+  for (const value of candidates) {
+    const rate = Number(value);
+    if (Number.isFinite(rate) && rate > 0) return rate;
+  }
+  return 0;
+}
+
+function resolveHourlyRate(booking, listing) {
+  const fromBooking = Number(booking?.hourlyRate);
+  if (Number.isFinite(fromBooking) && fromBooking > 0) return fromBooking;
+  const fromListing = listingHourlyRate(listing);
+  if (fromListing > 0) return fromListing;
+  // Last resort so sessions are never billed ₹0 when rate was never saved.
+  const fallback = Number(process.env.DEFAULT_PARKING_HOURLY_RATE || 60);
+  return Number.isFinite(fallback) && fallback > 0 ? fallback : 60;
+}
+
+function computeBill(checkedInAt, checkedOutAt, hourlyRate) {
+  const start = new Date(checkedInAt);
+  const end = new Date(checkedOutAt);
+  let minutes = Math.floor((end.getTime() - start.getTime()) / 60000);
+  if (!Number.isFinite(minutes) || minutes < 1) minutes = 1;
+  let billedHours = Math.ceil((minutes / 60) * 100) / 100;
+  if (billedHours < 0.25) billedHours = 0.25;
+  const rate = Number(hourlyRate) > 0 ? Number(hourlyRate) : 0;
+  const amountDue = Math.ceil(billedHours * rate * 100) / 100;
+  return { minutes, billedHours, amountDue, hourlyRate: rate };
+}
+
+/** Repair ₹0 bills after exit when hourly rate was missing on the booking. */
+async function ensureBillForCheckout(db, booking) {
+  if (!booking?.checkedInAt || !booking?.checkedOutAt) return booking;
+  if (Number(booking.amountDue) > 0 && Number(booking.hourlyRate) > 0) {
+    return booking;
+  }
+
+  const listing = await getListing(db, booking.parkingListingId);
+  const hourlyRate = resolveHourlyRate(booking, listing);
+  const { billedHours, amountDue } = computeBill(
+    booking.checkedInAt,
+    booking.checkedOutAt,
+    hourlyRate,
+  );
+  if (!(amountDue > 0)) {
+    const error = new Error(
+      'Could not calculate parking fee. Set an hourly rate for this parking space.',
+    );
+    error.statusCode = 400;
+    throw error;
+  }
+
+  const setDoc = {
+    hourlyRate,
+    amountDue,
+    totalPrice: amountDue,
+    actualDurationHours: billedHours,
+    durationHours: billedHours,
+    updatedAt: new Date().toISOString(),
+  };
+  await updateBookingDoc(
+    db,
+    booking,
+    booking.qrPayload || booking.bookingRef,
+    setDoc,
+  );
+  return { ...booking, ...setDoc };
 }
 
 function listingDisplayName(listing) {
@@ -267,7 +342,7 @@ async function startParkingSession(db, { vehicleOwnerId, parkingListingId, vehic
     const bookingRef = generateBookingRef();
     const now = new Date().toISOString();
     const placeholderEnd = new Date(Date.now() + 12 * 60 * 60 * 1000).toISOString();
-    const hourlyRate = listingHourlyRate(listing);
+    const hourlyRate = resolveHourlyRate(null, listing);
     const parkingName = listingDisplayName(listing);
 
     const document = {
@@ -327,20 +402,17 @@ async function scanParkingQr(db, qrPayload) {
     throw error;
   }
 
-  if (booking.checkedOutAt && booking.amountDue != null) {
-    return ensureAssignedSlot(db, booking);
+  // Already billed — return as-is. Repair ₹0 bills from missing hourly rate.
+  if (booking.checkedOutAt) {
+    const billed = await ensureBillForCheckout(db, booking);
+    return ensureAssignedSlot(db, billed);
   }
 
   const listing = await getListing(db, booking.parkingListingId);
   const parkingName =
     String(booking.parkingName || '').trim() ||
     (listing ? listingDisplayName(listing) : 'Parking');
-  const hourlyRate =
-    Number(booking.hourlyRate) > 0
-      ? Number(booking.hourlyRate)
-      : listing
-        ? listingHourlyRate(listing)
-        : 0;
+  const hourlyRate = resolveHourlyRate(booking, listing);
   const now = new Date();
   const nowIso = now.toISOString();
 
@@ -381,12 +453,11 @@ async function scanParkingQr(db, qrPayload) {
     throw error;
   }
 
-  const checkedIn = new Date(booking.checkedInAt);
-  let minutes = Math.floor((now.getTime() - checkedIn.getTime()) / 60000);
-  if (minutes < 1) minutes = 1;
-  let billedHours = Math.ceil((minutes / 60) * 100) / 100;
-  if (billedHours < 0.25) billedHours = 0.25;
-  const amountDue = Math.ceil(billedHours * hourlyRate * 100) / 100;
+  const { billedHours, amountDue } = computeBill(
+    booking.checkedInAt,
+    nowIso,
+    hourlyRate,
+  );
 
   const stopped = {
     checkedOutAt: nowIso,
@@ -446,6 +517,10 @@ module.exports = {
   scanParkingQr,
   findBookingByQr,
   ensureAssignedSlot,
+  ensureBillForCheckout,
   allocateNextSlot,
   listingCapacity,
+  listingHourlyRate,
+  resolveHourlyRate,
+  computeBill,
 };

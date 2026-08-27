@@ -53,6 +53,15 @@ class _ParkingPaymentPageState extends ConsumerState<ParkingPaymentPage> {
     setState(() => _paying = true);
     try {
       final order = await _createOrder();
+      final orderAmount = (order['amount'] as num?)?.toDouble() ?? 0;
+      // Server may repair a ₹0 bill (missing hourly rate). Refresh local booking.
+      ref.invalidate(bookingDetailProvider(widget.bookingId));
+
+      if (orderAmount < 1) {
+        await _completeNoCharge();
+        return;
+      }
+
       var checkoutUrl = order['checkoutUrl']?.toString();
       if (checkoutUrl == null || checkoutUrl.isEmpty) {
         throw const AppException('Razorpay checkout URL missing');
@@ -247,13 +256,9 @@ class _ParkingPaymentPageState extends ConsumerState<ParkingPaymentPage> {
                 label: _paying
                     ? 'Opening Razorpay...'
                     : amount < 1
-                        ? 'Complete checkout'
+                        ? 'Calculate fee & pay with Razorpay'
                         : 'Pay ₹${amount.toStringAsFixed(0)} with Razorpay',
-                onPressed: _paying
-                    ? null
-                    : amount < 1
-                        ? _completeNoCharge
-                        : _payWithRazorpay,
+                onPressed: _paying ? null : _payWithRazorpay,
               ),
               if (amount >= 1) ...[
                 const SizedBox(height: 12),

@@ -16,6 +16,7 @@ const {
   startParkingSession,
   scanParkingQr,
   findBookingByQr,
+  ensureBillForCheckout,
 } = require('./booking_service');
 const {
   nearbyVerifiedListings,
@@ -651,7 +652,7 @@ app.get('/api/health', (_req, res) => {
     razorpay: RAZORPAY_DEMO ? 'demo' : 'live',
     companyAccountConfigured: Boolean(RAZORPAY_COMPANY_ACCOUNT_ID),
     ocrBuild: 'aadhaar-fullcard-2026-08-27',
-    scanBuild: 'security-id-fix-2026-08-27',
+    scanBuild: 'billing-rate-fix-2026-08-27',
   });
 });
 
@@ -1860,16 +1861,23 @@ app.post('/api/payments/razorpay/create-order', async (req, res) => {
       return res.status(400).json({ error: 'bookingId is required' });
     }
 
-    const booking = await db.collection('bookings').findOne({
+    let booking = await db.collection('bookings').findOne({
       _id: new ObjectId(bookingId),
     });
     if (!booking) {
       return res.status(404).json({ error: 'Booking not found' });
     }
-    if (booking.status !== 'active' || booking.amountDue == null || !booking.checkedOutAt) {
+    if (booking.status !== 'active' || !booking.checkedOutAt) {
       return res.status(400).json({
         error: 'Booking is not ready for payment. Complete exit QR scan first.',
       });
+    }
+
+    // Repair ₹0 bills caused by missing hourly rate on older sessions.
+    try {
+      booking = await ensureBillForCheckout(db, booking);
+    } catch (error) {
+      return res.status(error.statusCode || 400).json({ error: error.message });
     }
 
     const amount = Number(booking.amountDue);
