@@ -651,6 +651,7 @@ app.get('/api/health', (_req, res) => {
     razorpay: RAZORPAY_DEMO ? 'demo' : 'live',
     companyAccountConfigured: Boolean(RAZORPAY_COMPANY_ACCOUNT_ID),
     ocrBuild: 'fast-uid-2026-08-26',
+    scanBuild: 'security-id-fix-2026-08-27',
   });
 });
 

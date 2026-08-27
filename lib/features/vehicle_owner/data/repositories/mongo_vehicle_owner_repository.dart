@@ -537,13 +537,17 @@ class MongoVehicleOwnerRepository implements VehicleOwnerRepository {
         final response = await api.post('/api/security/scan-qr', {
           'qrPayload': qrPayload.trim(),
         });
-        final raw = response['document'];
+        final raw = response['document'] ?? response['booking'];
         if (raw is Map) {
           return _mapBookingToEntity(
             MongoJson.asMap(MongoHttpCodec.decode(raw))!,
           );
         }
-        throw const AppException('Could not load updated booking.');
+        final fallback = await getBookingByQr(qrPayload);
+        if (fallback != null) return fallback;
+        throw const AppException(
+          'QR was scanned but the booking could not be updated. Try again.',
+        );
       } on NetworkException catch (e) {
         throw AppException(e.message);
       }
@@ -1397,8 +1401,16 @@ class MongoVehicleOwnerRepository implements VehicleOwnerRepository {
       parkingType: ParkingTypeX.fromValue(map['parkingType'] as String? ?? ''),
       vehicleNumber: map['vehicleNumber'] as String? ?? '',
       vehicleModel: map['vehicleModel'] as String?,
-      startDateTime: DateTime.parse(map['startDateTime'] as String),
-      endDateTime: DateTime.parse(map['endDateTime'] as String),
+      startDateTime: DateTime.parse(
+        map['startDateTime'] as String? ??
+            map['checkedInAt'] as String? ??
+            DateTime.now().toUtc().toIso8601String(),
+      ),
+      endDateTime: DateTime.parse(
+        map['endDateTime'] as String? ??
+            map['checkedOutAt'] as String? ??
+            DateTime.now().toUtc().toIso8601String(),
+      ),
       durationHours: (map['durationHours'] as num?)?.toDouble() ?? 0,
       hourlyRate: (map['hourlyRate'] as num?)?.toDouble() ?? 0,
       totalPrice: (map['totalPrice'] as num?)?.toDouble() ?? 0,

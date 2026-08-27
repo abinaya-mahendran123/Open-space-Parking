@@ -18,6 +18,7 @@ class CameraAccess {
   /// Requests camera permission when needed. On web, the browser prompts during capture.
   static Future<CameraPermissionStatus> ensure({
     required BuildContext context,
+    String purpose = 'scan QR codes and capture ID photos',
   }) async {
     if (kIsWeb) {
       return CameraPermissionStatus.granted;
@@ -54,8 +55,7 @@ class CameraAccess {
       final retry = await _confirm(
         context,
         title: 'Camera permission needed',
-        message:
-            'Allow camera access so you can photograph your Aadhaar card directly.',
+        message: 'Allow camera access so you can $purpose.',
         confirmLabel: 'Allow camera',
       );
       if (retry) {
@@ -73,12 +73,12 @@ class CameraAccess {
         : CameraPermissionStatus.denied;
   }
 
-  static String messageFor(CameraPermissionStatus status) {
+  static String messageFor(CameraPermissionStatus status, {String purpose = 'use the camera'}) {
     switch (status) {
       case CameraPermissionStatus.granted:
         return '';
       case CameraPermissionStatus.denied:
-        return 'Camera permission is required to photograph your Aadhaar card.';
+        return 'Camera permission is required to $purpose.';
       case CameraPermissionStatus.deniedForever:
         return 'Camera access is blocked. Open app settings and allow camera for this app.';
       case CameraPermissionStatus.unavailable:

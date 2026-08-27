@@ -353,21 +353,17 @@ async function scanParkingQr(db, qrPayload) {
 
     const sessionId =
       String(booking.sessionId || '').trim() || generateSessionId();
+    const started = {
+      status: 'active',
+      checkedInAt: nowIso,
+      startDateTime: nowIso,
+      sessionId,
+      parkingName,
+      hourlyRate,
+      updatedAt: nowIso,
+    };
 
-    await db.collection('bookings').updateOne(
-      { _id: booking._id },
-      {
-        $set: {
-          status: 'active',
-          checkedInAt: nowIso,
-          startDateTime: nowIso,
-          sessionId,
-          parkingName,
-          hourlyRate,
-          updatedAt: nowIso,
-        },
-      },
-    );
+    await updateBookingDoc(db, booking, qrPayload, started);
 
     await insertNotification(db, {
       recipientId: booking.vehicleOwnerId,
@@ -376,7 +372,7 @@ async function scanParkingQr(db, qrPayload) {
       message: `Session ${sessionId} started at ${parkingName}, slot ${booking.assignedSlot ?? '-'}.`,
     });
 
-    return db.collection('bookings').findOne({ _id: booking._id });
+    return (await reloadBooking(db, booking, qrPayload)) || { ...booking, ...started };
   }
 
   if (status !== 'active') {
@@ -392,22 +388,19 @@ async function scanParkingQr(db, qrPayload) {
   if (billedHours < 0.25) billedHours = 0.25;
   const amountDue = Math.ceil(billedHours * hourlyRate * 100) / 100;
 
-  await db.collection('bookings').updateOne(
-    { _id: booking._id },
-    {
-      $set: {
-        checkedOutAt: nowIso,
-        endDateTime: nowIso,
-        actualDurationHours: billedHours,
-        durationHours: billedHours,
-        hourlyRate,
-        parkingName,
-        amountDue,
-        totalPrice: amountDue,
-        updatedAt: nowIso,
-      },
-    },
-  );
+  const stopped = {
+    checkedOutAt: nowIso,
+    endDateTime: nowIso,
+    actualDurationHours: billedHours,
+    durationHours: billedHours,
+    hourlyRate,
+    parkingName,
+    amountDue,
+    totalPrice: amountDue,
+    updatedAt: nowIso,
+  };
+
+  await updateBookingDoc(db, booking, qrPayload, stopped);
 
   await insertNotification(db, {
     recipientId: booking.vehicleOwnerId,
@@ -416,7 +409,36 @@ async function scanParkingQr(db, qrPayload) {
     message: `Session stopped after ${billedHours.toFixed(2)} hrs at ${parkingName}. Pay ₹${amountDue.toFixed(0)} via Razorpay.`,
   });
 
-  return db.collection('bookings').findOne({ _id: booking._id });
+  return (await reloadBooking(db, booking, qrPayload)) || { ...booking, ...stopped };
+}
+
+async function updateBookingDoc(db, booking, qrPayload, setDoc) {
+  let result = await db.collection('bookings').updateOne(
+    { _id: booking._id },
+    { $set: setDoc },
+  );
+  if (result.matchedCount) return;
+
+  const code = String(qrPayload || booking.qrPayload || booking.bookingRef || '').trim();
+  if (code) {
+    result = await db.collection('bookings').updateOne(
+      { qrPayload: code },
+      { $set: setDoc },
+    );
+    if (result.matchedCount) return;
+    await db.collection('bookings').updateOne(
+      { bookingRef: code },
+      { $set: setDoc },
+    );
+  }
+}
+
+async function reloadBooking(db, booking, qrPayload) {
+  const byId = booking?._id
+    ? await db.collection('bookings').findOne({ _id: booking._id })
+    : null;
+  if (byId) return byId;
+  return findBookingByQr(db, qrPayload);
 }
 
 module.exports = {

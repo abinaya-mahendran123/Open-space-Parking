@@ -237,11 +237,13 @@ class MongoAuthRepository implements AuthRepository {
         return _sessionFromApi(response, _phoneEmail(normalizedPhone));
       } on NetworkException catch (e) {
         final msg = e.message.toLowerCase();
-        final staleBackend = msg.contains('invalid credentials') ||
-            msg.contains('404') ||
+        if (msg.contains('invalid credentials')) {
+          throw const AppException('Invalid credentials.');
+        }
+        final endpointMissing = msg.contains('404') ||
             msg.contains('cannot post') ||
             msg.contains('not found');
-        if (!staleBackend) {
+        if (!endpointMissing) {
           throw AppException(e.message);
         }
       }
@@ -261,10 +263,18 @@ class MongoAuthRepository implements AuthRepository {
             response,
             AppConstants.defaultSecurityEmail,
           );
-        } on NetworkException {
-          // Continue to local / offline default security.
+        } on NetworkException catch (e) {
+          final msg = e.message.toLowerCase();
+          if (msg.contains('invalid credentials')) {
+            throw const AppException('Invalid credentials.');
+          }
         }
       }
+
+      throw const AppException(
+        'Could not sign in to the gate server. Check internet connection '
+        'and use the registered security mobile number.',
+      );
     }
 
     try {
@@ -986,7 +996,7 @@ class MongoAuthRepository implements AuthRepository {
     final encodedPayload = _encodeJwtPart(payload);
     final signatureRaw = '$encodedHeader.$encodedPayload';
 
-    const secret = 'open_space_parking_internal_secret';
+    const secret = 'osp-dev-jwt-secret-change-me';
     final digest = Hmac(sha256, utf8.encode(secret))
         .convert(utf8.encode(signatureRaw))
         .bytes;

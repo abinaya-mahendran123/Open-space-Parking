@@ -10,6 +10,7 @@ import 'package:open_space_parking/core/common/exceptions/app_exception.dart';
 import 'package:open_space_parking/core/di/service_locator.dart';
 import 'package:open_space_parking/core/providers/core_providers.dart';
 import 'package:open_space_parking/core/routes/route_paths.dart';
+import 'package:open_space_parking/core/utils/camera_access.dart';
 import 'package:open_space_parking/core/widgets/dialogs/app_dialogs.dart';
 import 'package:open_space_parking/features/authentication/presentation/providers/auth_form_providers.dart';
 import 'package:open_space_parking/features/authentication/presentation/providers/auth_state_provider.dart';
@@ -55,7 +56,25 @@ class _SecurityScanPageState extends ConsumerState<SecurityScanPage> {
     super.dispose();
   }
 
+  Future<bool> _ensureCameraReady() async {
+    final permission = await CameraAccess.ensure(
+      context: context,
+      purpose: 'scan parking QR codes',
+    );
+    if (permission == CameraPermissionStatus.granted) return true;
+    if (!mounted) return false;
+    ref.read(snackbarServiceProvider).showError(
+          CameraAccess.messageFor(
+            permission,
+            purpose: 'scan parking QR codes',
+          ),
+        );
+    return false;
+  }
+
   Future<void> _openScanner() async {
+    if (!await _ensureCameraReady()) return;
+
     setState(() {
       _view = _SecurityView.scanner;
       _result = null;
@@ -70,6 +89,7 @@ class _SecurityScanPageState extends ConsumerState<SecurityScanPage> {
         ref.read(snackbarServiceProvider).showError(
               'Camera could not start. Check camera permission and try again.',
             );
+        setState(() => _cameraPaused = true);
       }
     }
   }
@@ -121,9 +141,24 @@ class _SecurityScanPageState extends ConsumerState<SecurityScanPage> {
       });
       await _pauseCamera();
     } on AppException catch (e) {
-      ref.read(snackbarServiceProvider).showError(e.message);
+      final msg = e.message.toLowerCase();
+      if (msg.contains('authentication') ||
+          msg.contains('session expired') ||
+          msg.contains('invalid or expired token')) {
+        ref.read(snackbarServiceProvider).showError(
+              'Gate session expired. Sign out and sign in again, then scan.',
+            );
+      } else if (msg.contains('not found')) {
+        ref.read(snackbarServiceProvider).showError(
+              'Booking not found. Ask the driver to open their parking ticket QR.',
+            );
+      } else {
+        ref.read(snackbarServiceProvider).showError(e.message);
+      }
     } catch (_) {
-      ref.read(snackbarServiceProvider).showError('Scan failed.');
+      ref.read(snackbarServiceProvider).showError(
+            'Scan failed. Check internet connection and try again.',
+          );
     } finally {
       if (mounted) setState(() => _scanning = false);
     }
@@ -137,6 +172,8 @@ class _SecurityScanPageState extends ConsumerState<SecurityScanPage> {
   }
 
   Future<void> _resumeCamera() async {
+    if (!await _ensureCameraReady()) return;
+
     setState(() {
       _result = null;
       _action = null;
@@ -149,11 +186,14 @@ class _SecurityScanPageState extends ConsumerState<SecurityScanPage> {
         ref.read(snackbarServiceProvider).showError(
               'Camera could not start. Check camera permission and try again.',
             );
+        setState(() => _cameraPaused = true);
       }
     }
   }
 
   Future<void> _retryCamera() async {
+    if (!await _ensureCameraReady()) return;
+
     await _scannerController.dispose();
     setState(() {
       _scannerController = _createController();
@@ -163,7 +203,9 @@ class _SecurityScanPageState extends ConsumerState<SecurityScanPage> {
     });
     try {
       await _scannerController.start();
-    } catch (_) {}
+    } catch (_) {
+      if (mounted) setState(() => _cameraPaused = true);
+    }
   }
 
   void _onDetect(BarcodeCapture capture) {

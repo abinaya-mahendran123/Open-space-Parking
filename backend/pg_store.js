@@ -134,9 +134,20 @@ function buildSimpleSqlWhere(filter, startIndex = 2) {
       continue;
     }
 
+    // mongo_documents.id is the hex ObjectId. Stored doc._id is {"$oid": "..."}.
+    // Comparing doc->>'_id' to the hex string never matches.
+    if (key === '_id') {
+      conditions.push(`id = $${index}`);
+      params.push(oidHex(expected));
+      index += 1;
+      continue;
+    }
+
     const field = jsonFieldExpr(key);
     if (expected && typeof expected === 'object' && expected.$oid) {
-      conditions.push(`${field} = $${index}`);
+      conditions.push(
+        `(${field} = $${index} or doc->'${key.replace(/'/g, "''")}'->>'$oid' = $${index})`,
+      );
       params.push(String(expected.$oid));
       index += 1;
       continue;
