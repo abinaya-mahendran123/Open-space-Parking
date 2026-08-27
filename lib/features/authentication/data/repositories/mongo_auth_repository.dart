@@ -13,6 +13,7 @@ import 'package:open_space_parking/core/services/mongodb/mongo_collection_servic
 import 'package:open_space_parking/core/services/mongodb/mongo_database_service.dart';
 import 'package:open_space_parking/core/utils/mongo_json.dart';
 import 'package:open_space_parking/core/utils/phone_utils.dart';
+import 'package:open_space_parking/core/utils/profile_prefill.dart';
 import 'package:open_space_parking/features/authentication/domain/entities/auth_session.dart';
 import 'package:open_space_parking/features/authentication/domain/entities/user_role.dart';
 import 'package:open_space_parking/features/authentication/domain/repositories/auth_repository.dart';
@@ -179,6 +180,10 @@ class MongoAuthRepository implements AuthRepository {
     final rawId = employee['_id'];
     final userId = MongoJson.objectIdHex(rawId);
     final email = employee['email'] as String? ?? '';
+    final employeePhone =
+        (employee['phone'] as String?)?.trim().isNotEmpty == true
+            ? (employee['phone'] as String).trim()
+            : normalizedPhone;
 
     return _buildSession(
       userId: userId,
@@ -186,6 +191,7 @@ class MongoAuthRepository implements AuthRepository {
       displayName: employee['fullName'] as String? ?? '',
       role: UserRole.employee,
       issuedAt: DateTime.now().toUtc(),
+      phone: employeePhone,
     );
   }
 
@@ -234,7 +240,7 @@ class MongoAuthRepository implements AuthRepository {
           },
           authenticated: false,
         );
-        return _sessionFromApi(response, _phoneEmail(normalizedPhone));
+        return _sessionFromApi(response, '');
       } on NetworkException catch (e) {
         final msg = e.message.toLowerCase();
         if (msg.contains('invalid credentials')) {
@@ -299,7 +305,7 @@ class MongoAuthRepository implements AuthRepository {
         if (docTen == ten && doc['role'] == UserRole.security.value) {
           return _buildSession(
             userId: MongoJson.objectIdHex(doc['_id']),
-            email: '${doc['email'] ?? _phoneEmail(normalizedPhone)}',
+            email: '${doc['email'] ?? ''}',
             displayName:
                 '${doc['displayName'] ?? AppConstants.defaultSecurityDisplayName}',
             role: UserRole.security,
@@ -438,7 +444,7 @@ class MongoAuthRepository implements AuthRepository {
           },
           authenticated: false,
         );
-        return _sessionFromApi(response, _phoneEmail(normalizedPhone));
+        return _sessionFromApi(response, '');
       } on NetworkException catch (e) {
         final msg = e.message.toLowerCase();
         if (!msg.contains('404') && !msg.contains('cannot post')) {
@@ -460,7 +466,7 @@ class MongoAuthRepository implements AuthRepository {
       final rawId = user['_id'];
       return _buildSession(
         userId: MongoJson.objectIdHex(rawId),
-        email: user['email'] as String? ?? _phoneEmail(normalizedPhone),
+        email: user['email'] as String? ?? '',
         displayName: user['displayName'] as String? ?? '',
         role: role,
         issuedAt: DateTime.now().toUtc(),
@@ -495,7 +501,7 @@ class MongoAuthRepository implements AuthRepository {
           },
           authenticated: false,
         );
-        final session = _sessionFromApi(response, _phoneEmail(normalizedPhone));
+        final session = _sessionFromApi(response, '');
         try {
           await _seedProfileForRole(
             userId: session.userId,
@@ -521,22 +527,13 @@ class MongoAuthRepository implements AuthRepository {
       throw const AppException('An account with this mobile number already exists.');
     }
 
-    final syntheticEmail = _phoneEmail(normalizedPhone);
-    final existingEmail = await _collectionService.findOne(
-      collectionName: AppConstants.usersCollection,
-      selector: where.eq('email', syntheticEmail),
-    );
-    if (existingEmail != null) {
-      throw const AppException('An account with this mobile number already exists.');
-    }
-
     final userId = ObjectId();
     final now = DateTime.now().toUtc();
     await _collectionService.insertOne(
       collectionName: AppConstants.usersCollection,
       document: {
         '_id': userId,
-        'email': syntheticEmail,
+        'email': '',
         'phone': normalizedPhone,
         'displayName': displayName.trim(),
         'role': role.value,
@@ -556,7 +553,7 @@ class MongoAuthRepository implements AuthRepository {
 
     return _buildSession(
       userId: userId.oid,
-      email: syntheticEmail,
+      email: '',
       displayName: displayName.trim(),
       role: role,
       issuedAt: now,
@@ -800,10 +797,8 @@ class MongoAuthRepository implements AuthRepository {
     );
   }
 
-  String _phoneEmail(String normalizedPhone) {
-    final digits = normalizedPhone.replaceAll(RegExp(r'\D'), '');
-    return 'phone.$digits@openspace.local';
-  }
+  String _publicEmail(String? value) =>
+      ProfilePrefill.realEmail(value) ?? '';
 
   void _assertSelfRegisterRole(UserRole role) {
     if (role == UserRole.admin ||
@@ -826,7 +821,12 @@ class MongoAuthRepository implements AuthRepository {
       collectionName: AppConstants.usersCollection,
       selector: where.eq('email', normalizedEmail),
     );
-    if (user == null) throw const AppException('Invalid credentials.');
+    if (user == null) {
+      final passwordKnown = await _passwordMatchesAnyUser(password);
+      throw AppException(
+        passwordKnown ? 'Wrong email.' : 'Wrong email and password.',
+      );
+    }
 
     final salt = user['passwordSalt'] as String?;
     final hash = user['passwordHash'] as String?;
@@ -836,7 +836,9 @@ class MongoAuthRepository implements AuthRepository {
     }
 
     final computedHash = sha256.convert(utf8.encode('$password::$salt')).toString();
-    if (computedHash != hash) throw const AppException('Invalid credentials.');
+    if (computedHash != hash) {
+      throw const AppException('Wrong password.');
+    }
 
     final role = UserRoleX.fromValue(roleValue);
     if (!allowAdmin && role == UserRole.admin) {
@@ -861,6 +863,25 @@ class MongoAuthRepository implements AuthRepository {
     );
   }
 
+  Future<bool> _passwordMatchesAnyUser(String password) async {
+    final users = await _collectionService.findMany(
+      collectionName: AppConstants.usersCollection,
+      selector: where.ne('isDeleted', true),
+    );
+    var checked = 0;
+    for (final candidate in users) {
+      if (checked >= 500) break;
+      final salt = candidate['passwordSalt'] as String?;
+      final hash = candidate['passwordHash'] as String?;
+      if (salt == null || hash == null) continue;
+      checked += 1;
+      final computed =
+          sha256.convert(utf8.encode('$password::$salt')).toString();
+      if (computed == hash) return true;
+    }
+    return false;
+  }
+
   Future<void> _ensureConnected() async {
     if (!_databaseService.isConnected) {
       await _databaseService.connect();
@@ -873,11 +894,13 @@ class MongoAuthRepository implements AuthRepository {
     required String displayName,
     required UserRole role,
     required DateTime issuedAt,
+    String phone = '',
   }) {
     final expiresAt = issuedAt.add(const Duration(days: 7));
+    final safeEmail = _publicEmail(email);
     final payload = {
       'sub': userId,
-      'email': email,
+      'email': safeEmail,
       'displayName': displayName,
       'role': role.value,
       'iat': issuedAt.millisecondsSinceEpoch,
@@ -887,11 +910,12 @@ class MongoAuthRepository implements AuthRepository {
 
     return AuthSession(
       userId: userId,
-      email: email,
+      email: safeEmail,
       displayName: displayName,
       role: role,
       jwtToken: jwtToken,
       expiresAt: expiresAt,
+      phone: phone.trim(),
     );
   }
 
@@ -907,23 +931,30 @@ class MongoAuthRepository implements AuthRepository {
         .trim();
     final jwtToken = response['jwtToken'] as String? ?? '';
     final expiresRaw = response['expiresAt'] as String?;
+    final phone = (response['phone'] as String?)?.trim() ?? '';
+    final email = _publicEmail(
+      response['email'] as String? ?? fallbackEmail,
+    );
+
     if (jwtToken.isNotEmpty && expiresRaw != null && expiresRaw.isNotEmpty) {
       return AuthSession(
         userId: MongoJson.objectIdHex(response['userId']),
-        email: response['email'] as String? ?? fallbackEmail.trim().toLowerCase(),
+        email: email,
         displayName: displayName,
         role: UserRoleX.fromValue(response['role'] as String? ?? ''),
         jwtToken: jwtToken,
         expiresAt: DateTime.parse(expiresRaw),
+        phone: phone,
       );
     }
 
     return _buildSession(
       userId: MongoJson.objectIdHex(response['userId']),
-      email: response['email'] as String? ?? fallbackEmail.trim().toLowerCase(),
+      email: email,
       displayName: displayName,
       role: UserRoleX.fromValue(response['role'] as String? ?? ''),
       issuedAt: DateTime.now().toUtc(),
+      phone: phone,
     );
   }
 

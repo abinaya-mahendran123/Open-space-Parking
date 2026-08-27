@@ -30,10 +30,10 @@ class ProfilePrefill {
       ]),
       phone: firstNonEmpty([saved?.phone, fromRequest?.phone]),
       email: firstNonEmpty([
-        saved?.email,
-        fromRequest?.email,
-        accountEmail,
-        session?.email,
+        realEmail(saved?.email),
+        realEmail(fromRequest?.email),
+        realEmail(accountEmail),
+        realEmail(session?.email),
       ]),
       address: firstNonEmpty([saved?.address, fromRequest?.address]),
       aadhaarNumber: saved?.aadhaarNumber ?? fromRequest?.aadhaarNumber,
@@ -52,9 +52,12 @@ class ProfilePrefill {
     if (text.isEmpty) return true;
     if (!text.contains('@')) return true;
     if (text.endsWith('@openspace.local')) return true;
+    if (RegExp(r'^emp\.\d+@').hasMatch(text)) return true;
+    if (RegExp(r'^phone\.\d+@').hasMatch(text)) return true;
 
     final local = text.split('@').first;
     if (RegExp(r'^phone\.\d+$').hasMatch(local)) return true;
+    if (RegExp(r'^emp\.\d+$').hasMatch(local)) return true;
     if (RegExp(r'^\+?\d{10,15}$').hasMatch(local)) return true;
     return false;
   }

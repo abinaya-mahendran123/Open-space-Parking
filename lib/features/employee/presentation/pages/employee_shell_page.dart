@@ -5,8 +5,7 @@ import 'package:go_router/go_router.dart';
 import 'package:open_space_parking/core/routes/route_paths.dart';
 import 'package:open_space_parking/core/utils/responsive.dart';
 import 'package:open_space_parking/core/widgets/layout/app_shell_scaffold.dart';
-import 'package:open_space_parking/core/widgets/dialogs/app_dialogs.dart';
-import 'package:open_space_parking/features/authentication/presentation/providers/auth_state_provider.dart';
+import 'package:open_space_parking/features/account/presentation/pages/role_account_pages.dart';
 import 'package:open_space_parking/features/employee/presentation/pages/employee_assigned_page.dart';
 import 'package:open_space_parking/features/employee/presentation/pages/employee_completed_page.dart';
 import 'package:open_space_parking/features/employee/presentation/pages/employee_dashboard_page.dart';
@@ -35,7 +34,8 @@ class _EmployeeShellPageState extends ConsumerState<EmployeeShellPage> {
     super.initState();
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
-      ref.read(employeeShellTabProvider.notifier).state = widget.initialIndex;
+      final index = widget.initialIndex.clamp(0, _pages.length - 1);
+      ref.read(employeeShellTabProvider.notifier).state = index;
     });
   }
 
@@ -43,7 +43,8 @@ class _EmployeeShellPageState extends ConsumerState<EmployeeShellPage> {
   void didUpdateWidget(covariant EmployeeShellPage oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.initialIndex != widget.initialIndex) {
-      ref.read(employeeShellTabProvider.notifier).state = widget.initialIndex;
+      final index = widget.initialIndex.clamp(0, _pages.length - 1);
+      ref.read(employeeShellTabProvider.notifier).state = index;
     }
   }
 
@@ -61,13 +62,15 @@ class _EmployeeShellPageState extends ConsumerState<EmployeeShellPage> {
     }
   }
 
-  Future<void> _logout() async {
-    final confirmed = await AppDialogs.confirmLogout(context);
-    if (!confirmed || !mounted) return;
-    ref.read(employeeShellTabProvider.notifier).state = 0;
-    await ref.read(authStateProvider.notifier).logout();
-    if (!mounted) return;
-    context.go(RoutePaths.authEntry);
+  void _openProfile() {
+    Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (_) => Scaffold(
+          appBar: AppBar(title: const Text('My Account')),
+          body: const EmployeeProfilePage(),
+        ),
+      ),
+    );
   }
 
   Widget _wrapBackHandling({required int currentIndex, required Widget child}) {
@@ -85,28 +88,32 @@ class _EmployeeShellPageState extends ConsumerState<EmployeeShellPage> {
   @override
   Widget build(BuildContext context) {
     final currentIndex = ref.watch(employeeShellTabProvider);
+    final safeIndex = currentIndex.clamp(0, _pages.length - 1);
     final isWide = context.isDesktop || context.isTablet;
 
     final appBar = AppBar(
       title: const Text('Employee Portal'),
       actions: [
-        IconButton(
-          tooltip: 'Logout',
-          onPressed: _logout,
-          icon: const Icon(Icons.logout),
+        Padding(
+          padding: const EdgeInsets.only(right: 8),
+          child: TextButton.icon(
+            onPressed: _openProfile,
+            icon: const Icon(Icons.person_outline),
+            label: const Text('Profile'),
+          ),
         ),
       ],
     );
 
     if (isWide) {
       return _wrapBackHandling(
-        currentIndex: currentIndex,
+        currentIndex: safeIndex,
         child: Scaffold(
           appBar: appBar,
           body: Row(
             children: [
               NavigationRail(
-                selectedIndex: currentIndex,
+                selectedIndex: safeIndex,
                 onDestinationSelected: _onSelect,
                 labelType: NavigationRailLabelType.all,
                 destinations: const [
@@ -133,7 +140,7 @@ class _EmployeeShellPageState extends ConsumerState<EmployeeShellPage> {
                 ],
               ),
               const VerticalDivider(width: 1),
-              Expanded(child: _pages[currentIndex]),
+              Expanded(child: _pages[safeIndex]),
             ],
           ),
         ),
@@ -142,8 +149,8 @@ class _EmployeeShellPageState extends ConsumerState<EmployeeShellPage> {
 
     return AppShellScaffold(
       appBar: appBar,
-      body: _pages[currentIndex],
-      selectedIndex: currentIndex,
+      body: _pages[safeIndex],
+      selectedIndex: safeIndex,
       onDestinationSelected: _onSelect,
       destinations: const [
         NavigationDestination(

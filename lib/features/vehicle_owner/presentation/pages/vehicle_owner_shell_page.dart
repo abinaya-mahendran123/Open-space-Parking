@@ -83,7 +83,7 @@ class _VehicleOwnerShellPageState extends ConsumerState<VehicleOwnerShellPage> {
         NavigationDestination(
           icon: Icon(Icons.person_outline),
           selectedIcon: Icon(Icons.person),
-          label: 'Profile',
+          label: 'Account',
         ),
       ],
     );

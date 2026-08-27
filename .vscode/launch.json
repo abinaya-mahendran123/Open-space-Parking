@@ -10,6 +10,29 @@
       "preLaunchTask": "Prepare Flutter Build",
       "toolArgs": [
         "--web-port=8080",
+        "--dart-define=BASE_API_URL=http://127.0.0.1:3000",
+        "--dart-define=GOOGLE_WEB_CLIENT_ID=794049298844-v8f8okbjfb4memdcjugcpqfd58tk71j0.apps.googleusercontent.com",
+        "--dart-define=GOOGLE_SERVER_CLIENT_ID=794049298844-v8f8okbjfb4memdcjugcpqfd58tk71j0.apps.googleusercontent.com",
+        "--dart-define=ENABLE_FIREBASE=true",
+        "--dart-define=FIREBASE_API_KEY=AIzaSyCqLObK4oe-Y7huBVTsB1UmSl8EGqxUu6w",
+        "--dart-define=FIREBASE_WEB_APP_ID=1:794049298844:web:e2d18b28cd68232fb68859",
+        "--dart-define=FIREBASE_ANDROID_APP_ID=1:794049298844:android:6763c9ecf56b7a3ab68859",
+        "--dart-define=FIREBASE_APP_ID=1:794049298844:web:e2d18b28cd68232fb68859",
+        "--dart-define=FIREBASE_MESSAGING_SENDER_ID=794049298844",
+        "--dart-define=FIREBASE_PROJECT_ID=open-space-parking",
+        "--dart-define=FIREBASE_AUTH_DOMAIN=open-space-parking.firebaseapp.com",
+        "--dart-define=FIREBASE_STORAGE_BUCKET=open-space-parking.firebasestorage.app"
+      ]
+    },
+    {
+      "name": "Open Space Parking (Chrome, Render API)",
+      "request": "launch",
+      "type": "dart",
+      "program": "lib/main.dart",
+      "deviceId": "chrome",
+      "preLaunchTask": "Prepare Flutter Build",
+      "toolArgs": [
+        "--web-port=8080",
         "--dart-define=BASE_API_URL=https://open-space-parking.onrender.com",
         "--dart-define=GOOGLE_WEB_CLIENT_ID=794049298844-v8f8okbjfb4memdcjugcpqfd58tk71j0.apps.googleusercontent.com",
         "--dart-define=GOOGLE_SERVER_CLIENT_ID=794049298844-v8f8okbjfb4memdcjugcpqfd58tk71j0.apps.googleusercontent.com",
@@ -34,7 +57,7 @@
       "preLaunchTask": "Prepare Flutter Build",
       "toolArgs": [
         "--web-port=8080",
-        "--dart-define=BASE_API_URL=https://open-space-parking.onrender.com",
+        "--dart-define=BASE_API_URL=http://127.0.0.1:3000",
         "--dart-define=GOOGLE_WEB_CLIENT_ID=794049298844-v8f8okbjfb4memdcjugcpqfd58tk71j0.apps.googleusercontent.com",
         "--dart-define=GOOGLE_SERVER_CLIENT_ID=794049298844-v8f8okbjfb4memdcjugcpqfd58tk71j0.apps.googleusercontent.com",
         "--dart-define=ENABLE_FIREBASE=true",
@@ -56,7 +79,7 @@
       "deviceId": "10BCC31CBU001QY",
       "preLaunchTask": "Prepare Android API",
       "toolArgs": [
-        "--dart-define=BASE_API_URL=https://open-space-parking.onrender.com",
+        "--dart-define=BASE_API_URL=http://127.0.0.1:3000",
         "--dart-define=HOST_LAN_IP=192.168.88.3",
         "--dart-define=GOOGLE_WEB_CLIENT_ID=794049298844-v8f8okbjfb4memdcjugcpqfd58tk71j0.apps.googleusercontent.com",
         "--dart-define=GOOGLE_SERVER_CLIENT_ID=794049298844-v8f8okbjfb4memdcjugcpqfd58tk71j0.apps.googleusercontent.com",

@@ -307,15 +307,26 @@ class MongoEmployeeRepository implements EmployeeRepository {
 
   @override
   Future<String?> getFullName(String employeeId) async {
-    if (employeeId.isEmpty) return null;
-    await _ensureConnected();
-    final map = await _collectionService.findOne(
-      collectionName: AppConstants.employeesCollection,
-      selector: where.eq('_id', ObjectId.parse(employeeId)),
-    );
+    final map = await _employeeDoc(employeeId);
     final name = map?['fullName'] as String? ?? map?['displayName'] as String?;
     final trimmed = name?.trim();
     return trimmed != null && trimmed.isNotEmpty ? trimmed : null;
+  }
+
+  @override
+  Future<String?> getPhone(String employeeId) async {
+    final map = await _employeeDoc(employeeId);
+    final phone = (map?['phone'] as String?)?.trim();
+    return phone != null && phone.isNotEmpty ? phone : null;
+  }
+
+  Future<Map<String, dynamic>?> _employeeDoc(String employeeId) async {
+    if (employeeId.isEmpty) return null;
+    await _ensureConnected();
+    return _collectionService.findOne(
+      collectionName: AppConstants.employeesCollection,
+      selector: where.eq('_id', ObjectId.parse(employeeId)),
+    );
   }
 
   Future<LandOwnerRequest> _assertAssigned({

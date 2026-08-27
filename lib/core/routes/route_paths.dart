@@ -15,6 +15,7 @@ class RoutePaths {
   static const String adminTickets = '/admin/tickets';
   static const String adminEmployees = '/admin/employees';
   static const String adminStatistics = '/admin/statistics';
+  static const String adminProfile = '/admin/profile';
 
   static String adminTicketDetail(String ticketId) => '/admin/tickets/$ticketId';
 
@@ -27,6 +28,7 @@ class RoutePaths {
   static const String employeeAssigned = '/employee/assigned';
   static const String employeeCompleted = '/employee/completed';
   static const String employeeNotifications = '/employee/notifications';
+  static const String employeeProfile = '/employee/profile';
 
   static String employeeTicketDetail(String ticketId) =>
       '/employee/tickets/$ticketId';
@@ -103,6 +105,7 @@ class RoutePaths {
         location == adminTickets ||
         location == adminEmployees ||
         location == adminStatistics ||
+        location == adminProfile ||
         location.startsWith('/admin/tickets/') ||
         location.startsWith('/admin/employees/');
   }
@@ -113,6 +116,7 @@ class RoutePaths {
         location == employeeAssigned ||
         location == employeeCompleted ||
         location == employeeNotifications ||
+        location == employeeProfile ||
         location.startsWith('/employee/tickets/');
   }
 }

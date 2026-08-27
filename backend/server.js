@@ -11,6 +11,7 @@ const {
   requireAuth,
   requireRole,
   parseCorsOrigins,
+  isLocalDevOrigin,
 } = require('./auth_jwt');
 const {
   startParkingSession,
@@ -66,7 +67,11 @@ app.use(
     corsOrigins
       ? {
           origin(origin, callback) {
-            if (!origin || corsOrigins.includes(origin)) {
+            if (
+              !origin ||
+              corsOrigins.includes(origin) ||
+              isLocalDevOrigin(origin)
+            ) {
               callback(null, true);
               return;
             }
@@ -77,7 +82,8 @@ app.use(
       : { origin: true },
   ),
 );
-app.use(express.json({ limit: '20mb' }));
+// Aadhaar OCR may send inline base64 when Cloudinary/local URL fetch would 404.
+app.use(express.json({ limit: '25mb' }));
 app.use((error, _req, res, next) => {
   if (error instanceof SyntaxError && error.status === 400 && 'body' in error) {
     res.status(400).json({ error: 'Invalid JSON request body.' });
@@ -245,12 +251,28 @@ async function findEmployeeByPhone(phone) {
   return employees.find((employee) => phoneKey(employee.phone) === lastTen) || null;
 }
 
+function isSyntheticEmail(value) {
+  const text = String(value || '').trim().toLowerCase();
+  if (!text) return false;
+  if (/^(emp|phone)\.\d+@openspace\.local$/.test(text)) return true;
+  if (/^phone\.\d+@/.test(text)) return true;
+  if (/^emp\.\d+@/.test(text)) return true;
+  return false;
+}
+
+function publicEmail(value) {
+  const text = String(value || '').trim();
+  if (!text || isSyntheticEmail(text)) return '';
+  return text;
+}
+
 function employeeSessionPayload(employee) {
   return attachSessionToken({
     userId: asHexId(employee._id),
-    email: employee.email || '',
+    email: publicEmail(employee.email),
     displayName: employee.fullName || employee.displayName || '',
     role: 'employee',
+    phone: employee.phone || '',
   });
 }
 
@@ -262,20 +284,48 @@ function sessionPayload(user) {
     role;
   return attachSessionToken({
     userId: asHexId(user._id),
-    email: user.email,
+    email: publicEmail(user.email),
     displayName: user.displayName || '',
     role: normalized,
+    phone: user.phone || '',
   });
+}
+
+async function passwordMatchesAnyUser(password) {
+  const candidates = await db
+    .collection('users')
+    .find({
+      isDeleted: { $ne: true },
+      passwordSalt: { $exists: true, $ne: null },
+      passwordHash: { $exists: true, $ne: null },
+    })
+    .project({ passwordSalt: 1, passwordHash: 1 })
+    .limit(500)
+    .toArray();
+
+  for (const candidate of candidates) {
+    if (!candidate.passwordSalt || !candidate.passwordHash) continue;
+    if (hashPassword(password, candidate.passwordSalt) === candidate.passwordHash) {
+      return true;
+    }
+  }
+  return false;
 }
 
 async function authenticatePassword(email, password) {
   const user = await findActiveUserByEmail(email);
   if (!user || !user.passwordSalt || !user.passwordHash) {
-    return { status: 401, error: 'Invalid credentials.' };
+    // Email not found: check whether this password belongs to any account
+    // so we can distinguish "wrong email" vs "wrong email and password".
+    const passwordKnown = await passwordMatchesAnyUser(password);
+    if (passwordKnown) {
+      return { status: 401, error: 'Wrong email.' };
+    }
+    return { status: 401, error: 'Wrong email and password.' };
   }
   const computed = hashPassword(password, user.passwordSalt);
   if (computed !== user.passwordHash) {
-    return { status: 401, error: 'Invalid credentials.' };
+    return { status: 401, error: 'Wrong password.' };
   }
   return { user };
 }
@@ -517,7 +567,7 @@ app.post('/api/auth/admin-login', async (req, res) => {
     const email = String(req.body?.email || '').trim().toLowerCase();
     const password = String(req.body?.password || '');
     if (!email || !password) {
-      res.status(400).json({ error: 'Invalid credentials.' });
+      res.status(400).json({ error: 'Wrong email and password.' });
       return;
     }
     if (email === DEFAULT_ADMIN_EMAIL) {
@@ -543,7 +593,7 @@ app.post('/api/auth/app-login', async (req, res) => {
     const email = String(req.body?.email || '').trim().toLowerCase();
     const password = String(req.body?.password || '');
     if (!email || !password) {
-      res.status(400).json({ error: 'Invalid credentials.' });
+      res.status(400).json({ error: 'Wrong email and password.' });
       return;
     }
     const result = await authenticatePassword(email, password);
@@ -1072,7 +1122,7 @@ app.post('/api/auth/phone-register', async (req, res) => {
     const now = new Date().toISOString();
     const user = {
       _id: new ObjectId(),
-      email: `phone.${phoneDigits(normalizedPhone)}@openspace.local`,
+      email: '',
       phone: normalizedPhone,
       displayName,
       role,
@@ -1390,13 +1440,18 @@ app.post('/api/uploads', upload.single('file'), (req, res) => {
       return;
     }
 
+    const publicBase = String(process.env.PUBLIC_BASE_URL || '')
+      .trim()
+      .replace(/\/+$/, '');
     const host = req.get('host');
     const protocol = (
       String(req.get('x-forwarded-proto') || req.protocol || 'https')
         .split(',')[0]
         .trim() || 'https'
     );
-    const url = `${protocol}://${host}/uploads/${req.file.filename}`;
+    const url = publicBase
+      ? `${publicBase}/uploads/${req.file.filename}`
+      : `${protocol}://${host}/uploads/${req.file.filename}`;
     const extension = path.extname(req.file.originalname).slice(1).toLowerCase();
 
     res.json({
@@ -2160,6 +2215,55 @@ app.post('/api/payments/razorpay/verify', async (req, res) => {
   }
 });
 
+async function clearSyntheticEmails(database) {
+  try {
+    let cleared = 0;
+    for (const collectionName of ['users', 'employees']) {
+      const docs = await database.collection(collectionName).find({}).toArray();
+      for (const doc of docs) {
+        if (!isSyntheticEmail(doc.email)) continue;
+        const filter = doc._id != null ? { _id: doc._id } : { email: doc.email };
+        const patch =
+          collectionName === 'users'
+            ? { $set: { email: '', updatedAt: new Date().toISOString() } }
+            : { $set: { email: '' } };
+        await database.collection(collectionName).updateOne(filter, patch);
+        cleared += 1;
+      }
+    }
+
+    // Also strip synthetic emails nested in land-owner profile docs.
+    const profiles = await database
+      .collection('land_owner_profiles')
+      .find({})
+      .toArray();
+    for (const profile of profiles) {
+      const nested = profile?.ownerDetails?.email;
+      if (!isSyntheticEmail(nested)) continue;
+      const nextDetails = {
+        ...(profile.ownerDetails || {}),
+        email: '',
+      };
+      await database.collection('land_owner_profiles').updateOne(
+        { _id: profile._id },
+        {
+          $set: {
+            ownerDetails: nextDetails,
+            updatedAt: new Date().toISOString(),
+          },
+        },
+      );
+      cleared += 1;
+    }
+
+    if (cleared > 0) {
+      console.log(`Cleared ${cleared} synthetic email address(es).`);
+    }
+  } catch (error) {
+    console.warn('Could not clear synthetic emails:', error.message);
+  }
+}
+
 async function start() {
   if (DATABASE_URL) {
     db = await createPgDb(DATABASE_URL);
@@ -2178,6 +2282,7 @@ async function start() {
   await seedDefaultAdmin(db);
   await seedDefaultSecurity(db);
   await seedDemoParkingIfEmpty(db);
+  await clearSyntheticEmails(db);
   app.listen(PORT, '0.0.0.0', () => {
     console.log(`Open Space Parking API listening on http://0.0.0.0:${PORT}`);
     console.log(`Phone/emulator: use http://<this-pc-lan-ip>:${PORT}`);

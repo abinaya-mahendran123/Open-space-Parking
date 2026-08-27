@@ -9,12 +9,13 @@ import 'package:open_space_parking/core/theme/app_typography.dart';
 class AppTheme {
   AppTheme._();
 
-  static const Duration animationDuration = Duration(milliseconds: 320);
-  static const Curve animationCurve = Curves.easeOutCubic;
+  /// Instant swap — animating ColorScheme across the whole tree causes jank.
+  static const Duration animationDuration = Duration.zero;
+  static const Curve animationCurve = Curves.linear;
 
-  static ThemeData get light => _build(AppColors.lightScheme);
-
-  static ThemeData get dark => _build(AppColors.darkScheme);
+  /// Built once; never recreate on every MaterialApp rebuild / theme toggle.
+  static final ThemeData light = _build(AppColors.lightScheme);
+  static final ThemeData dark = _build(AppColors.darkScheme);
 
   static ThemeData _build(ColorScheme colorScheme) {
     final isDark = colorScheme.brightness == Brightness.dark;
@@ -29,7 +30,8 @@ class AppTheme {
       textTheme: textTheme,
       scaffoldBackgroundColor: colorScheme.surface,
       visualDensity: VisualDensity.standard,
-      splashFactory: InkSparkle.splashFactory,
+      // InkSparkle is heavier during large theme rebuilds (esp. web).
+      splashFactory: InkRipple.splashFactory,
       pageTransitionsTheme: const PageTransitionsTheme(
         builders: {
           TargetPlatform.android: CupertinoPageTransitionsBuilder(),
