@@ -702,7 +702,7 @@ app.get('/api/health', (_req, res) => {
     razorpay: RAZORPAY_DEMO ? 'demo' : 'live',
     companyAccountConfigured: Boolean(RAZORPAY_COMPANY_ACCOUNT_ID),
     ocrBuild: 'aadhaar-fullcard-2026-08-27',
-    scanBuild: 'razorpay-confirm-2026-08-27',
+    scanBuild: 'razorpay-confirm-v2-2026-08-27',
   });
 });
 
@@ -2024,6 +2024,52 @@ app.post('/api/payments/razorpay/create-order', async (req, res) => {
       return res.status(error.statusCode || 400).json({ error: error.message });
     }
 
+    // If Razorpay already captured payment but app never got the callback, finish now.
+    const existingOrderId = String(booking.razorpayOrderId || '').trim();
+    if (
+      existingOrderId &&
+      !existingOrderId.startsWith('order_demo_') &&
+      !(booking.status === 'completed' && booking.paidAt)
+    ) {
+      try {
+        const payments = await fetchRazorpayOrderPayments(existingOrderId);
+        const paid = payments.find(
+          (item) =>
+            item &&
+            (item.status === 'captured' ||
+              item.status === 'authorized' ||
+              item.status === 'paid'),
+        );
+        if (paid) {
+          await completeBookingFromRazorpayPayment({
+            booking,
+            orderId: existingOrderId,
+            paymentId: paid.id,
+            signature: 'server_confirmed',
+          });
+          booking = (await findBookingDoc(bookingId)) || booking;
+        }
+      } catch (error) {
+        console.error('[razorpay/create-order] sync failed', error.message);
+      }
+    }
+
+    if (booking.status === 'completed' && booking.paidAt) {
+      return res.json({
+        ok: true,
+        alreadyPaid: true,
+        keyId: RAZORPAY_KEY_ID || 'rzp_test_demo',
+        orderId: booking.razorpayOrderId || existingOrderId || '',
+        amount: Number(booking.paidAmount || booking.amountDue || 0),
+        amountPaise: amountToPaise(booking.paidAmount || booking.amountDue || 0),
+        currency: 'INR',
+        bookingId,
+        bookingRef: booking.bookingRef,
+        demo: RAZORPAY_DEMO,
+        checkoutUrl: `/payments/razorpay/paid?bookingId=${encodeURIComponent(bookingId)}`,
+      });
+    }
+
     if (booking.status !== 'active' || !booking.checkedOutAt) {
       return res.status(400).json({
         error: 'Booking is not ready for payment. Complete exit QR scan first.',
@@ -2134,6 +2180,20 @@ app.post('/api/payments/razorpay/create-order', async (req, res) => {
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
+});
+
+app.get('/payments/razorpay/paid', async (req, res) => {
+  const bookingId = String(req.query.bookingId || '');
+  res.setHeader('Content-Type', 'text/html; charset=utf-8');
+  res.send(`<!DOCTYPE html>
+<html><head><meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Paid</title>
+<style>body{font-family:system-ui,sans-serif;max-width:420px;margin:40px auto;padding:16px}</style>
+</head><body>
+  <h2>Payment already completed</h2>
+  <p>Return to the Open Space Parking app and tap <b>I’ve paid — continue</b>.</p>
+  <p style="color:#666">Booking: ${bookingId || '-'}</p>
+</body></html>`);
 });
 
 app.get('/payments/razorpay/checkout', async (req, res) => {

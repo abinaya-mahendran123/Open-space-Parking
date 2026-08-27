@@ -57,6 +57,17 @@ class _ParkingPaymentPageState extends ConsumerState<ParkingPaymentPage> {
       // Server may repair a ₹0 bill (missing hourly rate). Refresh local booking.
       ref.invalidate(bookingDetailProvider(widget.bookingId));
 
+      if (order['alreadyPaid'] == true) {
+        final ownerId = ref.read(authStateProvider).session?.userId;
+        if (ownerId != null) {
+          ref.invalidate(vehicleOwnerBookingsProvider(ownerId));
+        }
+        ref.invalidate(parkingListingsProvider);
+        if (!mounted) return;
+        context.go(RoutePaths.vehicleOwnerBookingReceipt(widget.bookingId));
+        return;
+      }
+
       if (orderAmount < 1) {
         await _completeNoCharge();
         return;
