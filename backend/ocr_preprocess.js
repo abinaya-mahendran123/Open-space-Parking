@@ -92,64 +92,37 @@ async function buildPreprocessedBuffers(buffer, { deep = false } = {}) {
 /**
  * Detect and split a combined Aadhaar image into front (name/DOB side) and
  * back (address side) buffers.
+ *
+ * IMPORTANT: do NOT quarter normal phone photos. That produced tiny crops
+ * (e.g. 2x36) and sameBuffer:false double OCR (~200s) on Render.
+ * Only split obvious dual-card layouts.
  */
 async function splitSideBySide(buffer) {
-  const meta = await sharp(buffer).metadata();
+  const meta = await sharp(buffer).rotate().metadata();
   const { width = 0, height = 0 } = meta;
   if (width === 0 || height === 0) return null;
   const ratio = width / height;
 
-  if (ratio >= 1.85) {
+  // Wide: front | back side-by-side
+  if (ratio >= 1.85 && width >= 900) {
     const halfWidth = Math.floor(width / 2);
     const [leftBuffer, rightBuffer] = await Promise.all([
-      sharp(buffer).extract({ left: 0, top: 0, width: halfWidth, height }).toBuffer(),
+      sharp(buffer).rotate().extract({ left: 0, top: 0, width: halfWidth, height }).toBuffer(),
       sharp(buffer)
+        .rotate()
         .extract({ left: halfWidth, top: 0, width: width - halfWidth, height })
         .toBuffer(),
     ]);
     return { frontBuffer: leftBuffer, backBuffer: rightBuffer };
   }
 
-  if (ratio < 1.15 && height >= 700 && width >= 500) {
-    const halfW = Math.floor(width / 2);
-    const halfH = Math.floor(height / 2);
-    const [topLeft, topRight, bottomLeft, bottomRight] = await Promise.all([
-      sharp(buffer)
-        .extract({ left: 0, top: 0, width: halfW, height: halfH })
-        .toBuffer(),
-      sharp(buffer)
-        .extract({ left: halfW, top: 0, width: width - halfW, height: halfH })
-        .toBuffer(),
-      sharp(buffer)
-        .extract({
-          left: 0,
-          top: halfH,
-          width: halfW,
-          height: height - halfH,
-        })
-        .toBuffer(),
-      sharp(buffer)
-        .extract({
-          left: halfW,
-          top: halfH,
-          width: width - halfW,
-          height: height - halfH,
-        })
-        .toBuffer(),
-    ]);
-    return {
-      frontBuffer: bottomLeft,
-      backBuffer: topLeft,
-      topRight,
-      bottomRight,
-    };
-  }
-
-  if (ratio <= 0.85 && height >= 900) {
+  // Very tall: front stacked above back (two full cards)
+  if (ratio <= 0.55 && height >= 1400) {
     const halfH = Math.floor(height / 2);
     const [topBuffer, bottomBuffer] = await Promise.all([
-      sharp(buffer).extract({ left: 0, top: 0, width, height: halfH }).toBuffer(),
+      sharp(buffer).rotate().extract({ left: 0, top: 0, width, height: halfH }).toBuffer(),
       sharp(buffer)
+        .rotate()
         .extract({ left: 0, top: halfH, width, height: height - halfH })
         .toBuffer(),
     ]);
@@ -176,38 +149,45 @@ async function cropAadhaarNumberBands(buffer) {
     const meta = await sharp(buffer).rotate().metadata();
     const width = meta.width || 0;
     const height = meta.height || 0;
-    if (width < 80 || height < 80) return [];
+    if (width < 120 || height < 120) return [];
 
     // Prefer bottom / lower bands where the 12-digit UID is printed.
     const bands = [
       {
         left: Math.floor(width * 0.08),
-        top: Math.floor(height * 0.68),
-        width: Math.floor(width * 0.7),
-        height: Math.floor(height * 0.28),
+        top: Math.floor(height * 0.62),
+        width: Math.floor(width * 0.84),
+        height: Math.floor(height * 0.32),
       },
       {
         left: Math.floor(width * 0.05),
-        top: Math.floor(height * 0.5),
+        top: Math.floor(height * 0.45),
         width: Math.floor(width * 0.9),
-        height: Math.floor(height * 0.4),
+        height: Math.floor(height * 0.35),
       },
     ];
 
     const outs = [];
     for (const band of bands) {
-      const w = Math.max(20, Math.min(band.width, width - band.left));
-      const h = Math.max(20, Math.min(band.height, height - band.top));
-      if (band.left + w > width || band.top + h > height) continue;
+      const left = Math.max(0, band.left);
+      const top = Math.max(0, band.top);
+      const w = Math.min(band.width, width - left);
+      const h = Math.min(band.height, height - top);
+      if (w < 80 || h < 40) continue;
       const cropped = await sharp(buffer)
         .rotate()
-        .extract({ left: band.left, top: band.top, width: w, height: h })
+        .extract({ left, top, width: w, height: h })
         .greyscale()
         .normalize()
         .sharpen()
-        .resize({ width: Math.min(Math.max(w * 2, 900), 1600), withoutEnlargement: false })
+        .resize({
+          width: Math.min(Math.max(w * 2, 1000), 1600),
+          withoutEnlargement: false,
+        })
         .jpeg({ quality: 90 })
         .toBuffer();
+      const cropMeta = await sharp(cropped).metadata();
+      if ((cropMeta.width || 0) < 80 || (cropMeta.height || 0) < 20) continue;
       outs.push(cropped);
     }
     return outs;

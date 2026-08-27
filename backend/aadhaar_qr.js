@@ -160,7 +160,8 @@ function tryJsQr(data, width, height) {
 async function buildQrVariants(buffer) {
   const meta = await sharp(buffer).rotate().metadata();
   const w = meta.width || 800;
-  const targetWidth = Math.max(Math.min(Math.max(w, 1200), 2200), 1400);
+  // Keep QR decode fast on Render free tier (full 2200px × 5 variants was ~2 min).
+  const targetWidth = Math.min(Math.max(w, 900), 1200);
 
   const makeVariant = (pipeline) =>
     pipeline
@@ -177,17 +178,7 @@ async function buildQrVariants(buffer) {
         .greyscale()
         .normalize()
         .sharpen()
-        .linear(1.6, -(128 * 0.45)),
-    ),
-    makeVariant(sharp(buffer).rotate().greyscale().normalize().threshold(110)),
-    makeVariant(sharp(buffer).rotate().greyscale().normalize().threshold(140)),
-    makeVariant(
-      sharp(buffer)
-        .rotate()
-        .greyscale()
-        .normalize()
-        .median(3)
-        .threshold(128),
+        .linear(1.5, -(128 * 0.4)),
     ),
   ]);
 
@@ -204,42 +195,45 @@ async function buildQrCropVariants(buffer) {
     const meta = await sharp(buffer).rotate().metadata();
     const w = meta.width || 0;
     const h = meta.height || 0;
-    if (w < 10 || h < 10) return [];
+    if (w < 80 || h < 80) return [];
 
     const crops = [
       // bottom-right (most common on letter / plastic back)
       {
         left: Math.floor(w * 0.5),
-        top: Math.floor(h * 0.35),
+        top: Math.floor(h * 0.4),
         width: Math.floor(w * 0.5),
-        height: Math.floor(h * 0.65),
+        height: Math.floor(h * 0.6),
       },
       // tight bottom-right QR pocket
       {
-        left: Math.floor(w * 0.62),
-        top: Math.floor(h * 0.48),
-        width: Math.floor(w * 0.38),
-        height: Math.floor(h * 0.52),
+        left: Math.floor(w * 0.58),
+        top: Math.floor(h * 0.5),
+        width: Math.floor(w * 0.42),
+        height: Math.floor(h * 0.5),
       },
-      // right half
-      { left: Math.floor(w / 2), top: 0, width: Math.floor(w / 2), height: h },
-      // bottom half
-      { left: 0, top: Math.floor(h / 2), width: w, height: Math.floor(h / 2) },
     ];
 
     const results = await Promise.allSettled(
-      crops.map((crop) =>
-        sharp(buffer)
+      crops.map((crop) => {
+        const left = Math.max(0, crop.left);
+        const top = Math.max(0, crop.top);
+        const width = Math.min(crop.width, w - left);
+        const height = Math.min(crop.height, h - top);
+        if (width < 60 || height < 60) {
+          return Promise.reject(new Error('crop too small'));
+        }
+        return sharp(buffer)
           .rotate()
-          .extract(crop)
+          .extract({ left, top, width, height })
           .greyscale()
           .normalize()
           .sharpen()
-          .resize({ width: 900, withoutEnlargement: false, kernel: 'lanczos3' })
+          .resize({ width: 800, withoutEnlargement: false, kernel: 'lanczos3' })
           .ensureAlpha()
           .raw()
-          .toBuffer({ resolveWithObject: true }),
-      ),
+          .toBuffer({ resolveWithObject: true });
+      }),
     );
 
     return results

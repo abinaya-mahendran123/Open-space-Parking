@@ -354,42 +354,21 @@ async function extractGovernmentIdDetails({
 
   let qrExtracted = null;
   if (idType === 'aadhaar') {
-    const qrCandidates = [];
-    if (fullRawBuffer) qrCandidates.push(fullRawBuffer);
-    else qrCandidates.push(frontBuffer);
-    if (sameUrl && frontUrl) {
-      try {
-        const rawBuffer = await fetchBuffer(frontUrl);
-        if (!isPdfBuffer(rawBuffer)) qrCandidates.unshift(rawBuffer);
-      } catch (_) {
-        // ignore
-      }
+    // One buffer only — multi-variant QR on free Render often ate 2+ minutes.
+    const qrBuffer = fullRawBuffer || frontBuffer;
+    try {
+      qrExtracted = await extractAadhaarFromQr(qrBuffer);
+    } catch (error) {
+      logOcr('qr_failed', { reason: error?.message || String(error) });
     }
-
-    for (const buf of qrCandidates) {
-      qrExtracted = await extractAadhaarFromQr(buf);
-      if (isCompleteAadhaarQr(qrExtracted)) {
-        logOcr('qrResult=complete', { totalTimeMs: Date.now() - started });
-        return {
-          ...qrExtracted,
-          aadhaarNumber:
-            qrExtracted.aadhaarNumber || qrExtracted.governmentIdNumber || '',
-          extractionSource: 'aadhaar_qr',
-        };
-      }
-      if (isUsefulPartialQr(qrExtracted)) break;
-    }
-    if (!isUsefulPartialQr(qrExtracted) && extraBackBuffer) {
-      qrExtracted = await extractAadhaarFromQr(extraBackBuffer);
-      if (isCompleteAadhaarQr(qrExtracted)) {
-        logOcr('qrResult=complete_extra', { totalTimeMs: Date.now() - started });
-        return {
-          ...qrExtracted,
-          aadhaarNumber:
-            qrExtracted.aadhaarNumber || qrExtracted.governmentIdNumber || '',
-          extractionSource: 'aadhaar_qr',
-        };
-      }
+    if (isCompleteAadhaarQr(qrExtracted)) {
+      logOcr('qrResult=complete', { totalTimeMs: Date.now() - started });
+      return {
+        ...qrExtracted,
+        aadhaarNumber:
+          qrExtracted.aadhaarNumber || qrExtracted.governmentIdNumber || '',
+        extractionSource: 'aadhaar_qr',
+      };
     }
     logOcr('qrResult=partial_or_none');
   }
