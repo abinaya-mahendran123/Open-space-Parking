@@ -652,7 +652,7 @@ app.get('/api/health', (_req, res) => {
     razorpay: RAZORPAY_DEMO ? 'demo' : 'live',
     companyAccountConfigured: Boolean(RAZORPAY_COMPANY_ACCOUNT_ID),
     ocrBuild: 'aadhaar-fullcard-2026-08-27',
-    scanBuild: 'billing-rate-fix-2026-08-27',
+    scanBuild: 'razorpay-confirm-2026-08-27',
   });
 });
 
@@ -1802,6 +1802,84 @@ function verifyRazorpaySignature(orderId, paymentId, signature) {
   return expected === signature;
 }
 
+async function findBookingDoc(bookingId) {
+  const id = String(bookingId || '').trim();
+  if (!id) return null;
+  try {
+    if (/^[a-fA-F0-9]{24}$/.test(id)) {
+      const byObjectId = await db.collection('bookings').findOne({
+        _id: new ObjectId(id),
+      });
+      if (byObjectId) return byObjectId;
+      const byOid = await db.collection('bookings').findOne({
+        _id: { $oid: id },
+      });
+      if (byOid) return byOid;
+    }
+  } catch (_) {
+    // fall through
+  }
+  return (
+    (await db.collection('bookings').findOne({ bookingRef: id })) ||
+    (await db.collection('bookings').findOne({ qrPayload: id }))
+  );
+}
+
+async function fetchRazorpayOrderPayments(orderId) {
+  const response = await fetch(
+    `https://api.razorpay.com/v1/orders/${encodeURIComponent(orderId)}/payments`,
+    {
+      headers: {
+        Authorization: `Basic ${razorpayAuthHeader()}`,
+      },
+    },
+  );
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    const error = new Error(
+      data.error?.description || 'Could not fetch Razorpay payment status.',
+    );
+    error.statusCode = 502;
+    throw error;
+  }
+  return Array.isArray(data.items) ? data.items : [];
+}
+
+async function buildPaymentSplit(booking) {
+  if (booking.split && typeof booking.split === 'object') {
+    return booking.split;
+  }
+  const amounts = splitParkingPayment(Number(booking.amountDue));
+  const { ownerId, payout } = await resolveLandOwnerPayout(booking);
+  return {
+    ...amounts,
+    landOwnerId: ownerId,
+    landOwnerUpi: payout?.upiId || null,
+    settlementStatus: 'pending_manual',
+  };
+}
+
+async function completeBookingFromRazorpayPayment({
+  booking,
+  orderId,
+  paymentId,
+  signature,
+}) {
+  const bookingId = String(
+    booking._id?.$oid || booking._id?.toHexString?.() || booking._id || '',
+  );
+  const split = await buildPaymentSplit(booking);
+  await markBookingPaid({
+    bookingId,
+    amount: Number(booking.amountDue),
+    razorpayOrderId: orderId,
+    razorpayPaymentId: paymentId,
+    razorpaySignature: signature || 'server_confirmed',
+    split,
+  });
+  return bookingId;
+}
+
 async function markBookingPaid({
   bookingId,
   amount,
@@ -1823,7 +1901,7 @@ async function markBookingPaid({
     createdAt: now,
   };
   const paymentResult = await db.collection('payments').insertOne(paymentDoc);
-  await db.collection('bookings').updateOne(
+  let updated = await db.collection('bookings').updateOne(
     { _id: new ObjectId(bookingId) },
     {
       $set: {
@@ -1837,6 +1915,25 @@ async function markBookingPaid({
       },
     },
   );
+  if (!updated.matchedCount) {
+    updated = await db.collection('bookings').updateOne(
+      { _id: { $oid: bookingId } },
+      {
+        $set: {
+          status: 'completed',
+          paidAmount: amount,
+          paymentId: razorpayPaymentId,
+          paidAt: now,
+          paymentMethod: 'Razorpay',
+          split,
+          updatedAt: now,
+        },
+      },
+    );
+  }
+  if (!updated.matchedCount) {
+    throw new Error('Could not mark booking as paid. Try “I’ve paid” again.');
+  }
 
   if (split?.landOwnerId) {
     await db.collection('notifications').insertOne({
@@ -1861,23 +1958,21 @@ app.post('/api/payments/razorpay/create-order', async (req, res) => {
       return res.status(400).json({ error: 'bookingId is required' });
     }
 
-    let booking = await db.collection('bookings').findOne({
-      _id: new ObjectId(bookingId),
-    });
+    let booking = await findBookingDoc(bookingId);
     if (!booking) {
       return res.status(404).json({ error: 'Booking not found' });
     }
-    if (booking.status !== 'active' || !booking.checkedOutAt) {
-      return res.status(400).json({
-        error: 'Booking is not ready for payment. Complete exit QR scan first.',
-      });
-    }
-
     // Repair ₹0 bills caused by missing hourly rate on older sessions.
     try {
       booking = await ensureBillForCheckout(db, booking);
     } catch (error) {
       return res.status(error.statusCode || 400).json({ error: error.message });
+    }
+
+    if (booking.status !== 'active' || !booking.checkedOutAt) {
+      return res.status(400).json({
+        error: 'Booking is not ready for payment. Complete exit QR scan first.',
+      });
     }
 
     const amount = Number(booking.amountDue);
@@ -1994,15 +2089,17 @@ app.get('/payments/razorpay/checkout', async (req, res) => {
       return res.status(400).send('Missing bookingId or orderId');
     }
 
-    const booking = await db.collection('bookings').findOne({
-      _id: new ObjectId(bookingId),
-    });
+    const booking = await findBookingDoc(bookingId);
     if (!booking) return res.status(404).send('Booking not found');
 
     const amount = Number(booking.amountDue || 0);
     const amountPaise = amountToPaise(amount);
     const keyId = RAZORPAY_DEMO ? 'rzp_test_demo' : RAZORPAY_KEY_ID;
     const demo = RAZORPAY_DEMO;
+    const publicBase =
+      String(process.env.PUBLIC_API_URL || '').replace(/\/$/, '') ||
+      `${req.protocol}://${req.get('host')}`;
+    const verifyUrl = `${publicBase}/api/payments/razorpay/verify`;
 
     res.setHeader('Content-Type', 'text/html; charset=utf-8');
     res.send(`<!DOCTYPE html>
@@ -2016,6 +2113,8 @@ app.get('/payments/razorpay/checkout', async (req, res) => {
     .amount { font-size: 2rem; font-weight: 700; }
     button { width: 100%; padding: 14px; margin-top: 16px; border: 0; border-radius: 10px; background: #0b72e7; color: #fff; font-size: 1rem; cursor: pointer; }
     .muted { color: #666; margin-top: 8px; }
+    .ok { color: #0a7a32; font-weight: 600; }
+    .err { color: #b00020; }
   </style>
   ${demo ? '' : '<script src="https://checkout.razorpay.com/v1/checkout.js"></script>'}
 </head>
@@ -2034,18 +2133,21 @@ app.get('/payments/razorpay/checkout', async (req, res) => {
     const amountPaise = ${amountPaise};
     const keyId = ${JSON.stringify(keyId)};
     const demo = ${demo ? 'true' : 'false'};
+    const verifyUrl = ${JSON.stringify(verifyUrl)};
     const statusEl = document.getElementById('status');
 
     async function verifyPayment(payload) {
-      statusEl.textContent = 'Confirming payment...';
-      const res = await fetch('/api/payments/razorpay/verify', {
+      statusEl.className = 'muted';
+      statusEl.textContent = 'Confirming payment with server...';
+      const res = await fetch(verifyUrl, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload),
       });
-      const data = await res.json();
+      const data = await res.json().catch(function () { return {}; });
       if (!res.ok) throw new Error(data.error || 'Verification failed');
-      statusEl.textContent = 'Payment successful. You can return to the app.';
+      statusEl.className = 'ok';
+      statusEl.textContent = 'Payment successful. Return to the app and tap “I’ve paid — continue”.';
       document.getElementById('payBtn').disabled = true;
       document.getElementById('payBtn').textContent = 'Paid';
     }
@@ -2084,13 +2186,23 @@ app.get('/payments/razorpay/checkout', async (req, res) => {
                 razorpay_signature: response.razorpay_signature,
               });
             } catch (e) {
+              statusEl.className = 'err';
               statusEl.textContent = e.message || 'Payment verification failed';
             }
           },
+          modal: {
+            ondismiss: function () {
+              if (!document.getElementById('payBtn').disabled) {
+                statusEl.className = 'muted';
+                statusEl.textContent = 'Payment window closed. If you already paid, return to the app and tap “I’ve paid — continue”.';
+              }
+            }
+          }
         };
         const rzp = new Razorpay(options);
         rzp.open();
       } catch (e) {
+        statusEl.className = 'err';
         statusEl.textContent = e.message || 'Payment failed';
       }
     };
@@ -2119,9 +2231,7 @@ app.post('/api/payments/razorpay/verify', async (req, res) => {
       return res.status(400).json({ error: 'Invalid Razorpay signature' });
     }
 
-    const booking = await db.collection('bookings').findOne({
-      _id: new ObjectId(bookingId),
-    });
+    const booking = await findBookingDoc(bookingId);
     if (!booking) {
       return res.status(404).json({ error: 'Booking not found' });
     }
@@ -2132,31 +2242,96 @@ app.post('/api/payments/razorpay/verify', async (req, res) => {
       return res.status(400).json({ error: 'Booking is not payable' });
     }
 
-    const split =
-      booking.split ||
-      (await (async () => {
-        const amounts = splitParkingPayment(Number(booking.amountDue));
-        const { ownerId, payout } = await resolveLandOwnerPayout(booking);
-        return {
-          ...amounts,
-          landOwnerId: ownerId,
-          landOwnerUpi: payout?.upiId || null,
-          settlementStatus: 'pending_manual',
-        };
-      })());
-
-    await markBookingPaid({
-      bookingId,
-      amount: Number(booking.amountDue),
-      razorpayOrderId: orderId,
-      razorpayPaymentId: paymentId,
-      razorpaySignature: signature,
-      split,
+    await completeBookingFromRazorpayPayment({
+      booking,
+      orderId,
+      paymentId,
+      signature,
     });
 
     res.json({ ok: true, bookingId, paymentId });
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    console.error('[razorpay/verify]', error);
+    res.status(error.statusCode || 500).json({ error: error.message });
+  }
+});
+
+/**
+ * App "I've paid" button: ask Razorpay for order payment status and mark booking
+ * completed even if the browser verify callback was closed early.
+ */
+app.post('/api/payments/razorpay/confirm', async (req, res) => {
+  try {
+    const bookingId = String(req.body?.bookingId || '').trim();
+    if (!bookingId) {
+      return res.status(400).json({ error: 'bookingId is required' });
+    }
+
+    let booking = await findBookingDoc(bookingId);
+    if (!booking) {
+      return res.status(404).json({ error: 'Booking not found' });
+    }
+
+    if (booking.status === 'completed' && booking.paidAt) {
+      return res.json({
+        ok: true,
+        alreadyPaid: true,
+        bookingId,
+        paymentId: booking.paymentId || null,
+      });
+    }
+
+    if (booking.status !== 'active' || !booking.checkedOutAt) {
+      return res.status(400).json({
+        error: 'Booking is not ready for payment. Complete exit QR scan first.',
+      });
+    }
+
+    try {
+      booking = await ensureBillForCheckout(db, booking);
+    } catch (error) {
+      return res.status(error.statusCode || 400).json({ error: error.message });
+    }
+
+    const orderId = String(booking.razorpayOrderId || '').trim();
+    if (!orderId) {
+      return res.status(400).json({
+        error: 'No Razorpay order yet. Tap Pay with Razorpay first, then try again.',
+      });
+    }
+
+    if (RAZORPAY_DEMO || orderId.startsWith('order_demo_')) {
+      return res.status(400).json({
+        error: 'Demo order cannot be confirmed from Razorpay. Tap Pay again.',
+      });
+    }
+
+    const payments = await fetchRazorpayOrderPayments(orderId);
+    const paid = payments.find(
+      (item) =>
+        item &&
+        (item.status === 'captured' ||
+          item.status === 'authorized' ||
+          item.status === 'paid'),
+    );
+    if (!paid) {
+      return res.status(400).json({
+        error:
+          'Razorpay has not confirmed payment yet. Finish payment in the browser, wait a few seconds, then tap I’ve paid again.',
+      });
+    }
+
+    await completeBookingFromRazorpayPayment({
+      booking,
+      orderId,
+      paymentId: paid.id,
+      signature: 'server_confirmed',
+    });
+
+    res.json({ ok: true, bookingId, paymentId: paid.id });
+  } catch (error) {
+    console.error('[razorpay/confirm]', error);
+    res.status(error.statusCode || 500).json({ error: error.message });
   }
 });
 

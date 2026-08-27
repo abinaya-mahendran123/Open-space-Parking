@@ -117,15 +117,19 @@ class _ParkingPaymentPageState extends ConsumerState<ParkingPaymentPage> {
   Future<void> _confirmPaid() async {
     setState(() => _checking = true);
     try {
-      final latest = await ref
-          .read(vehicleOwnerRepositoryProvider)
-          .getBooking(widget.bookingId);
-      if (latest == null) {
-        throw const AppException('Booking not found');
-      }
-      if (latest.status != BookingStatus.completed || latest.paidAt == null) {
-        throw const AppException(
-          'Payment not received yet. Finish Razorpay, then try again.',
+      final uri = Uri.parse(
+        '${EnvironmentConfig.baseApiUrl}/api/payments/razorpay/confirm',
+      );
+      final response = await http.post(
+        uri,
+        headers: {'Content-Type': 'application/json'},
+        body: jsonEncode({'bookingId': widget.bookingId}),
+      );
+      final body = jsonDecode(response.body) as Map<String, dynamic>;
+      if (response.statusCode >= 400) {
+        throw AppException(
+          body['error']?.toString() ??
+              'Payment not received yet. Finish Razorpay, then try again.',
         );
       }
 
@@ -136,7 +140,7 @@ class _ParkingPaymentPageState extends ConsumerState<ParkingPaymentPage> {
       ref.invalidate(bookingDetailProvider(widget.bookingId));
       ref.invalidate(parkingListingsProvider);
       if (!mounted) return;
-      context.go(RoutePaths.vehicleOwnerBookingReceipt(latest.id));
+      context.go(RoutePaths.vehicleOwnerBookingReceipt(widget.bookingId));
     } on AppException catch (e) {
       ref.read(snackbarServiceProvider).showError(e.message);
     } catch (_) {
