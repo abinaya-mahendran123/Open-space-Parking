@@ -70,17 +70,13 @@ class _EmployeeLoginPageState extends ConsumerState<EmployeeLoginPage> {
 
     return AuthScaffold(
       title: 'Employee Portal',
+      style: AuthScaffoldStyle.form,
+      subtitle: 'Password is the last 6 digits of your mobile number.',
       onBack: () => context.go(RoutePaths.authEntry),
       child: Form(
         key: _formKey,
         child: Column(
           children: [
-            Text(
-              'Password is the last 6 digits of the employee mobile number.',
-              style: Theme.of(context).textTheme.bodySmall,
-              textAlign: TextAlign.center,
-            ),
-            const SizedBox(height: 20),
             AppTextField(
               controller: _phoneController,
               label: 'Mobile Number',

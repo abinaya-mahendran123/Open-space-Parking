@@ -32,6 +32,20 @@ function testAddressEnglish() {
   ].join('\n');
   const address = extractAddress(text);
   assert.ok(address.includes('Sample Street'), `address=${address}`);
+  assert.ok(!/Test Parent/i.test(address), `father should be stripped: ${address}`);
+  assert.ok(!/^S\/O/i.test(address), `S/O should be stripped: ${address}`);
+}
+
+function testNameNotGuardian() {
+  const text = [
+    'Government of India',
+    'Hari Haran',
+    'DOB: 01/01/1990',
+    'S/O: Test Parent',
+    '12 Sample Street',
+  ].join('\n');
+  const name = extractName(text);
+  assert.strictEqual(name, 'Hari Haran');
 }
 
 function testAddressPreservesUnicode() {
@@ -50,6 +64,30 @@ function testNameRejectsGarbageTokens() {
   const text = 'Ef Org Or Did\nS/O: Parent\n12 Sample Street';
   const name = extractName(text);
   assert.strictEqual(name, '');
+}
+
+function testNameAcceptsLongSingleWord() {
+  const text = 'Government of India\nBalasubramanian\nDOB: 01/01/1990';
+  const name = extractName(text);
+  assert.strictEqual(name, 'Balasubramanian');
+}
+
+function testNameAcceptsDottedInitial() {
+  const text = 'Government of India\nK. Hariharan\nDOB: 01/01/1990';
+  const name = extractName(text);
+  assert.strictEqual(name, 'K Hariharan');
+}
+
+function testNameRejectsShortDobJunk() {
+  const text = 'Government of India\nEf Org\nDOB: 01/01/1990\nS/O: Strong Father';
+  const name = extractName(text);
+  assert.strictEqual(name, '');
+}
+
+function testNameKeepsInitial() {
+  const text = 'Government of India\nM Ramesh\nDOB: 01/01/1990';
+  const name = extractName(text);
+  assert.strictEqual(name, 'M Ramesh');
 }
 
 function testPhoneLabeledSpaced() {
@@ -109,9 +147,14 @@ function testScoreOcrExtraction() {
 const tests = [
   testNameRejectsGovernmentHeader,
   testAddressEnglish,
+  testNameNotGuardian,
   testAddressPreservesUnicode,
   testPhoneLabeled,
   testNameRejectsGarbageTokens,
+  testNameAcceptsLongSingleWord,
+  testNameAcceptsDottedInitial,
+  testNameRejectsShortDobJunk,
+  testNameKeepsInitial,
   testPhoneLabeledSpaced,
   testAadhaarVerhoeff,
   testQrComplete,

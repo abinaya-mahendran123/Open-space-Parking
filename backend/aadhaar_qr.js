@@ -57,7 +57,7 @@ function parseAadhaarXml(qrData) {
     attr('uid') ||
     (text.match(/\b(\d{4}\s?\d{4}\s?\d{4})\b/)?.[1] || '').replace(/\s+/g, '');
   const name = attr('name');
-  const co = attr('co');
+  // care-of / guardian (co) intentionally omitted from address
   const house = attr('house');
   const street = attr('street');
   const lm = attr('lm');
@@ -68,7 +68,8 @@ function parseAadhaarXml(qrData) {
   const state = attr('state');
   const pc = attr('pc');
 
-  const addressParts = [co, house, street, lm, loc, vtc, po, dist, state, pc].filter(Boolean);
+  // Exclude care-of / guardian (co) — keep house & location only.
+  const addressParts = [house, street, lm, loc, vtc, po, dist, state, pc].filter(Boolean);
   const address = addressParts.join(', ');
 
   if (!uid && !name && !address) return null;

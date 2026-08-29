@@ -13,8 +13,10 @@ import 'package:open_space_parking/core/widgets/cards/app_card.dart';
 import 'package:open_space_parking/core/widgets/errors/app_error_widget.dart';
 import 'package:open_space_parking/core/widgets/loading/app_loading_widget.dart';
 import 'package:open_space_parking/features/authentication/presentation/providers/auth_state_provider.dart';
+import 'package:open_space_parking/features/vehicle_owner/domain/entities/booking.dart';
 import 'package:open_space_parking/features/vehicle_owner/domain/entities/booking_status.dart';
 import 'package:open_space_parking/features/vehicle_owner/presentation/providers/vehicle_owner_providers.dart';
+import 'package:open_space_parking/features/vehicle_owner/presentation/utils/receipt_download_service.dart';
 import 'package:open_space_parking/features/notification/domain/entities/notification_recipient_type.dart';
 import 'package:open_space_parking/features/notification/presentation/providers/notification_providers.dart';
 
@@ -31,6 +33,25 @@ class _BookingDetailPageState extends ConsumerState<BookingDetailPage> {
   static final _dateFormat = DateFormat('dd MMM, hh:mm a');
 
   bool _cancelling = false;
+  bool _downloading = false;
+
+  Future<void> _downloadReceipt(Booking booking) async {
+    if (_downloading) return;
+    setState(() => _downloading = true);
+    try {
+      final message = await ReceiptDownloadService.downloadReceipt(booking);
+      if (!mounted) return;
+      ref.read(snackbarServiceProvider).showSuccess(message);
+    } catch (_) {
+      if (mounted) {
+        ref
+            .read(snackbarServiceProvider)
+            .showError('Could not download receipt. Try again.');
+      }
+    } finally {
+      if (mounted) setState(() => _downloading = false);
+    }
+  }
 
   Future<void> _cancel(String vehicleOwnerId) async {
     final confirmed = await showDialog<bool>(
@@ -181,7 +202,7 @@ class _BookingDetailPageState extends ConsumerState<BookingDetailPage> {
                   ),
                   const SizedBox(height: AppSpacing.sm),
                 ],
-                if (booking.status == BookingStatus.completed)
+                if (booking.status == BookingStatus.completed) ...[
                   OutlinedButton.icon(
                     onPressed: () => context.push(
                       RoutePaths.vehicleOwnerBookingReceipt(booking.id),
@@ -189,6 +210,23 @@ class _BookingDetailPageState extends ConsumerState<BookingDetailPage> {
                     icon: const Icon(Icons.receipt_long),
                     label: const Text('View receipt'),
                   ),
+                  const SizedBox(height: AppSpacing.sm),
+                  OutlinedButton.icon(
+                    onPressed: _downloading
+                        ? null
+                        : () => _downloadReceipt(booking),
+                    icon: _downloading
+                        ? const SizedBox(
+                            width: 18,
+                            height: 18,
+                            child: CircularProgressIndicator(strokeWidth: 2),
+                          )
+                        : const Icon(Icons.download_outlined),
+                    label: Text(
+                      _downloading ? 'Preparing...' : 'Download receipt',
+                    ),
+                  ),
+                ],
                 if (booking.isQrLive ||
                     booking.isAwaitingPayment ||
                     booking.status == BookingStatus.completed)

@@ -20,9 +20,14 @@ class FavoritesPage extends ConsumerWidget {
     final vehicleOwnerId = ref.watch(authStateProvider).session?.userId ?? '';
     final favoritesAsync = ref.watch(favoritesProvider(vehicleOwnerId));
 
+    final colorScheme = Theme.of(context).colorScheme;
+
     return Scaffold(
+      backgroundColor: colorScheme.surface,
       appBar: AppBar(
         title: const Text('Favorites'),
+        backgroundColor: colorScheme.surfaceContainer,
+        surfaceTintColor: Colors.transparent,
         actions: const [VehicleOwnerAppBarActions()],
       ),
       body: favoritesAsync.when(
@@ -35,10 +40,10 @@ class FavoritesPage extends ConsumerWidget {
           if (favorites.isEmpty) {
             return VehicleOwnerEmptyState(
               icon: Icons.favorite_border,
-              title: 'No favorites yet',
-              message: 'Tap the heart on any parking to save it here.',
-              actionLabel: 'Browse parking',
-              onAction: () => context.go(RoutePaths.vehicleOwnerDashboard),
+              title: 'No saved parking',
+              message: 'Save your preferred parking for quick access later.',
+              actionLabel: 'Find parking',
+              onAction: () => context.go(RoutePaths.vehicleOwnerSearch),
             );
           }
 

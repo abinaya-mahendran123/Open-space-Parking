@@ -24,8 +24,8 @@ class _AccountSettingsPageState extends ConsumerState<AccountSettingsPage> {
 
   static const _themeOptions = <ThemeMode>[
     ThemeMode.light,
-    ThemeMode.dark,
     ThemeMode.system,
+    ThemeMode.dark,
   ];
 
   Future<void> _logout() async {
@@ -54,18 +54,28 @@ class _AccountSettingsPageState extends ConsumerState<AccountSettingsPage> {
 
   String _themeLabel(ThemeMode mode) {
     switch (mode) {
-      case ThemeMode.light:
-        return 'Light';
       case ThemeMode.dark:
         return 'Dark';
       case ThemeMode.system:
         return 'System';
+      case ThemeMode.light:
+        return 'Light';
+    }
+  }
+
+  String _themeSubtitle(ThemeMode mode) {
+    switch (mode) {
+      case ThemeMode.dark:
+        return 'Dark app look';
+      case ThemeMode.system:
+        return 'Open Sky app look';
+      case ThemeMode.light:
+        return 'Bright light app look';
     }
   }
 
   Future<void> _openAppearanceSheet() async {
-    final current = ref.read(themeModeProvider);
-    ThemeMode draft = current;
+    ThemeMode draft = ref.read(themeModeProvider);
 
     final confirmed = await showModalBottomSheet<ThemeMode>(
       context: context,
@@ -91,6 +101,7 @@ class _AccountSettingsPageState extends ConsumerState<AccountSettingsPage> {
                             'Appearance',
                             style: Theme.of(ctx).textTheme.titleLarge?.copyWith(
                                   fontWeight: FontWeight.w600,
+                                  color: colorScheme.onSurface,
                                 ),
                           ),
                         ),
@@ -101,6 +112,15 @@ class _AccountSettingsPageState extends ConsumerState<AccountSettingsPage> {
                         ),
                       ],
                     ),
+                    Align(
+                      alignment: Alignment.centerLeft,
+                      child: Text(
+                        'App look — not your phone theme',
+                        style: Theme.of(ctx).textTheme.bodySmall?.copyWith(
+                              color: colorScheme.onSurfaceVariant,
+                            ),
+                      ),
+                    ),
                     const SizedBox(height: 8),
                     for (var i = 0; i < _themeOptions.length; i++) ...[
                       if (i > 0) const Divider(height: 1),
@@ -108,7 +128,15 @@ class _AccountSettingsPageState extends ConsumerState<AccountSettingsPage> {
                         contentPadding: EdgeInsets.zero,
                         title: Text(
                           _themeLabel(_themeOptions[i]),
-                          style: Theme.of(ctx).textTheme.titleMedium,
+                          style: Theme.of(ctx).textTheme.titleMedium?.copyWith(
+                                color: colorScheme.onSurface,
+                              ),
+                        ),
+                        subtitle: Text(
+                          _themeSubtitle(_themeOptions[i]),
+                          style: Theme.of(ctx).textTheme.bodySmall?.copyWith(
+                                color: colorScheme.onSurfaceVariant,
+                              ),
                         ),
                         trailing: Radio<ThemeMode>(
                           value: _themeOptions[i],
@@ -186,8 +214,19 @@ class _AccountSettingsPageState extends ConsumerState<AccountSettingsPage> {
                 Icons.palette_outlined,
                 color: colorScheme.primary,
               ),
-              title: const Text('Appearance'),
-              subtitle: const Text('Choose light or dark theme'),
+              title: Text(
+                'Appearance',
+                style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                      color: colorScheme.onSurface,
+                      fontWeight: FontWeight.w600,
+                    ),
+              ),
+              subtitle: Text(
+                'App look — Light, System, or Dark',
+                style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                      color: colorScheme.onSurfaceVariant,
+                    ),
+              ),
               trailing: Row(
                 mainAxisSize: MainAxisSize.min,
                 children: [

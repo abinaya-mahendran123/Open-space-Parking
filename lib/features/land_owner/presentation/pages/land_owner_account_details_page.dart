@@ -166,11 +166,9 @@ class _LandOwnerAccountDetailsPageState
               'Payout account (90% of parking fees)',
               style: Theme.of(context).textTheme.titleMedium,
             ),
-            const SizedBox(height: 8),
+            const SizedBox(height: 6),
             Text(
-              'When a driver pays, 10% goes to the Open Space Parking media '
-              'Razorpay account and 90% is settled to this land-owner account. '
-              'Save UPI or bank details (or a Razorpay linked account id).',
+              '90% goes to this account. 10% goes to Open Space Parking.',
               style: Theme.of(context).textTheme.bodySmall,
             ),
             const SizedBox(height: 16),
@@ -201,8 +199,9 @@ class _LandOwnerAccountDetailsPageState
             const SizedBox(height: 12),
             AppTextField(
               controller: _razorpayAccountController,
-              label: 'Razorpay linked account (optional)',
+              label: 'Razorpay linked account',
               hint: 'acc_xxxxxxxxxx',
+              validator: Validators.razorpayLinkedAccount,
             ),
             const SizedBox(height: 24),
             PrimaryButton(

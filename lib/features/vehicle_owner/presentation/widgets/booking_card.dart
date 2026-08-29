@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import 'package:open_space_parking/core/domain/domain_extensions.dart';
+import 'package:open_space_parking/core/theme/app_colors.dart';
 import 'package:open_space_parking/core/theme/app_spacing.dart';
 import 'package:open_space_parking/core/widgets/cards/app_card.dart';
 import 'package:open_space_parking/features/vehicle_owner/domain/entities/booking.dart';
@@ -21,15 +22,15 @@ class BookingCard extends StatelessWidget {
   Color _statusColor(BookingStatus status, ColorScheme scheme) {
     switch (status) {
       case BookingStatus.confirmed:
-        return const Color(0xFF2E7D32);
+        return AppColors.availableHigh;
       case BookingStatus.active:
         return scheme.primary;
       case BookingStatus.completed:
-        return const Color(0xFF00695C);
+        return AppColors.brandBlue;
       case BookingStatus.cancelled:
         return scheme.error;
       case BookingStatus.pending:
-        return const Color(0xFFEF6C00);
+        return AppColors.availableMedium;
     }
   }
 

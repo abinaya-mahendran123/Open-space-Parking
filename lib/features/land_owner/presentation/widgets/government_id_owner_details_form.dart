@@ -472,18 +472,8 @@ class GovernmentIdOwnerDetailsFormState
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           Text(
-            'Upload your Aadhaar card as a PNG image or PDF. We will read the details automatically.',
+            'Upload a clear Aadhaar photo or PDF. Details fill in automatically.',
             style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                  color: colorScheme.onSurfaceVariant,
-                ),
-          ),
-          const SizedBox(height: 6),
-          Text(
-            'Upload the full Aadhaar (front + back, or one clear photo of the whole card). '
-            'Name and 12-digit number are on the front; address/QR/phone on the back. '
-            'Best results: bright light, whole card in frame, sharp QR. '
-            'Plastic Aadhaar often has no phone — enter phone yourself if blank.',
-            style: Theme.of(context).textTheme.bodySmall?.copyWith(
                   color: colorScheme.onSurfaceVariant,
                 ),
           ),

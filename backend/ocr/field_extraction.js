@@ -120,27 +120,49 @@ function cleanAddressLine(raw, options = {}) {
 
 /**
  * Final post-processing on a complete assembled address string.
- * Removes trailing/leading commas, double commas, and noise remnants.
+ * Removes care-of / father-name line (S/O, D/O, W/O, C/O), commas, and noise.
  */
 function finalizeAddress(addr) {
-  return addr
-    // OCR often turns "S/O :" into "/ :" or "/:"
-    .replace(/^[\s/|:.-]+/, '')
-    .replace(/^(?:s\s*\/\s*o|d\s*\/\s*o|w\s*\/\s*o|c\s*\/\s*o)\s*[:.\-]?\s*/i, (m) =>
-      m.replace(/\s+/g, ''),
-    )
-    .replace(/^\/\s*:\s*/i, 'S/O: ')
-    .replace(/^:\s*/, '')
-    // Remove noise tokens that survived line-level cleaning
-    .replace(ADDRESS_NOISE_TOKEN, ' ')
-    // Collapse ",  ," style double commas
-    .replace(/,\s*,+/g, ',')
-    // Remove comma at start/end
-    .replace(/^[\s,]+|[\s,]+$/g, '')
-    // Remove short (1-3 char) noise segments between commas: ", ae," → ","
-    .replace(/,\s*[a-zA-Z]{1,3}\s*,/g, ',')
-    .replace(/\s+/g, ' ')
-    .trim();
+  return stripCareOfFromAddress(
+    addr
+      // OCR often turns "S/O :" into "/ :" or "/:"
+      .replace(/^[\s/|:.-]+/, '')
+      .replace(/^(?:s\s*\/\s*o|d\s*\/\s*o|w\s*\/\s*o|c\s*\/\s*o)\s*[:.\-]?\s*/i, (m) =>
+        m.replace(/\s+/g, ''),
+      )
+      .replace(/^\/\s*:\s*/i, 'S/O: ')
+      .replace(/^:\s*/, '')
+      // Remove noise tokens that survived line-level cleaning
+      .replace(ADDRESS_NOISE_TOKEN, ' ')
+      // Collapse ",  ," style double commas
+      .replace(/,\s*,+/g, ',')
+      // Remove comma at start/end
+      .replace(/^[\s,]+|[\s,]+$/g, '')
+      // Remove short (1-3 char) noise segments between commas: ", ae," → ","
+      .replace(/,\s*[a-zA-Z]{1,3}\s*,/g, ',')
+      .replace(/\s+/g, ' ')
+      .trim(),
+  );
+}
+
+/**
+ * Drop UIDAI care-of / guardian prefix from address.
+ * Aadhaar prints "S/O: Father Name, house..." — keep house onward only.
+ */
+function stripCareOfFromAddress(addr) {
+  let out = String(addr || '').trim();
+  if (!out) return '';
+
+  // Leading S/O: Name, ...  (possibly split across first comma)
+  out = out.replace(
+    /^(?:s\s*\/\s*o|d\s*\/\s*o|w\s*\/\s*o|c\s*\/\s*o|son\s+of|daughter\s+of|wife\s+of|care\s+of)\s*[:.\-]?\s*[^,]*,?\s*/i,
+    '',
+  );
+
+  // If still starts with residual "/: Name,"
+  out = out.replace(/^\/\s*:\s*[^,]*,?\s*/i, '');
+
+  return out.replace(/^[\s,]+|[\s,]+$/g, '').replace(/\s+/g, ' ').trim();
 }
 
 /**
@@ -225,14 +247,17 @@ function extractAddress(text, options = {}) {
   // ── Strategy 2: "To" block in Aadhaar letter (To → name → S/O: → address) ─
   const toIdx = rawLines.findIndex((l) => /^To\s*$/.test(stripNonLatin(l).trim()));
   if (toIdx !== -1) {
-    // Skip the "To" line and name line(s), collect from S/O: onward
+    // Skip the "To" line, name line(s), and S/O guardian line
     const collected = [];
     let foundSO = false;
     for (let i = toIdx + 1; i < rawLines.length && collected.length < 15; i++) {
       const latin = stripNonLatin(rawLines[i]).trim();
       if (!foundSO) {
-        if (/^s\/o|^d\/o|^w\/o|^c\/o|\d+,/i.test(latin)) foundSO = true;
-        else continue; // skip name lines before S/O
+        if (/^s\/o|^d\/o|^w\/o|^c\/o|\d+,/i.test(latin)) {
+          foundSO = true;
+          // If this line is only the guardian (S/O: Name), skip it.
+          if (/^(s\/o|d\/o|w\/o|c\/o)\b/i.test(latin)) continue;
+        } else continue; // skip name lines before S/O
       }
       const ln = cleanAddressLine(rawLines[i], options);
       if (!isValidAddressLine(ln, options)) continue;
@@ -246,12 +271,13 @@ function extractAddress(text, options = {}) {
   }
 
   // ── Strategy 2b: S/O anchor (most Aadhaar addresses start here) ───────────
+  // Skip the S/O / guardian line itself — only keep house/street onward.
   const soIdx = rawLines.findIndex((l) =>
     /^(s\/o|d\/o|w\/o|c\/o|\/\s*:|\/:)/i.test(stripNonLatin(l).trim()),
   );
   if (soIdx !== -1) {
     const collected = [];
-    for (let i = soIdx; i < rawLines.length && collected.length < 15; i++) {
+    for (let i = soIdx + 1; i < rawLines.length && collected.length < 15; i++) {
       const ln = cleanAddressLine(rawLines[i], options);
       if (!isValidAddressLine(ln, options)) continue;
       if (/^(mobile|phone|gender|sex|dob|date\s+of\s+birth|signature|aadhaar\s+is|documents?\s+to)\b/i.test(ln)) break;
@@ -337,35 +363,43 @@ function tryParseName(rawLine) {
 }
 
 function isNameCandidate(line) {
-  if (!line || line.length < 3 || line.length > 55) return false;
-  if (looksLikeGovernmentHeader(line)) return false;
-  if (NAME_NOISE.test(line)) return false;
-  if (AADHAAR_BACK_BOILERPLATE.test(line)) return false;
-  if (/^\d/.test(line)) return false;
-  if (/[@#%&*=+<>{}[\]\\|~`]/.test(line)) return false;
+  // Normalize dotted initials: "K. Hariharan" → "K Hariharan"
+  const normalized = String(line || '')
+    .replace(/\b([A-Za-z])\.(?=\s|[A-Za-z])/g, '$1')
+    .replace(/\s+/g, ' ')
+    .trim();
+  if (!normalized || normalized.length < 3 || normalized.length > 55) return false;
+  if (looksLikeGovernmentHeader(normalized)) return false;
+  if (NAME_NOISE.test(normalized)) return false;
+  if (AADHAAR_BACK_BOILERPLATE.test(normalized)) return false;
+  if (/^\d/.test(normalized)) return false;
+  if (/[@#%&*=+<>{}[\]\\|~`,]/.test(normalized)) return false;
   // Address / location lines are not names.
-  if (ADDRESS_START.test(line) || ADDRESS_KEYWORD.test(line)) return false;
-  if (/\b(street|road|nagar|colony|district|state|pin|mobile|phone|signature)\b/i.test(line)) {
+  if (ADDRESS_START.test(normalized) || ADDRESS_KEYWORD.test(normalized)) return false;
+  if (/\b(street|road|nagar|colony|district|state|pin|mobile|phone|signature)\b/i.test(normalized)) {
     return false;
   }
 
-  const latinRatio = (line.match(/[a-zA-Z ]/g) || []).length / line.length;
+  const latinRatio = (normalized.match(/[a-zA-Z ]/g) || []).length / normalized.length;
   if (latinRatio < 0.8) return false;
-  if ((line.match(/[a-zA-Z]/g) || []).length < 3) return false;
+  if ((normalized.match(/[a-zA-Z]/g) || []).length < 3) return false;
 
-  const words = line.trim().split(/\s+/);
+  const words = normalized.split(/\s+/);
   // Reject OCR mush like "Ef Org Or Did" (many tiny tokens).
   const shortWords = words.filter((w) => w.length <= 2).length;
   if (shortWords >= 2) return false;
+  // "Ef Org" / "Aa Bb" — two short tokens with no real name word.
+  if (words.length >= 2 && !words.some((w) => w.length >= 4)) return false;
   if (words.length >= 3 && words.every((w) => w.length <= 3)) return false;
-  // Reject OCR mashups: one huge word with no spaces and odd length.
-  if (words.length === 1 && words[0].length > 14) return false;
+  // Single Indian names can be long (Balasubramanian, Venkateswaran, …).
+  if (words.length === 1 && words[0].length > 28) return false;
   // "Govemmentofingia Pee" style: first word too long and not title-case clean.
-  if (words[0].length > 12 && !/^[A-Z][a-z]+$/.test(words[0])) return false;
+  if (words[0].length > 16 && !/^[A-Z][a-z]+$/.test(words[0])) return false;
 
-  if (/^[A-Z][a-z]+(?: [A-Z][a-z]+){0,4}$/.test(line)) return true;
-  if (/^[A-Z][A-Z ]{2,39}$/.test(line)) return true;
-  if (/^[a-zA-Z]+(?: [a-zA-Z]+){0,4}$/.test(line) && words.some((w) => w.length >= 4)) {
+  if (/^[A-Z][a-z]+(?: [A-Z][a-z]+){0,4}$/.test(normalized)) return true;
+  if (/^[A-Z](?: [A-Z][a-z]+){1,4}$/.test(normalized)) return true; // "M Ramesh"
+  if (/^[A-Z][A-Z ]{2,39}$/.test(normalized)) return true;
+  if (/^[a-zA-Z]+(?: [a-zA-Z]+){0,4}$/.test(normalized) && words.some((w) => w.length >= 4)) {
     return true;
   }
   return false;
@@ -373,11 +407,18 @@ function isNameCandidate(line) {
 
 /**
  * Strip leading OCR noise tokens from a name candidate.
- * e.g. "Ss Hariharan" → "Hariharan", "fey Hariharan" → "Hariharan"
+ * Keep single-letter initials like "M Ramesh"; drop junk like "ss" / "Ss" / "fey".
  */
 function cleanNamePrefix(name) {
-  return name
-    .replace(/^[a-zA-Z]{1,3}\s+(?=[A-Z][a-z]{2,})/, '')
+  return String(name || '')
+    // Dotted initials → plain: "K.Hariharan" / "K. Hariharan"
+    .replace(/\b([A-Za-z])\.(?=\s|[A-Za-z])/g, '$1 ')
+    .replace(/\s+/g, ' ')
+    .trim()
+    // Known 2–3 letter OCR mush (any case), then a real name word
+    .replace(/^(?:ss|fey|ae|rs|rr|aa|lj|nz|lh)\s+(?=[A-Z][a-zA-Z]{2,})/i, '')
+    // Lowercase junk prefixes only (keeps "M Ramesh")
+    .replace(/^[a-z]{1,3}\s+(?=[A-Z][a-zA-Z]{2,})/, '')
     .trim();
 }
 
@@ -391,21 +432,25 @@ function isDevanagariScript(line) {
 
 function scoreNameCandidate(name) {
   if (!name) return -1;
-  if (looksLikeGovernmentHeader(name) || NAME_NOISE.test(name)) return -100;
+  const cleaned = cleanNamePrefix(name);
+  if (looksLikeGovernmentHeader(cleaned) || NAME_NOISE.test(cleaned)) return -100;
 
-  let score = Math.min(name.length, 24);
-  const words = name.trim().split(/\s+/);
+  let score = Math.min(cleaned.length, 24);
+  const words = cleaned.trim().split(/\s+/);
 
-  if (/^[A-Z][a-z]+(?: [A-Z][a-z]+)+$/.test(name)) score += 30;
-  else if (/^[A-Z][a-z]+$/.test(name)) score += 22;
-  else if (/^[A-Z][A-Z ]{2,}$/.test(name)) score += 10;
+  if (/^[A-Z][a-z]+(?: [A-Z][a-z]+)+$/.test(cleaned)) score += 30;
+  else if (/^[A-Z][a-z]+$/.test(cleaned)) score += 22;
+  else if (/^[A-Z](?: [A-Z][a-z]+)+$/.test(cleaned)) score += 26; // "M Ramesh"
+  else if (/^[A-Z][A-Z ]{2,}$/.test(cleaned)) score += 10;
   else score += 4;
 
   if (words.length >= 2 && words.length <= 4) score += 8;
-  if (words.some((w) => w.length > 14)) score -= 25;
+  // Long single Indian names are normal — only penalize extreme mush.
+  if (words.some((w) => w.length > 22)) score -= 25;
   if (words.filter((w) => w.length <= 2).length >= 2) score -= 40;
+  if (words.length >= 2 && !words.some((w) => w.length >= 4)) score -= 50;
   if (words.length >= 3 && words.every((w) => w.length <= 3)) score -= 50;
-  if (/\b(india|government|govemment|uidai|aadhaar|madurai|tamil|org|did)\b/i.test(name)) {
+  if (/\b(india|government|govemment|uidai|aadhaar|madurai|tamil|org|did)\b/i.test(cleaned)) {
     score -= 80;
   }
   return score;
@@ -432,12 +477,23 @@ function extractName(text) {
     .map(cleanLine)
     .filter(Boolean);
 
+  // Guardian names from S/O / D/O lines must never win as the card holder's name.
+  const guardianNames = new Set();
+  for (const line of rawLines) {
+    const latin = stripNonLatin(line).trim();
+    const m = latin.match(/^(?:s\/o|d\/o|w\/o|c\/o)\s*[:.\-]?\s*(.+)$/i);
+    if (!m) continue;
+    const g = tryParseName(m[1]);
+    if (g) guardianNames.add(g.toLowerCase());
+  }
+
   const ranked = [];
 
   const push = (candidate, bonus = 0) => {
     if (!candidate) return;
     const cleaned = cleanNamePrefix(candidate);
     if (!cleaned || !isNameCandidate(cleaned)) return;
+    if (guardianNames.has(cleaned.toLowerCase())) return;
     ranked.push({
       name: cleaned,
       score: scoreNameCandidate(cleaned) + bonus,
@@ -459,6 +515,8 @@ function extractName(text) {
   );
   if (toIdx !== -1) {
     for (let i = toIdx + 1; i <= Math.min(toIdx + 5, rawLines.length - 1); i++) {
+      const latin = stripNonLatin(rawLines[i]).trim();
+      if (/^(s\/o|d\/o|w\/o|c\/o)\b/i.test(latin)) break;
       push(tryParseName(rawLines[i]), 35);
     }
   }
@@ -471,7 +529,7 @@ function extractName(text) {
     for (let i = soIdx - 1; i >= Math.max(0, soIdx - 4); i--) {
       const candidate = tryParseName(rawLines[i]);
       if (candidate) {
-        push(candidate, 45);
+        push(candidate, 48);
         break;
       }
     }
@@ -488,7 +546,7 @@ function extractName(text) {
     }
   }
 
-  // ── Strategy 3: Name appears just BEFORE DOB on Aadhaar front ─────────────
+  // ── Strategy 3: Name appears just BEFORE DOB on Aadhaar front (best signal)
   const dobIdx = rawLines.findIndex(
     (l) =>
       /\b(dob|date\s+of\s+birth|born|birth|yob|year\s+of\s+birth)\b/i.test(
@@ -497,12 +555,14 @@ function extractName(text) {
   );
   if (dobIdx > 0) {
     for (let i = dobIdx - 1; i >= Math.max(0, dobIdx - 5); i--) {
-      push(tryParseName(rawLines[i]), 38);
+      push(tryParseName(rawLines[i]), 55);
     }
   }
 
   // ── Strategy 4: Scan remaining lines, but never prefer header noise ───────
   for (const line of rawLines) {
+    const latin = stripNonLatin(line).trim();
+    if (/^(s\/o|d\/o|w\/o|c\/o)\b/i.test(latin)) continue;
     push(tryParseName(line), 0);
   }
 
@@ -678,9 +738,10 @@ function mergeExtracted(frontText, backText, idType, options = {}) {
   const backId = extractIdNumber(backText, idType);
   const combinedId = extractIdNumber(combined, idType);
 
-  // Prefer the stronger name candidate (plastic front vs letter back).
+  // Prefer front (DOB-adjacent) name over back letter noise.
   const name =
-    scoreNameCandidate(frontName) >= scoreNameCandidate(backName)
+    scoreNameCandidate(frontName) + (frontName ? 8 : 0) >=
+    scoreNameCandidate(backName)
       ? frontName || backName
       : backName || frontName;
   // Address is usually on the back / letter panel.

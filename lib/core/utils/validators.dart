@@ -119,4 +119,16 @@ class Validators {
     }
     return null;
   }
+
+  /// Required Razorpay Route linked account for land-owner 90% payout.
+  static String? razorpayLinkedAccount(String? value) {
+    final id = value?.trim() ?? '';
+    if (id.isEmpty) {
+      return 'Razorpay linked account is required';
+    }
+    if (!RegExp(r'^acc_[A-Za-z0-9]+$').hasMatch(id)) {
+      return 'Enter a valid ID (e.g. acc_xxxxxxxxxx)';
+    }
+    return null;
+  }
 }

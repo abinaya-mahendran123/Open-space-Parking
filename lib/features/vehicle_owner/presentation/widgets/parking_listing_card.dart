@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
 
-import 'package:open_space_parking/core/domain/domain_extensions.dart';
 import 'package:open_space_parking/core/theme/app_spacing.dart';
 import 'package:open_space_parking/core/widgets/cards/app_card.dart';
+import 'package:open_space_parking/core/widgets/parking/availability_badge.dart';
 import 'package:open_space_parking/core/widgets/parking_type_image.dart';
 import 'package:open_space_parking/features/vehicle_owner/domain/entities/parking_listing.dart';
 
@@ -30,17 +30,6 @@ class ParkingListingCard extends StatelessWidget {
     return listing.ticketId.trim();
   }
 
-  static Color _statusColor(ParkingAvailabilityLevel level) {
-    switch (level) {
-      case ParkingAvailabilityLevel.high:
-        return const Color(0xFF2E7D32);
-      case ParkingAvailabilityLevel.medium:
-        return const Color(0xFFEF6C00);
-      case ParkingAvailabilityLevel.none:
-        return const Color(0xFFC62828);
-    }
-  }
-
   @override
   Widget build(BuildContext context) {
     if (compact) return _CompactCard(listing: listing, onTap: onTap);
@@ -57,14 +46,14 @@ class _CompactCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final statusColor =
-        ParkingListingCard._statusColor(listing.availabilityLevel);
+    final colorScheme = theme.colorScheme;
 
     return AppCard(
       onTap: onTap,
       margin: const EdgeInsets.only(bottom: AppSpacing.sm),
-      padding: const EdgeInsets.all(12),
+      padding: const EdgeInsets.all(16),
       child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           ClipRRect(
             borderRadius: BorderRadius.circular(12),
@@ -84,53 +73,43 @@ class _CompactCard extends StatelessWidget {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  listing.shortDisplayName,
-                  style: theme.textTheme.titleSmall?.copyWith(
-                    fontWeight: FontWeight.w600,
-                  ),
+                  listing.compactDisplayName,
+                  style: theme.textTheme.titleMedium,
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                 ),
                 const SizedBox(height: 4),
-                Text(
-                  [
-                    if (listing.distanceLabel != null) listing.distanceLabel,
-                    listing.shortLocationLabel,
-                  ].whereType<String>().join(' · '),
-                  style: theme.textTheme.bodySmall?.copyWith(
-                    color: theme.colorScheme.onSurfaceVariant,
-                  ),
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                ),
-                const SizedBox(height: 6),
-                Row(
-                  children: [
-                    Icon(Icons.local_parking_outlined, size: 14, color: statusColor),
-                    const SizedBox(width: 4),
-                    Text(
-                      '${listing.freeSlots} free',
-                      style: theme.textTheme.labelSmall?.copyWith(
-                        color: statusColor,
-                        fontWeight: FontWeight.w600,
-                      ),
+                if (listing.distanceLabel != null)
+                  Text(
+                    '📍 ${listing.distanceLabel}',
+                    style: theme.textTheme.bodySmall?.copyWith(
+                      color: colorScheme.onSurfaceVariant,
                     ),
-                    if (listing.amountLabel != null) ...[
-                      const Spacer(),
-                      Text(
-                        listing.amountLabel!,
-                        style: theme.textTheme.labelLarge?.copyWith(
-                          color: theme.colorScheme.primary,
-                          fontWeight: FontWeight.bold,
-                        ),
-                      ),
-                    ],
-                  ],
+                  ),
+                if (listing.amountLabel != null) ...[
+                  const SizedBox(height: 4),
+                  Text(
+                    listing.amountLabel!,
+                    style: theme.textTheme.titleSmall?.copyWith(
+                      color: colorScheme.primary,
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
+                ],
+                const SizedBox(height: 8),
+                AvailabilityBadge(
+                  freeSlots: listing.freeSlots,
+                  totalSlots: listing.capacity,
+                  compact: true,
                 ),
+                if (listing.verifiedByEmployee) ...[
+                  const SizedBox(height: 6),
+                  const VerifiedParkingChip(),
+                ],
               ],
             ),
           ),
-          Icon(Icons.chevron_right, color: theme.colorScheme.outline),
+          Icon(Icons.chevron_right, color: colorScheme.onSurfaceVariant),
         ],
       ),
     );
@@ -151,122 +130,86 @@ class _FullCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final statusColor =
-        ParkingListingCard._statusColor(listing.availabilityLevel);
+    final colorScheme = theme.colorScheme;
 
     return AppCard(
       onTap: onTap,
       margin: const EdgeInsets.only(bottom: AppSpacing.md),
-      padding: const EdgeInsets.all(12),
-      child: Row(
+      padding: const EdgeInsets.all(16),
+      child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          ClipRRect(
-            borderRadius: BorderRadius.circular(12),
-            child: SizedBox(
-              width: 88,
-              height: 88,
-              child: ParkingTypeImage(
-                parkingType: listing.parkingType,
-                height: 88,
-                fit: BoxFit.cover,
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              ClipRRect(
+                borderRadius: BorderRadius.circular(12),
+                child: SizedBox(
+                  width: 88,
+                  height: 88,
+                  child: ParkingTypeImage(
+                    parkingType: listing.parkingType,
+                    height: 88,
+                    fit: BoxFit.cover,
+                  ),
+                ),
               ),
-            ),
-          ),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  listing.shortDisplayName,
-                  style: theme.textTheme.titleSmall?.copyWith(
-                    fontWeight: FontWeight.w600,
-                  ),
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                ),
-                const SizedBox(height: 4),
-                Text(
-                  listing.parkingType.label,
-                  style: theme.textTheme.bodySmall?.copyWith(
-                    color: theme.colorScheme.onSurfaceVariant,
-                  ),
-                ),
-                const SizedBox(height: 6),
-                Wrap(
-                  spacing: 8,
-                  runSpacing: 4,
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    if (listing.distanceLabel != null)
-                      _InfoChip(
-                        icon: Icons.near_me,
-                        label: listing.distanceLabel!,
-                      ),
-                    _InfoChip(
-                      icon: Icons.local_parking_outlined,
-                      label: '${listing.freeSlots} free',
-                      color: statusColor,
+                    Text(
+                      listing.compactDisplayName,
+                      style: theme.textTheme.titleMedium,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
                     ),
+                    const SizedBox(height: 4),
+                    if (listing.distanceLabel != null)
+                      Text(
+                        '📍 ${listing.distanceLabel}',
+                        style: theme.textTheme.bodySmall?.copyWith(
+                          color: colorScheme.onSurfaceVariant,
+                        ),
+                      ),
+                    if (listing.amountLabel != null) ...[
+                      const SizedBox(height: 6),
+                      Text(
+                        listing.amountLabel!,
+                        style: theme.textTheme.titleMedium?.copyWith(
+                          color: colorScheme.primary,
+                          fontWeight: FontWeight.w800,
+                        ),
+                      ),
+                    ],
                   ],
                 ),
-                if (listing.amountLabel != null) ...[
-                  const SizedBox(height: 8),
-                  Text(
-                    listing.amountLabel!,
-                    style: theme.textTheme.titleSmall?.copyWith(
-                      color: theme.colorScheme.primary,
-                      fontWeight: FontWeight.bold,
-                    ),
-                  ),
-                ],
-                if (onNavigate != null) ...[
-                  const SizedBox(height: 10),
-                  SizedBox(
-                    width: double.infinity,
-                    child: OutlinedButton.icon(
-                      onPressed: onNavigate,
-                      icon: const Icon(Icons.navigation, size: 18),
-                      label: const Text('Navigate'),
-                    ),
-                  ),
-                ],
-              ],
-            ),
+              ),
+            ],
           ),
+          const SizedBox(height: 10),
+          AvailabilityBadge(
+            freeSlots: listing.freeSlots,
+            totalSlots: listing.capacity,
+          ),
+          if (listing.verifiedByEmployee) ...[
+            const SizedBox(height: 8),
+            const VerifiedParkingChip(),
+          ],
+          if (onNavigate != null) ...[
+            const SizedBox(height: 12),
+            SizedBox(
+              width: double.infinity,
+              child: OutlinedButton.icon(
+                onPressed: onNavigate,
+                icon: const Icon(Icons.navigation_outlined, size: 18),
+                label: const Text('View parking'),
+              ),
+            ),
+          ],
         ],
       ),
-    );
-  }
-}
-
-class _InfoChip extends StatelessWidget {
-  const _InfoChip({
-    required this.icon,
-    required this.label,
-    this.color,
-  });
-
-  final IconData icon;
-  final String label;
-  final Color? color;
-
-  @override
-  Widget build(BuildContext context) {
-    final chipColor = color ?? Theme.of(context).colorScheme.primary;
-    return Row(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        Icon(icon, size: 14, color: chipColor),
-        const SizedBox(width: 4),
-        Text(
-          label,
-          style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                color: color,
-                fontWeight: color != null ? FontWeight.w600 : null,
-              ),
-        ),
-      ],
     );
   }
 }

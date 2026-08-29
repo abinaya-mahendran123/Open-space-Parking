@@ -43,7 +43,7 @@ class AccountMenuView extends StatelessWidget {
       padding: const EdgeInsets.all(AppSpacing.md),
       children: [
         Material(
-          color: colorScheme.surface,
+          color: colorScheme.surfaceContainerLow,
           elevation: 1,
           shadowColor: colorScheme.shadow.withValues(alpha: 0.12),
           borderRadius: BorderRadius.circular(16),
@@ -93,7 +93,7 @@ class AccountMenuView extends StatelessWidget {
         ),
         const SizedBox(height: AppSpacing.lg),
         Material(
-          color: colorScheme.surface,
+          color: colorScheme.surfaceContainerLow,
           elevation: 1,
           shadowColor: colorScheme.shadow.withValues(alpha: 0.12),
           borderRadius: BorderRadius.circular(16),
@@ -122,7 +122,12 @@ class AccountMenuView extends StatelessWidget {
     if (!showAppBar) return body;
 
     return Scaffold(
-      appBar: AppBar(title: Text(title)),
+      backgroundColor: colorScheme.surface,
+      appBar: AppBar(
+        title: Text(title),
+        backgroundColor: colorScheme.surfaceContainer,
+        surfaceTintColor: Colors.transparent,
+      ),
       body: body,
     );
   }

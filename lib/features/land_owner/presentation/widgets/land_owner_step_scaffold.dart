@@ -26,10 +26,20 @@ class LandOwnerStepScaffold extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final maxWidth = context.isDesktop ? 720.0 : double.infinity;
+    final colorScheme = Theme.of(context).colorScheme;
 
     return Scaffold(
+      backgroundColor: colorScheme.surface,
       appBar: AppBar(
-        title: Text(title),
+        title: Text(
+          title,
+          style: TextStyle(
+            fontWeight: FontWeight.w700,
+            color: colorScheme.onSurface,
+          ),
+        ),
+        backgroundColor: colorScheme.surfaceContainer,
+        surfaceTintColor: Colors.transparent,
         leading: onBack != null
             ? IconButton(icon: const Icon(Icons.arrow_back), onPressed: onBack)
             : null,
@@ -55,8 +65,20 @@ class LandOwnerStepScaffold extends StatelessWidget {
               ),
               if (bottomBar != null)
                 SafeArea(
-                  child: Padding(
+                  child: Container(
+                    width: double.infinity,
                     padding: const EdgeInsets.all(16),
+                    decoration: BoxDecoration(
+                      color: colorScheme.surfaceContainer,
+                      border: Border(
+                        top: BorderSide(
+                          color: Theme.of(context)
+                              .colorScheme
+                              .outlineVariant
+                              .withValues(alpha: 0.6),
+                        ),
+                      ),
+                    ),
                     child: bottomBar!,
                   ),
                 ),

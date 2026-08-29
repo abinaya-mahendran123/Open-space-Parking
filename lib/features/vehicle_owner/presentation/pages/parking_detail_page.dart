@@ -3,10 +3,10 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import 'package:open_space_parking/core/common/exceptions/app_exception.dart';
-import 'package:open_space_parking/core/domain/domain_extensions.dart';
 import 'package:open_space_parking/core/providers/core_providers.dart';
 import 'package:open_space_parking/core/routes/route_paths.dart';
 import 'package:open_space_parking/core/utils/validators.dart';
+import 'package:open_space_parking/core/theme/app_colors.dart';
 import 'package:open_space_parking/core/utils/responsive.dart';
 import 'package:open_space_parking/core/widgets/buttons/primary_button.dart';
 import 'package:open_space_parking/core/widgets/errors/app_error_widget.dart';
@@ -15,9 +15,10 @@ import 'package:open_space_parking/features/authentication/presentation/provider
 import 'package:open_space_parking/features/maps/domain/entities/directions_request.dart';
 import 'package:open_space_parking/features/maps/domain/entities/map_coordinate.dart';
 import 'package:open_space_parking/features/maps/presentation/providers/maps_providers.dart';
+import 'package:open_space_parking/features/land_owner/domain/entities/parking_type.dart';
 import 'package:open_space_parking/features/vehicle_owner/domain/entities/parking_listing.dart';
 import 'package:open_space_parking/features/vehicle_owner/presentation/providers/vehicle_owner_providers.dart';
-import 'package:open_space_parking/features/vehicle_owner/presentation/widgets/availability_chip.dart';
+import 'package:open_space_parking/core/widgets/parking/availability_badge.dart';
 import 'package:open_space_parking/features/vehicle_owner/presentation/widgets/parking_image_gallery.dart';
 import 'package:open_space_parking/features/vehicle_owner/presentation/widgets/slot_booked_dialog.dart';
 
@@ -82,7 +83,7 @@ class _ParkingDetailPageState extends ConsumerState<ParkingDetailPage> {
       await showSlotBookedDialog(
         context,
         slot: booking.assignedSlot ?? 0,
-        parkingName: listing.displayName,
+        parkingName: listing.compactDisplayName,
       );
       if (!mounted) return;
       context.go(RoutePaths.vehicleOwnerParkingTicket(booking.id));
@@ -110,19 +111,35 @@ class _ParkingDetailPageState extends ConsumerState<ParkingDetailPage> {
     }
   }
 
+  Widget _availabilitySection(ParkingListing listing) {
+    return AvailabilityBadge(
+      freeSlots: listing.freeSlots,
+      totalSlots: listing.capacity,
+    );
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      ref.invalidate(parkingListingProvider(widget.listingId));
+    });
+  }
+
   @override
   Widget build(BuildContext context) {
     final vehicleOwnerId = ref.watch(authStateProvider).session?.userId ?? '';
     final listingAsync = ref.watch(parkingListingProvider(widget.listingId));
-    final availabilityAsync =
-        ref.watch(parkingAvailabilityProvider(widget.listingId));
     final favoriteAsync = ref.watch(isFavoriteProvider(
       (ownerId: vehicleOwnerId, listingId: widget.listingId),
     ));
 
     return Scaffold(
+      backgroundColor: Theme.of(context).colorScheme.surface,
       appBar: AppBar(
         title: const Text('Parking'),
+        backgroundColor: Theme.of(context).colorScheme.surfaceContainer,
+        surfaceTintColor: Colors.transparent,
         actions: [
           favoriteAsync.when(
             loading: () => const SizedBox.shrink(),
@@ -163,11 +180,11 @@ class _ParkingDetailPageState extends ConsumerState<ParkingDetailPage> {
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
                     Text(
-                      listing.shortDisplayName,
+                      listing.compactDisplayName,
                       style: Theme.of(context).textTheme.titleLarge?.copyWith(
                             fontWeight: FontWeight.bold,
                           ),
-                      maxLines: 2,
+                      maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                     ),
                     const SizedBox(height: 8),
@@ -187,7 +204,7 @@ class _ParkingDetailPageState extends ConsumerState<ParkingDetailPage> {
                           Text(
                             listing.amountLabel!,
                             style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                                  color: Theme.of(context).colorScheme.primary,
+                                  color: AppColors.primary,
                                   fontWeight: FontWeight.bold,
                                 ),
                           ),
@@ -200,7 +217,7 @@ class _ParkingDetailPageState extends ConsumerState<ParkingDetailPage> {
                         Icon(
                           Icons.location_on_outlined,
                           size: 18,
-                          color: Theme.of(context).colorScheme.primary,
+                          color: AppColors.primary,
                         ),
                         const SizedBox(width: 6),
                         Expanded(
@@ -217,13 +234,23 @@ class _ParkingDetailPageState extends ConsumerState<ParkingDetailPage> {
                         ),
                       ],
                     ),
+                    if (listing.distanceLabel != null) ...[
+                      const SizedBox(height: 8),
+                      Text(
+                        listing.distanceLabel!,
+                        style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                              color: Theme.of(context)
+                                  .colorScheme
+                                  .onSurfaceVariant,
+                            ),
+                      ),
+                    ],
                     const SizedBox(height: 16),
-                    availabilityAsync.when(
-                      loading: () => const LinearProgressIndicator(),
-                      error: (_, __) => const SizedBox.shrink(),
-                      data: (availability) =>
-                          AvailabilityChip(availability: availability),
-                    ),
+                          _availabilitySection(listing),
+                    if (listing.verifiedByEmployee) ...[
+                      const SizedBox(height: 10),
+                      const VerifiedParkingChip(),
+                    ],
                     const SizedBox(height: 24),
                     OutlinedButton.icon(
                       onPressed: () => _openDirections(listing),

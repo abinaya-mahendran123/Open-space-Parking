@@ -134,9 +134,11 @@ function listingHourlyRate(listing) {
   return 0;
 }
 
-function resolveHourlyRate(booking, listing) {
-  const fromBooking = Number(booking?.hourlyRate);
-  if (Number.isFinite(fromBooking) && fromBooking > 0) return fromBooking;
+/**
+ * Trusted hourly rate for billing — listing (land owner) only.
+ * Never trust booking.hourlyRate (clients can write Mongo fields).
+ */
+function resolveHourlyRate(_booking, listing) {
   const fromListing = listingHourlyRate(listing);
   if (fromListing > 0) return fromListing;
   // Last resort so sessions are never billed ₹0 when rate was never saved.
@@ -156,15 +158,19 @@ function computeBill(checkedInAt, checkedOutAt, hourlyRate) {
   return { minutes, billedHours, amountDue, hourlyRate: rate };
 }
 
-/** Repair ₹0 bills after exit when hourly rate was missing on the booking. */
+/**
+ * Always recompute fee from listing rate × check-in/out.
+ * Ignores any client-tampered booking.amountDue / booking.hourlyRate.
+ * Skips paid/completed bookings.
+ */
 async function ensureBillForCheckout(db, booking) {
   if (!booking?.checkedInAt || !booking?.checkedOutAt) return booking;
-  if (Number(booking.amountDue) > 0 && Number(booking.hourlyRate) > 0) {
+  if (booking.paidAt || String(booking.status || '') === 'completed') {
     return booking;
   }
 
   const listing = await getListing(db, booking.parkingListingId);
-  const hourlyRate = resolveHourlyRate(booking, listing);
+  const hourlyRate = resolveHourlyRate(null, listing);
   const { billedHours, amountDue } = computeBill(
     booking.checkedInAt,
     booking.checkedOutAt,
@@ -186,6 +192,15 @@ async function ensureBillForCheckout(db, booking) {
     durationHours: billedHours,
     updatedAt: new Date().toISOString(),
   };
+
+  // Skip write if already correct (avoids noisy updates).
+  const sameRate = Number(booking.hourlyRate) === hourlyRate;
+  const sameDue = Number(booking.amountDue) === amountDue;
+  const sameHours = Number(booking.actualDurationHours) === billedHours;
+  if (sameRate && sameDue && sameHours) {
+    return { ...booking, ...setDoc };
+  }
+
   await updateBookingDoc(
     db,
     booking,
@@ -412,7 +427,8 @@ async function scanParkingQr(db, qrPayload) {
   const parkingName =
     String(booking.parkingName || '').trim() ||
     (listing ? listingDisplayName(listing) : 'Parking');
-  const hourlyRate = resolveHourlyRate(booking, listing);
+  // Always stamp listing rate at check-in / exit — never reuse a client-written rate.
+  const hourlyRate = resolveHourlyRate(null, listing);
   const now = new Date();
   const nowIso = now.toISOString();
 

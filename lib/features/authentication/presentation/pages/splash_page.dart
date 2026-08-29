@@ -4,7 +4,7 @@ import 'package:go_router/go_router.dart';
 
 import 'package:open_space_parking/core/routes/route_paths.dart';
 import 'package:open_space_parking/core/routes/role_navigation.dart';
-import 'package:open_space_parking/core/theme/app_colors.dart';
+import 'package:open_space_parking/core/widgets/brand/app_brand_logo.dart';
 import 'package:open_space_parking/features/authentication/presentation/providers/auth_state_provider.dart';
 
 class SplashPage extends ConsumerStatefulWidget {
@@ -16,20 +16,24 @@ class SplashPage extends ConsumerStatefulWidget {
 
 class _SplashPageState extends ConsumerState<SplashPage>
     with SingleTickerProviderStateMixin {
-  late final AnimationController _pulseController;
+  late final AnimationController _fadeController;
+  late final Animation<double> _fadeAnimation;
 
   @override
   void initState() {
     super.initState();
-    _pulseController = AnimationController(
+    _fadeController = AnimationController(
       vsync: this,
-      duration: const Duration(milliseconds: 1400),
+      duration: const Duration(milliseconds: 900),
     )..repeat(reverse: true);
+    _fadeAnimation = Tween<double>(begin: 0.88, end: 1.0).animate(
+      CurvedAnimation(parent: _fadeController, curve: Curves.easeInOut),
+    );
   }
 
   @override
   void dispose() {
-    _pulseController.dispose();
+    _fadeController.dispose();
     super.dispose();
   }
 
@@ -45,15 +49,12 @@ class _SplashPageState extends ConsumerState<SplashPage>
 
   @override
   Widget build(BuildContext context) {
-    // React to auth state changes without polling — navigate the frame the
-    // status becomes known.
     ref.listen<AuthState>(authStateProvider, (previous, next) {
       if (next.status != AuthStatus.unknown) {
         _goNext(next.status);
       }
     });
 
-    // If auth was already resolved before this widget built, navigate immediately.
     final currentStatus = ref.read(authStateProvider).status;
     if (currentStatus != AuthStatus.unknown) {
       WidgetsBinding.instance.addPostFrameCallback((_) => _goNext(currentStatus));
@@ -63,67 +64,43 @@ class _SplashPageState extends ConsumerState<SplashPage>
     final colorScheme = theme.colorScheme;
 
     return Scaffold(
-      body: DecoratedBox(
-        decoration: BoxDecoration(
-          gradient: AppColors.backgroundGradient(theme.brightness),
-        ),
-        child: Center(
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              ScaleTransition(
-                scale: Tween<double>(begin: 0.96, end: 1.04).animate(
-                  CurvedAnimation(
-                    parent: _pulseController,
-                    curve: Curves.easeInOut,
-                  ),
-                ),
-                child: Container(
-                  width: 88,
-                  height: 88,
-                  decoration: BoxDecoration(
-                    gradient: AppColors.brandGradient(theme.brightness),
-                    borderRadius: BorderRadius.circular(28),
-                    boxShadow: [
-                      BoxShadow(
-                        color: colorScheme.primary.withValues(alpha: 0.4),
-                        blurRadius: 28,
-                        offset: const Offset(0, 12),
-                      ),
-                    ],
-                  ),
-                  child: const Icon(
-                    Icons.local_parking_rounded,
-                    color: Colors.white,
-                    size: 44,
-                  ),
-                ),
+      backgroundColor: colorScheme.surface,
+      body: Center(
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            FadeTransition(
+              opacity: _fadeAnimation,
+              child: const AppBrandLogo(size: 88),
+            ),
+            const SizedBox(height: 28),
+            Text(
+              'Open Space Parking',
+              style: theme.textTheme.headlineSmall?.copyWith(
+                color: colorScheme.onSurface,
+                fontWeight: FontWeight.w800,
+                letterSpacing: -0.5,
               ),
-              const SizedBox(height: 28),
-              Text(
-                'Open Space Parking',
-                style: theme.textTheme.headlineSmall?.copyWith(
-                  color: colorScheme.onSurface,
-                ),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              'Find. Park. Go.',
+              style: theme.textTheme.bodyMedium?.copyWith(
+                color: colorScheme.onSurfaceVariant,
+                fontWeight: FontWeight.w500,
+                letterSpacing: 0.3,
               ),
-              const SizedBox(height: 8),
-              Text(
-                'Find & manage parking effortlessly',
-                style: theme.textTheme.bodyMedium?.copyWith(
-                  color: colorScheme.onSurfaceVariant,
-                ),
+            ),
+            const SizedBox(height: 48),
+            SizedBox(
+              width: 28,
+              height: 28,
+              child: CircularProgressIndicator(
+                strokeWidth: 2.5,
+                color: colorScheme.primary,
               ),
-              const SizedBox(height: 40),
-              SizedBox(
-                width: 28,
-                height: 28,
-                child: CircularProgressIndicator(
-                  strokeWidth: 2.5,
-                  color: colorScheme.primary,
-                ),
-              ),
-            ],
-          ),
+            ),
+          ],
         ),
       ),
     );

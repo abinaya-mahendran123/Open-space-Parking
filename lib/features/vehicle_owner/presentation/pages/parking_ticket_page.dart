@@ -7,8 +7,9 @@ import 'package:qr_flutter/qr_flutter.dart';
 
 import 'package:open_space_parking/core/domain/domain_extensions.dart';
 import 'package:open_space_parking/core/routes/route_paths.dart';
+import 'package:open_space_parking/core/theme/app_colors.dart';
 import 'package:open_space_parking/core/theme/app_spacing.dart';
-import 'package:open_space_parking/core/widgets/cards/app_card.dart';
+import 'package:open_space_parking/core/widgets/brand/app_brand_logo.dart';
 import 'package:open_space_parking/core/widgets/errors/app_error_widget.dart';
 import 'package:open_space_parking/core/widgets/loading/app_loading_widget.dart';
 import 'package:open_space_parking/features/vehicle_owner/domain/entities/booking.dart';
@@ -55,14 +56,34 @@ class _ParkingTicketPageState extends ConsumerState<ParkingTicketPage> {
     return 'Show this QR to security';
   }
 
+  String _statusLabel(Booking booking) {
+    if (booking.isAwaitingPayment) return 'Payment due';
+    if (booking.isParked) return 'Active';
+    if (booking.isAwaitingEntry) return 'Awaiting entry';
+    if (booking.status == BookingStatus.completed) return 'Completed';
+    return booking.status.label;
+  }
+
+  Color _statusColor(Booking booking) {
+    if (booking.isAwaitingPayment) return AppColors.brandAmber;
+    if (booking.isParked || booking.isAwaitingEntry) return AppColors.brandMint;
+    if (booking.status == BookingStatus.completed) {
+      return AppColors.brandBlue;
+    }
+    return Theme.of(context).colorScheme.primary;
+  }
+
   @override
   Widget build(BuildContext context) {
     final bookingAsync = ref.watch(bookingDetailProvider(widget.bookingId));
     final theme = Theme.of(context);
+    final colorScheme = theme.colorScheme;
+    final isLight = theme.brightness == Brightness.light;
 
     return Scaffold(
+      backgroundColor: isLight ? AppColors.lightBackground : colorScheme.surface,
       appBar: AppBar(
-        title: const Text('Parking QR'),
+        title: const Text('Parking pass'),
         leading: IconButton(
           icon: const Icon(Icons.close),
           onPressed: () => context.go(RoutePaths.vehicleOwnerBookings),
@@ -79,27 +100,60 @@ class _ParkingTicketPageState extends ConsumerState<ParkingTicketPage> {
             return const Center(child: Text('Ticket not found.'));
           }
 
+          final statusColor = _statusColor(booking);
+
           return ListView(
             padding: const EdgeInsets.all(AppSpacing.md),
             children: [
-              AppCard(
-                color: theme.colorScheme.primaryContainer.withValues(alpha: 0.35),
+              _ParkingPassCard(
                 child: Column(
                   children: [
+                    Text(
+                      'PARKING PASS',
+                      style: theme.textTheme.labelLarge?.copyWith(
+                        color: colorScheme.onSurfaceVariant,
+                        letterSpacing: 2,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                    const SizedBox(height: AppSpacing.sm),
+                    const AppBrandLogo(size: 40, showShadow: false),
+                    const SizedBox(height: AppSpacing.md),
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 12,
+                        vertical: 4,
+                      ),
+                      decoration: BoxDecoration(
+                        color: statusColor.withValues(alpha: 0.12),
+                        borderRadius: BorderRadius.circular(20),
+                      ),
+                      child: Text(
+                        _statusLabel(booking),
+                        style: theme.textTheme.labelLarge?.copyWith(
+                          color: statusColor,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: AppSpacing.md),
                     Text(
                       booking.assignedSlot != null && booking.assignedSlot! > 0
                           ? 'Slot ${booking.assignedSlot}'
                           : 'Slot pending',
-                      style: theme.textTheme.displaySmall?.copyWith(
-                        fontWeight: FontWeight.bold,
+                      style: theme.textTheme.headlineMedium?.copyWith(
+                        fontWeight: FontWeight.w800,
                         color: theme.colorScheme.primary,
+                        letterSpacing: -0.5,
                       ),
                     ),
                     const SizedBox(height: 4),
                     Text(
                       booking.shortDisplayParkingName,
                       textAlign: TextAlign.center,
-                      style: theme.textTheme.titleSmall,
+                      style: theme.textTheme.titleMedium?.copyWith(
+                        fontWeight: FontWeight.w600,
+                      ),
                       maxLines: 2,
                       overflow: TextOverflow.ellipsis,
                     ),
@@ -110,61 +164,60 @@ class _ParkingTicketPageState extends ConsumerState<ParkingTicketPage> {
                         color: theme.colorScheme.onSurfaceVariant,
                       ),
                     ),
-                    const SizedBox(height: 8),
+                    const SizedBox(height: AppSpacing.sm),
                     Text(
                       _statusHint(booking),
-                      style: theme.textTheme.labelLarge?.copyWith(
-                        color: theme.colorScheme.primary,
-                        fontWeight: FontWeight.w600,
+                      textAlign: TextAlign.center,
+                      style: theme.textTheme.bodySmall?.copyWith(
+                        color: theme.colorScheme.onSurfaceVariant,
                       ),
                     ),
                     if (booking.isParked) ...[
-                      const SizedBox(height: 4),
+                      const SizedBox(height: 8),
                       Text(
                         booking.elapsedClock(),
-                        style: theme.textTheme.titleMedium,
+                        style: theme.textTheme.titleLarge?.copyWith(
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                    ],
+                    if (booking.isQrLive) ...[
+                      const SizedBox(height: AppSpacing.lg),
+                      Container(
+                        padding: const EdgeInsets.all(16),
+                        decoration: BoxDecoration(
+                          color: Colors.white,
+                          borderRadius: BorderRadius.circular(16),
+                          border: Border.all(
+                            color: theme.colorScheme.outlineVariant,
+                          ),
+                        ),
+                        child: QrImageView(
+                          data: booking.displayQr,
+                          size: 220,
+                          backgroundColor: Colors.white,
+                        ),
                       ),
                     ],
                   ],
                 ),
               ),
-              if (booking.isQrLive) ...[
-                const SizedBox(height: AppSpacing.lg),
-                Center(
-                  child: Container(
-                    padding: const EdgeInsets.all(16),
-                    decoration: BoxDecoration(
-                      color: Colors.white,
-                      borderRadius: BorderRadius.circular(16),
-                      boxShadow: [
-                        BoxShadow(
-                          color: theme.colorScheme.shadow.withValues(alpha: 0.08),
-                          blurRadius: 12,
-                          offset: const Offset(0, 4),
-                        ),
-                      ],
-                    ),
-                    child: QrImageView(
-                      data: booking.displayQr,
-                      size: 220,
-                      backgroundColor: Colors.white,
-                    ),
-                  ),
-                ),
-              ],
               if (booking.isAwaitingPayment) ...[
                 const SizedBox(height: AppSpacing.lg),
                 Text(
                   '₹${booking.amountDue!.toStringAsFixed(0)}',
                   textAlign: TextAlign.center,
                   style: theme.textTheme.displaySmall?.copyWith(
-                    fontWeight: FontWeight.bold,
+                    fontWeight: FontWeight.w800,
+                    color: theme.colorScheme.onSurface,
                   ),
                 ),
                 Text(
                   booking.billedDurationLabel,
                   textAlign: TextAlign.center,
-                  style: theme.textTheme.bodySmall,
+                  style: theme.textTheme.bodySmall?.copyWith(
+                    color: theme.colorScheme.onSurfaceVariant,
+                  ),
                 ),
                 const SizedBox(height: AppSpacing.md),
                 FilledButton.icon(
@@ -185,10 +238,11 @@ class _ParkingTicketPageState extends ConsumerState<ParkingTicketPage> {
                 ),
               ] else ...[
                 const SizedBox(height: AppSpacing.md),
-                OutlinedButton(
+                OutlinedButton.icon(
                   onPressed: () =>
                       ref.invalidate(bookingDetailProvider(widget.bookingId)),
-                  child: const Text('Refresh'),
+                  icon: const Icon(Icons.refresh),
+                  label: const Text('Refresh'),
                 ),
               ],
             ],
@@ -197,4 +251,82 @@ class _ParkingTicketPageState extends ConsumerState<ParkingTicketPage> {
       ),
     );
   }
+}
+
+class _ParkingPassCard extends StatelessWidget {
+  const _ParkingPassCard({required this.child});
+
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final isLight = theme.brightness == Brightness.light;
+
+    return CustomPaint(
+      painter: _DashedBorderPainter(
+        color: theme.colorScheme.outlineVariant,
+        radius: 20,
+      ),
+      child: Container(
+        width: double.infinity,
+        padding: const EdgeInsets.all(AppSpacing.lg),
+        decoration: BoxDecoration(
+          color: isLight ? Colors.white : theme.colorScheme.surfaceContainer,
+          borderRadius: BorderRadius.circular(20),
+          boxShadow: isLight
+              ? [
+                  BoxShadow(
+                    color: AppColors.brandBlue.withValues(alpha: 0.06),
+                    blurRadius: 20,
+                    offset: const Offset(0, 8),
+                  ),
+                ]
+              : null,
+        ),
+        child: child,
+      ),
+    );
+  }
+}
+
+class _DashedBorderPainter extends CustomPainter {
+  _DashedBorderPainter({required this.color, required this.radius});
+
+  final Color color;
+  final double radius;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final paint = Paint()
+      ..color = color
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 1.2;
+
+    final path = Path()
+      ..addRRect(
+        RRect.fromRectAndRadius(
+          Rect.fromLTWH(1, 1, size.width - 2, size.height - 2),
+          Radius.circular(radius),
+        ),
+      );
+
+    const dashWidth = 6.0;
+    const dashSpace = 4.0;
+    for (final metric in path.computeMetrics()) {
+      var distance = 0.0;
+      while (distance < metric.length) {
+        final end = distance + dashWidth;
+        canvas.drawPath(
+          metric.extractPath(distance, end.clamp(0, metric.length)),
+          paint,
+        );
+        distance += dashWidth + dashSpace;
+      }
+    }
+  }
+
+  @override
+  bool shouldRepaint(covariant _DashedBorderPainter oldDelegate) =>
+      oldDelegate.color != color;
 }

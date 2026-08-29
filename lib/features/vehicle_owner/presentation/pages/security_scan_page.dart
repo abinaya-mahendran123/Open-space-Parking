@@ -10,6 +10,7 @@ import 'package:open_space_parking/core/common/exceptions/app_exception.dart';
 import 'package:open_space_parking/core/di/service_locator.dart';
 import 'package:open_space_parking/core/providers/core_providers.dart';
 import 'package:open_space_parking/core/routes/route_paths.dart';
+import 'package:open_space_parking/core/theme/app_colors.dart';
 import 'package:open_space_parking/core/utils/camera_access.dart';
 import 'package:open_space_parking/core/widgets/dialogs/app_dialogs.dart';
 import 'package:open_space_parking/features/account/presentation/pages/role_account_pages.dart';
@@ -261,6 +262,7 @@ class _SecurityScanPageState extends ConsumerState<SecurityScanPage> {
   Widget build(BuildContext context) {
     final result = _result;
     final name = ref.watch(authStateProvider).session?.displayName ?? 'Security';
+    final colorScheme = Theme.of(context).colorScheme;
     final onScanner = _view == _SecurityView.scanner;
 
     return PopScope(
@@ -270,9 +272,12 @@ class _SecurityScanPageState extends ConsumerState<SecurityScanPage> {
         await _onSystemBack();
       },
       child: Scaffold(
-        backgroundColor: onScanner ? Colors.black : null,
+        backgroundColor: onScanner ? Colors.black : colorScheme.surface,
         appBar: AppBar(
-          title: Text(onScanner ? 'Scan parking QR' : 'Security gate'),
+          title: Text(onScanner ? 'Scan parking QR' : 'Security'),
+          backgroundColor: onScanner ? Colors.black : colorScheme.surfaceContainer,
+          foregroundColor: onScanner ? Colors.white : colorScheme.onSurface,
+          surfaceTintColor: Colors.transparent,
           leading: onScanner
               ? IconButton(
                   tooltip: 'Back to gate desk',
@@ -310,6 +315,7 @@ class _SecurityScanPageState extends ConsumerState<SecurityScanPage> {
 
   Widget _buildDeskBody(BuildContext context, String name) {
     final colorScheme = Theme.of(context).colorScheme;
+
     return SafeArea(
       child: Padding(
         padding: const EdgeInsets.all(24),
@@ -317,20 +323,37 @@ class _SecurityScanPageState extends ConsumerState<SecurityScanPage> {
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
             const Spacer(),
-            Icon(
-              Icons.security,
-              size: 72,
-              color: colorScheme.primary,
+            Container(
+              width: 88,
+              height: 88,
+              decoration: BoxDecoration(
+                color: AppColors.brandBlueSoft,
+                borderRadius: BorderRadius.circular(20),
+              ),
+              alignment: Alignment.center,
+              child: const Icon(
+                Icons.qr_code_scanner,
+                size: 44,
+                color: AppColors.primary,
+              ),
             ),
-            const SizedBox(height: 20),
+            const SizedBox(height: 24),
             Text(
-              'Security login',
+              'SECURITY',
               textAlign: TextAlign.center,
-              style: Theme.of(context).textTheme.headlineSmall,
+              style: Theme.of(context).textTheme.labelLarge?.copyWith(
+                    color: colorScheme.onSurfaceVariant,
+                    letterSpacing: 2,
+                  ),
             ),
             const SizedBox(height: 8),
             Text(
-              'Signed in as $name\n'
+              'Signed in as $name',
+              textAlign: TextAlign.center,
+              style: Theme.of(context).textTheme.titleLarge,
+            ),
+            const SizedBox(height: 8),
+            Text(
               'Scan a driver QR to start or stop a parking session.',
               textAlign: TextAlign.center,
               style: Theme.of(context).textTheme.bodyMedium?.copyWith(
@@ -341,7 +364,7 @@ class _SecurityScanPageState extends ConsumerState<SecurityScanPage> {
             FilledButton.icon(
               onPressed: _openScanner,
               icon: const Icon(Icons.qr_code_scanner),
-              label: const Text('Scan next vehicle'),
+              label: const Text('Scan parking QR'),
             ),
             const SizedBox(height: 12),
             OutlinedButton.icon(

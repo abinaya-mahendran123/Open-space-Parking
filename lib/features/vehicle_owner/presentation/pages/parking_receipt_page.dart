@@ -6,12 +6,15 @@ import 'package:intl/intl.dart';
 import 'package:open_space_parking/core/common/exceptions/app_exception.dart';
 import 'package:open_space_parking/core/providers/core_providers.dart';
 import 'package:open_space_parking/core/routes/route_paths.dart';
+import 'package:open_space_parking/core/theme/app_colors.dart';
 import 'package:open_space_parking/core/widgets/errors/app_error_widget.dart';
 import 'package:open_space_parking/core/widgets/loading/app_loading_widget.dart';
 import 'package:open_space_parking/core/widgets/textfields/app_text_field.dart';
 import 'package:open_space_parking/features/authentication/presentation/providers/auth_state_provider.dart';
+import 'package:open_space_parking/features/vehicle_owner/domain/entities/booking.dart';
 import 'package:open_space_parking/features/vehicle_owner/domain/entities/parking_payment_split.dart';
 import 'package:open_space_parking/features/vehicle_owner/presentation/providers/vehicle_owner_providers.dart';
+import 'package:open_space_parking/features/vehicle_owner/presentation/utils/receipt_download_service.dart';
 import 'package:open_space_parking/features/vehicle_owner/presentation/widgets/rating_stars.dart';
 
 class ParkingReceiptPage extends ConsumerStatefulWidget {
@@ -24,6 +27,26 @@ class ParkingReceiptPage extends ConsumerStatefulWidget {
 }
 
 class _ParkingReceiptPageState extends ConsumerState<ParkingReceiptPage> {
+  bool _downloading = false;
+
+  Future<void> _downloadReceipt(Booking booking) async {
+    if (_downloading) return;
+    setState(() => _downloading = true);
+    try {
+      final message = await ReceiptDownloadService.downloadReceipt(booking);
+      if (!mounted) return;
+      ref.read(snackbarServiceProvider).showSuccess(message);
+    } catch (_) {
+      if (mounted) {
+        ref
+            .read(snackbarServiceProvider)
+            .showError('Could not download receipt. Try again.');
+      }
+    } finally {
+      if (mounted) setState(() => _downloading = false);
+    }
+  }
+
   Future<void> _review() async {
     final booking =
         await ref.read(bookingDetailProvider(widget.bookingId).future);
@@ -89,9 +112,14 @@ class _ParkingReceiptPageState extends ConsumerState<ParkingReceiptPage> {
     final bookingAsync = ref.watch(bookingDetailProvider(widget.bookingId));
     final format = DateFormat('dd MMM yyyy, hh:mm a');
 
+    final colorScheme = Theme.of(context).colorScheme;
+
     return Scaffold(
+      backgroundColor: colorScheme.surface,
       appBar: AppBar(
         title: const Text('Receipt'),
+        backgroundColor: colorScheme.surfaceContainer,
+        surfaceTintColor: Colors.transparent,
         leading: IconButton(
           icon: const Icon(Icons.close),
           onPressed: () => context.go(RoutePaths.vehicleOwnerBookings),
@@ -115,7 +143,7 @@ class _ParkingReceiptPageState extends ConsumerState<ParkingReceiptPage> {
               Icon(
                 Icons.check_circle,
                 size: 64,
-                color: Theme.of(context).colorScheme.primary,
+                color: AppColors.available,
               ),
               const SizedBox(height: 8),
               Text(
@@ -160,6 +188,18 @@ class _ParkingReceiptPageState extends ConsumerState<ParkingReceiptPage> {
                 ),
               ),
               const SizedBox(height: 16),
+              FilledButton.icon(
+                onPressed: _downloading ? null : () => _downloadReceipt(booking),
+                icon: _downloading
+                    ? const SizedBox(
+                        width: 18,
+                        height: 18,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
+                    : const Icon(Icons.download_outlined),
+                label: Text(_downloading ? 'Preparing...' : 'Download receipt'),
+              ),
+              const SizedBox(height: 8),
               FilledButton(
                 onPressed: _review,
                 child: const Text('Leave a review'),

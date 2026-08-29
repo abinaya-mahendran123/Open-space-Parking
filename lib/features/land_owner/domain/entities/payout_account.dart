@@ -29,10 +29,13 @@ class PayoutAccount extends Equatable {
     return account.length >= 8 && ifsc.length == 11;
   }
 
-  bool get isReady =>
-      hasUpi ||
-      hasBank ||
-      (razorpayLinkedAccountId?.trim().isNotEmpty ?? false);
+  bool get hasRazorpayLinkedAccount {
+    final id = razorpayLinkedAccountId?.trim() ?? '';
+    return RegExp(r'^acc_[A-Za-z0-9]+$').hasMatch(id);
+  }
+
+  /// Ready for automatic 90% payout when a Razorpay linked account is set.
+  bool get isReady => hasRazorpayLinkedAccount;
 
   Map<String, dynamic> toJson() => {
         'accountHolderName': accountHolderName?.trim(),

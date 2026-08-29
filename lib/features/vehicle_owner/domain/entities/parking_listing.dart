@@ -82,10 +82,23 @@ class ParkingListing extends Equatable {
   String get shortDisplayName {
     final name = parkingName?.trim();
     if (name != null && name.isNotEmpty) {
-      return truncateText(name, 40);
+      return compactDisplayName;
     }
     if (ticketId.trim().isNotEmpty) {
       return '${parkingType.label} · ${ticketId.trim()}';
+    }
+    return parkingType.label;
+  }
+
+  /// First part of the name (before comma) — for titles on small screens.
+  String get compactDisplayName {
+    final name = parkingName?.trim();
+    if (name != null && name.isNotEmpty) {
+      final firstPart = name.split(',').first.trim();
+      return truncateText(firstPart.isNotEmpty ? firstPart : name, 28);
+    }
+    if (ticketId.trim().isNotEmpty) {
+      return truncateText(ticketId.trim(), 28);
     }
     return parkingType.label;
   }
@@ -139,6 +152,9 @@ class ParkingListing extends Equatable {
   }
 
   ParkingListing copyWith({
+    String? id,
+    String? ticketId,
+    int? capacity,
     double? distanceKm,
     double? averageRating,
     int? reviewCount,
@@ -148,11 +164,11 @@ class ParkingListing extends Equatable {
     String? parkingStatus,
   }) {
     return ParkingListing(
-      id: id,
-      ticketId: ticketId,
+      id: id ?? this.id,
+      ticketId: ticketId ?? this.ticketId,
       landOwnerId: landOwnerId,
       parkingType: parkingType,
-      capacity: capacity,
+      capacity: capacity ?? this.capacity,
       latitude: latitude,
       longitude: longitude,
       areaSqFt: areaSqFt,

@@ -62,17 +62,22 @@ class OpenSpaceParkingApp extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final router = ref.watch(appRouterProvider);
     final snackbarService = ref.watch(snackbarServiceProvider);
-    // Watch only the mode — light/dark ThemeData are cached statics.
-    final themeMode = ref.watch(themeModeProvider);
+    // Watch only the mode — ThemeData are cached statics.
+    // ThemeMode.system = app Open Sky theme (never phone light/dark).
+    final appAppearance = ref.watch(themeModeProvider);
+    final useSystemLook = appAppearance == ThemeMode.system;
 
     return NotificationBootstrap(
       child: MaterialApp.router(
         title: 'Open Space Parking',
         debugShowCheckedModeBanner: false,
         scaffoldMessengerKey: snackbarService.messengerKey,
-        theme: AppTheme.light,
+        theme: useSystemLook ? AppTheme.system : AppTheme.light,
         darkTheme: AppTheme.dark,
-        themeMode: themeMode,
+        // Never pass ThemeMode.system to MaterialApp (that follows the phone).
+        themeMode: appAppearance == ThemeMode.dark
+            ? ThemeMode.dark
+            : ThemeMode.light,
         themeAnimationDuration: AppTheme.animationDuration,
         themeAnimationCurve: AppTheme.animationCurve,
         routerConfig: router,

@@ -2012,6 +2012,7 @@ app.post('/api/payments/razorpay/create-order', async (req, res) => {
     if (!bookingId) {
       return res.status(400).json({ error: 'bookingId is required' });
     }
+    // Ignore any client-supplied amount — fee is recomputed server-side.
 
     let booking = await findBookingDoc(bookingId);
     if (!booking) {
@@ -2204,8 +2205,14 @@ app.get('/payments/razorpay/checkout', async (req, res) => {
       return res.status(400).send('Missing bookingId or orderId');
     }
 
-    const booking = await findBookingDoc(bookingId);
+    let booking = await findBookingDoc(bookingId);
     if (!booking) return res.status(404).send('Booking not found');
+
+    try {
+      booking = await ensureBillForCheckout(db, booking);
+    } catch (error) {
+      return res.status(error.statusCode || 400).send(error.message);
+    }
 
     const amount = Number(booking.amountDue || 0);
     const amountPaise = amountToPaise(amount);
@@ -2346,14 +2353,23 @@ app.post('/api/payments/razorpay/verify', async (req, res) => {
       return res.status(400).json({ error: 'Invalid Razorpay signature' });
     }
 
-    const booking = await findBookingDoc(bookingId);
+    let booking = await findBookingDoc(bookingId);
     if (!booking) {
       return res.status(404).json({ error: 'Booking not found' });
     }
     if (booking.status === 'completed' && booking.paidAt) {
       return res.json({ ok: true, alreadyPaid: true });
     }
-    if (booking.status !== 'active' || booking.amountDue == null) {
+    if (booking.status !== 'active' || !booking.checkedOutAt) {
+      return res.status(400).json({ error: 'Booking is not payable' });
+    }
+
+    try {
+      booking = await ensureBillForCheckout(db, booking);
+    } catch (error) {
+      return res.status(error.statusCode || 400).json({ error: error.message });
+    }
+    if (!(Number(booking.amountDue) > 0)) {
       return res.status(400).json({ error: 'Booking is not payable' });
     }
 

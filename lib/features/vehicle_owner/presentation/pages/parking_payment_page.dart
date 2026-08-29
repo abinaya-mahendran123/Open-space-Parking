@@ -165,8 +165,15 @@ class _ParkingPaymentPageState extends ConsumerState<ParkingPaymentPage> {
   Widget build(BuildContext context) {
     final bookingAsync = ref.watch(bookingDetailProvider(widget.bookingId));
 
+    final colorScheme = Theme.of(context).colorScheme;
+
     return Scaffold(
-      appBar: AppBar(title: const Text('Pay with Razorpay')),
+      backgroundColor: colorScheme.surface,
+      appBar: AppBar(
+        title: const Text('Pay with Razorpay'),
+        backgroundColor: colorScheme.surfaceContainer,
+        surfaceTintColor: Colors.transparent,
+      ),
       body: bookingAsync.when(
         loading: () => const AppLoadingWidget(message: 'Loading bill...'),
         error: (_, __) => AppErrorWidget(

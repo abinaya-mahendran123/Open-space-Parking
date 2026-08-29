@@ -3,6 +3,7 @@ import 'package:flutter_map/flutter_map.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:latlong2/latlong.dart';
 
+import 'package:open_space_parking/core/theme/app_colors.dart';
 import 'package:open_space_parking/features/maps/domain/entities/map_coordinate.dart';
 import 'package:open_space_parking/features/maps/domain/entities/map_marker_data.dart';
 import 'package:open_space_parking/features/maps/presentation/providers/maps_providers.dart';
@@ -237,7 +238,10 @@ class _OsmMapViewState extends ConsumerState<OsmMapView> {
                 : null,
             child: Icon(
               Icons.location_on,
-              color: isHighlighted ? Colors.orange : Colors.red,
+              color: AppColors.osmMarkerColorForTier(
+                marker.availabilityTier,
+                selected: isHighlighted,
+              ),
               size: 36,
             ),
           ),

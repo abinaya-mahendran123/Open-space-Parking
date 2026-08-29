@@ -1,11 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
-/// Shared shell layout with themed bottom navigation.
-///
-/// On Android system back:
-/// - Non-home tab → switch to Home (does not exit)
-/// - Home tab → require a second back within 2s to exit
+import 'package:open_space_parking/core/theme/app_colors.dart';
+
+/// Shared shell layout with Open Sky bottom navigation.
 class AppShellScaffold extends StatefulWidget {
   const AppShellScaffold({
     super.key,
@@ -22,8 +20,6 @@ class AppShellScaffold extends StatefulWidget {
   final int selectedIndex;
   final ValueChanged<int> onDestinationSelected;
   final List<NavigationDestination> destinations;
-
-  /// Tab index treated as the root (usually Dashboard/Home).
   final int homeIndex;
 
   @override
@@ -35,7 +31,7 @@ class _AppShellScaffoldState extends State<AppShellScaffold> {
 
   @override
   Widget build(BuildContext context) {
-    final colorScheme = Theme.of(context).colorScheme;
+    final isLight = Theme.of(context).brightness == Brightness.light;
     final atHome = widget.selectedIndex == widget.homeIndex;
 
     return PopScope(
@@ -65,19 +61,28 @@ class _AppShellScaffoldState extends State<AppShellScaffold> {
         );
       },
       child: Scaffold(
+        backgroundColor: Theme.of(context).colorScheme.surface,
         appBar: widget.appBar,
         body: widget.body,
         bottomNavigationBar: DecoratedBox(
           decoration: BoxDecoration(
-            color: colorScheme.surfaceContainer,
+            color: isLight
+                ? AppColors.card
+                : Theme.of(context).colorScheme.surfaceContainer,
             border: Border(
               top: BorderSide(
-                color: colorScheme.outlineVariant.withValues(alpha: 0.45),
+                color: Theme.of(context)
+                    .colorScheme
+                    .outlineVariant
+                    .withValues(alpha: 0.35),
               ),
             ),
             boxShadow: [
               BoxShadow(
-                color: colorScheme.shadow.withValues(alpha: 0.06),
+                color: Theme.of(context)
+                    .colorScheme
+                    .shadow
+                    .withValues(alpha: isLight ? 0.05 : 0.2),
                 blurRadius: 12,
                 offset: const Offset(0, -4),
               ),

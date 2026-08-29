@@ -18,6 +18,7 @@ class GoogleMapView extends ConsumerStatefulWidget {
     this.showCurrentLocation = true,
     this.highlightedMarker,
     this.initialZoom = 14,
+    this.borderRadius = 16,
     this.onMarkerTap,
     this.onCoordinateSelected,
   });
@@ -28,6 +29,7 @@ class GoogleMapView extends ConsumerStatefulWidget {
   final bool showCurrentLocation;
   final MapMarkerData? highlightedMarker;
   final double initialZoom;
+  final double borderRadius;
   final void Function(MapMarkerData marker)? onMarkerTap;
   final void Function(MapCoordinate coordinate)? onCoordinateSelected;
 
@@ -132,7 +134,7 @@ class _GoogleMapViewState extends ConsumerState<GoogleMapView> {
         : map;
 
     return ClipRRect(
-      borderRadius: BorderRadius.circular(16),
+      borderRadius: BorderRadius.circular(widget.borderRadius),
       child: Stack(
         children: [
           content,

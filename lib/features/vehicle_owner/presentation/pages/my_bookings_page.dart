@@ -30,9 +30,14 @@ class MyBookingsPage extends ConsumerWidget {
     final bookingsAsync =
         ref.watch(vehicleOwnerBookingsProvider(vehicleOwnerId));
 
+    final colorScheme = Theme.of(context).colorScheme;
+
     return Scaffold(
+      backgroundColor: colorScheme.surface,
       appBar: AppBar(
         title: const Text('History'),
+        backgroundColor: colorScheme.surfaceContainer,
+        surfaceTintColor: Colors.transparent,
         actions: const [VehicleOwnerAppBarActions()],
       ),
       body: bookingsAsync.when(
@@ -47,9 +52,9 @@ class MyBookingsPage extends ConsumerWidget {
             return VehicleOwnerEmptyState(
               icon: Icons.history,
               title: 'No bookings yet',
-              message: 'Book a parking slot from the Home tab.',
+              message: 'Find a parking space near you.',
               actionLabel: 'Find parking',
-              onAction: () => context.go(RoutePaths.vehicleOwnerDashboard),
+              onAction: () => context.go(RoutePaths.vehicleOwnerSearch),
             );
           }
 

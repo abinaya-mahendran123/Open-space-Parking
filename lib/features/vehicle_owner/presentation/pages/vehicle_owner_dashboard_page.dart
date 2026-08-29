@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import 'package:open_space_parking/core/routes/route_paths.dart';
+import 'package:open_space_parking/core/theme/app_colors.dart';
 import 'package:open_space_parking/core/theme/app_spacing.dart';
 import 'package:open_space_parking/core/widgets/errors/app_error_widget.dart';
 import 'package:open_space_parking/core/widgets/loading/app_loading_widget.dart';
@@ -30,9 +31,14 @@ class VehicleOwnerDashboardPage extends ConsumerWidget {
     final bookingsAsync = ref.watch(vehicleOwnerBookingsProvider(vehicleOwnerId));
     final name = auth.session?.greetingName ?? 'Driver';
 
+    final colorScheme = Theme.of(context).colorScheme;
+
     return Scaffold(
+      backgroundColor: colorScheme.surface,
       appBar: AppBar(
         title: const Text('Parking'),
+        backgroundColor: colorScheme.surfaceContainer,
+        surfaceTintColor: Colors.transparent,
         actions: const [VehicleOwnerAppBarActions()],
       ),
       body: RefreshIndicator(
@@ -84,17 +90,70 @@ class VehicleOwnerDashboardPage extends ConsumerWidget {
                 if (liveBooking != null)
                   Card(
                     margin: const EdgeInsets.only(bottom: AppSpacing.md),
-                    child: ListTile(
-                      leading: const Icon(Icons.qr_code_2),
-                      title: const Text('Active parking'),
-                      subtitle: Text(
-                        'Slot ${liveBooking.assignedSlot ?? '-'} · ${liveBooking.displayParkingName}',
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                      ),
-                      trailing: const Icon(Icons.chevron_right),
+                    color: AppColors.brandMintSoft,
+                    child: InkWell(
                       onTap: () => context.push(
                         RoutePaths.vehicleOwnerParkingTicket(liveBooking.id),
+                      ),
+                      borderRadius: BorderRadius.circular(AppRadius.xl),
+                      child: Padding(
+                        padding: const EdgeInsets.all(AppSpacing.md),
+                        child: Row(
+                          children: [
+                            Container(
+                              width: 48,
+                              height: 48,
+                              decoration: BoxDecoration(
+                                color: AppColors.brandMint.withValues(alpha: 0.15),
+                                borderRadius: BorderRadius.circular(12),
+                              ),
+                              child: const Icon(
+                                Icons.qr_code_2,
+                                color: AppColors.brandMint,
+                              ),
+                            ),
+                            const SizedBox(width: 12),
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    'Active parking',
+                                    style: Theme.of(context)
+                                        .textTheme
+                                        .labelLarge
+                                        ?.copyWith(
+                                          color: AppColors.brandMint,
+                                          fontWeight: FontWeight.w700,
+                                        ),
+                                  ),
+                                  const SizedBox(height: 2),
+                                  Text(
+                                    'Slot ${liveBooking.assignedSlot ?? '-'} · ${liveBooking.displayParkingName}',
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                    style:
+                                        Theme.of(context).textTheme.titleSmall,
+                                  ),
+                                ],
+                              ),
+                            ),
+                            FilledButton(
+                              onPressed: () => context.push(
+                                RoutePaths.vehicleOwnerParkingTicket(
+                                  liveBooking.id,
+                                ),
+                              ),
+                              style: FilledButton.styleFrom(
+                                minimumSize: const Size(0, 40),
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 16,
+                                ),
+                              ),
+                              child: const Text('View ticket'),
+                            ),
+                          ],
+                        ),
                       ),
                     ),
                   ),

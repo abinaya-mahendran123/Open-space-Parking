@@ -78,7 +78,7 @@ class _ParkingCheckInPageState extends ConsumerState<ParkingCheckInPage> {
       await showSlotBookedDialog(
         context,
         slot: booking.assignedSlot ?? 0,
-        parkingName: listing?.displayName ?? 'this parking',
+        parkingName: listing?.compactDisplayName ?? 'this parking',
       );
       if (!mounted) return;
       context.go(RoutePaths.vehicleOwnerParkingTicket(booking.id));
@@ -110,8 +110,10 @@ class _ParkingCheckInPageState extends ConsumerState<ParkingCheckInPage> {
               padding: const EdgeInsets.all(16),
               children: [
                 Text(
-                  listing.displayName,
+                  listing.compactDisplayName,
                   style: Theme.of(context).textTheme.headlineSmall,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
                 ),
                 const SizedBox(height: 4),
                 Text(listing.parkingType.label),

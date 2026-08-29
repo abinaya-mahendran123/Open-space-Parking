@@ -9,6 +9,7 @@ import 'package:open_space_parking/features/maps/domain/entities/map_coordinate.
 import 'package:open_space_parking/features/maps/domain/entities/map_marker_data.dart';
 import 'package:open_space_parking/features/maps/domain/entities/saved_coordinate.dart';
 import 'package:open_space_parking/features/maps/domain/repositories/maps_repository.dart';
+import 'package:open_space_parking/core/theme/app_colors.dart';
 import 'package:open_space_parking/features/vehicle_owner/domain/entities/parking_listing.dart';
 import 'package:open_space_parking/features/authentication/presentation/providers/auth_state_provider.dart';
 import 'package:open_space_parking/features/vehicle_owner/domain/entities/search_filters.dart';
@@ -193,6 +194,10 @@ MapMarkerData _listingToMarker(ParkingListing listing) {
         : '${listing.freeSlots}/${listing.capacity} slots',
     distanceKm: listing.distanceKm,
     payload: listing.id,
+    availabilityTier: AppColors.availabilityTier(
+      listing.freeSlots,
+      listing.capacity,
+    ),
   );
 }
 
@@ -243,7 +248,10 @@ Set<Marker> buildGoogleMarkers({
         markerId: MarkerId(marker.id),
         position: LatLng(marker.coordinate.latitude, marker.coordinate.longitude),
         icon: BitmapDescriptor.defaultMarkerWithHue(
-          isHighlighted ? BitmapDescriptor.hueOrange : BitmapDescriptor.hueRed,
+          AppColors.googleMarkerHueForTier(
+            marker.availabilityTier,
+            selected: isHighlighted,
+          ),
         ),
         infoWindow: InfoWindow(
           title: marker.title,

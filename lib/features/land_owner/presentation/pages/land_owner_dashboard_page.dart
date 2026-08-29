@@ -21,9 +21,14 @@ class LandOwnerDashboardPage extends ConsumerWidget {
     final ownerId = auth.session?.userId ?? '';
     final name = auth.session?.greetingName ?? 'Land Owner';
 
+    final colorScheme = Theme.of(context).colorScheme;
+
     return Scaffold(
+      backgroundColor: colorScheme.surface,
       appBar: AppBar(
         title: const Text('Dashboard'),
+        backgroundColor: colorScheme.surfaceContainer,
+        surfaceTintColor: Colors.transparent,
         actions: [
           NotificationBadge(
             recipientId: ownerId,

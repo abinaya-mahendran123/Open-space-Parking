@@ -67,6 +67,8 @@ class _AdminLoginPageState extends ConsumerState<AdminLoginPage> {
 
     return AuthScaffold(
       title: 'Admin Portal Login',
+      style: AuthScaffoldStyle.form,
+      subtitle: 'Sign in to manage tickets and employees.',
       child: Form(
         key: _formKey,
         child: Column(

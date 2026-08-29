@@ -47,6 +47,11 @@
 	<true/>
 	<key>UIApplicationSupportsIndirectInputEvents</key>
 	<true/>
+	<!-- Let receipt PDFs appear in Files → On My iPhone → Open Space Parking -->
+	<key>UIFileSharingEnabled</key>
+	<true/>
+	<key>LSSupportsOpeningDocumentsInPlace</key>
+	<true/>
 	<!-- Google Sign-In: replace with iOS OAuth client ID / REVERSED_CLIENT_ID from Google Cloud Console when available -->
 	<key>GIDClientID</key>
 	<string>514956128372-a1aac5qlpe4s0i4ej0tqr6251m1uvb4k.apps.googleusercontent.com</string>

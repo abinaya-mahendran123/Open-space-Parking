@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import 'package:open_space_parking/core/theme/app_colors.dart';
 import 'package:open_space_parking/features/vehicle_owner/domain/entities/parking_availability.dart';
 
 class AvailabilityChip extends StatelessWidget {
@@ -15,32 +16,33 @@ class AvailabilityChip extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final color = availability.isAvailable
-        ? theme.colorScheme.primaryContainer
-        : theme.colorScheme.errorContainer;
-    final onColor = availability.isAvailable
-        ? theme.colorScheme.onPrimaryContainer
-        : theme.colorScheme.onErrorContainer;
-    final label = availability.isAvailable
-        ? '${availability.availableSlots} of ${availability.totalSlots} slots free'
-        : 'Fully booked';
+    final tier = AppColors.availabilityTier(
+      availability.availableSlots,
+      availability.totalSlots,
+    );
+    final color = AppColors.availabilityColorForTier(tier);
+    final bg = AppColors.availabilityBackgroundForTier(tier);
+    final label = AppColors.availabilityLabel(
+      availability.availableSlots,
+      availability.totalSlots,
+    );
 
     if (compact) {
       return Chip(
         avatar: Icon(
-          availability.isAvailable ? Icons.check_circle : Icons.block,
+          tier == 0 ? Icons.block : Icons.local_parking_outlined,
           size: 16,
-          color: onColor,
+          color: color,
         ),
-        label: Text(label, style: TextStyle(color: onColor, fontSize: 12)),
-        backgroundColor: color,
-        side: BorderSide.none,
+        label: Text(label, style: TextStyle(color: color, fontSize: 12)),
+        backgroundColor: bg,
+        side: BorderSide(color: color.withValues(alpha: 0.25)),
         visualDensity: VisualDensity.compact,
       );
     }
 
     return Card(
-      color: color,
+      color: bg,
       child: Padding(
         padding: const EdgeInsets.all(16),
         child: Column(
@@ -49,20 +51,22 @@ class AvailabilityChip extends StatelessWidget {
             Row(
               children: [
                 Icon(
-                  availability.isAvailable
-                      ? Icons.event_available
-                      : Icons.event_busy,
-                  color: onColor,
+                  tier == 0 ? Icons.event_busy : Icons.event_available,
+                  color: color,
                 ),
                 const SizedBox(width: 8),
                 Text(
-                  availability.isAvailable ? 'Available' : 'Unavailable',
-                  style: theme.textTheme.titleMedium?.copyWith(color: onColor),
+                  tier == 0
+                      ? 'Full'
+                      : tier == 2
+                          ? 'Available'
+                          : 'Limited',
+                  style: theme.textTheme.titleMedium?.copyWith(color: color),
                 ),
               ],
             ),
             const SizedBox(height: 8),
-            Text(label, style: theme.textTheme.bodyMedium?.copyWith(color: onColor)),
+            Text(label, style: theme.textTheme.bodyMedium?.copyWith(color: color)),
             const SizedBox(height: 12),
             ClipRRect(
               borderRadius: BorderRadius.circular(4),
@@ -71,8 +75,8 @@ class AvailabilityChip extends StatelessWidget {
                     ? availability.bookedSlots / availability.totalSlots
                     : 0,
                 minHeight: 6,
-                backgroundColor: onColor.withValues(alpha: 0.2),
-                color: onColor,
+                backgroundColor: color.withValues(alpha: 0.2),
+                color: color,
               ),
             ),
           ],

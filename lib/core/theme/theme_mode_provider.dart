@@ -6,6 +6,10 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 const _themeModeKey = 'app_theme_mode';
 
+/// App appearance preference.
+///
+/// [ThemeMode.system] here means the branded Open Sky **app** theme
+/// ([AppTheme.system]), not the phone's light/dark setting.
 final themeModeProvider =
     StateNotifierProvider<ThemeModeNotifier, ThemeMode>((ref) {
   return ThemeModeNotifier();
@@ -25,7 +29,7 @@ class ThemeModeNotifier extends StateNotifier<ThemeMode> {
         state = loaded;
       }
     } catch (_) {
-      // Keep default ThemeMode.system.
+      // Keep default ThemeMode.system (app Open Sky).
     }
   }
 
@@ -58,10 +62,11 @@ class ThemeModeNotifier extends StateNotifier<ThemeMode> {
 
   static ThemeMode _fromStorage(String? raw) {
     switch (raw) {
-      case 'light':
-        return ThemeMode.light;
       case 'dark':
         return ThemeMode.dark;
+      case 'light':
+        return ThemeMode.light;
+      case 'system':
       default:
         return ThemeMode.system;
     }

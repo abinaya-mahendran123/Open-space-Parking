@@ -53,6 +53,9 @@ class _ForgotPasswordPageState extends ConsumerState<ForgotPasswordPage> {
 
     return AuthScaffold(
       title: 'Forgot Password',
+      style: AuthScaffoldStyle.form,
+      subtitle: 'Enter your email and we will send reset instructions.',
+      onBack: () => Navigator.of(context).maybePop(),
       child: Form(
         key: _formKey,
         child: Column(

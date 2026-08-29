@@ -67,7 +67,7 @@ class MongoVehicleOwnerRepository implements VehicleOwnerRepository {
           radiusKm: filters.maxDistanceKm ?? 25,
         );
         listings = await _applySearchFilters(listings, filters);
-        return await _enrichListings(listings, skipAvailability: true);
+        return await _enrichListings(listings);
       } catch (_) {
         // Fall back to local filtering when recommendation API is unavailable.
       }
@@ -198,9 +198,21 @@ class MongoVehicleOwnerRepository implements VehicleOwnerRepository {
         ));
         continue;
       }
-      final availability =
-          await _getCurrentAvailabilityRaw(listing.id, listing.capacity);
-      enriched.add(listing.copyWith(
+      final baseListing = await _getBaseListing(listing.id);
+      final resolved = baseListing != null
+          ? listing.copyWith(
+              id: baseListing.id,
+              capacity: baseListing.capacity,
+              ticketId: baseListing.ticketId.isNotEmpty
+                  ? baseListing.ticketId
+                  : listing.ticketId,
+            )
+          : listing;
+      final availability = await _getCurrentAvailabilityRaw(
+        resolved.id,
+        resolved.capacity,
+      );
+      enriched.add(resolved.copyWith(
         averageRating: summary.averageRating,
         reviewCount: summary.reviewCount,
         availableSlots: availability.availableSlots,
@@ -286,7 +298,8 @@ class MongoVehicleOwnerRepository implements VehicleOwnerRepository {
     }
 
     final overlapping = await _countOverlappingBookings(
-      parkingListingId: parkingListingId,
+      parkingListingId: listing.id,
+      ticketId: listing.ticketId,
       startDateTime: startDateTime,
       endDateTime: endDateTime,
     );
@@ -313,32 +326,46 @@ class MongoVehicleOwnerRepository implements VehicleOwnerRepository {
     String parkingListingId,
     int capacity,
   ) async {
+    final listing = await _getBaseListing(parkingListingId);
+    final canonicalId =
+        listing != null && listing.id.isNotEmpty ? listing.id : parkingListingId;
+    final effectiveCapacity = listing?.capacity ?? capacity;
+
     final now = DateTime.now().toUtc();
     final end = now.add(const Duration(hours: 1));
     final overlapping = await _countOverlappingBookings(
-      parkingListingId: parkingListingId,
+      parkingListingId: canonicalId,
+      ticketId: listing?.ticketId,
       startDateTime: now,
       endDateTime: end,
     );
-    final available = capacity - overlapping;
+    final available = effectiveCapacity - overlapping;
     return ParkingAvailability(
-      totalSlots: capacity,
+      totalSlots: effectiveCapacity,
       bookedSlots: overlapping,
-      availableSlots: available.clamp(0, capacity),
+      availableSlots: available.clamp(0, effectiveCapacity),
       isAvailable: available > 0,
     );
   }
 
   Future<int> _countOverlappingBookings({
     required String parkingListingId,
+    String? ticketId,
     required DateTime startDateTime,
     required DateTime endDateTime,
   }) async {
     await _ensureConnected();
 
+    final ids = <String>{
+      parkingListingId.trim(),
+      if (ticketId != null && ticketId.trim().isNotEmpty) ticketId.trim(),
+    };
+    final hex = _normalizeObjectId(parkingListingId);
+    if (hex.isNotEmpty) ids.add(hex);
+
     final bookings = await _collectionService.findMany(
       collectionName: AppConstants.bookingsCollection,
-      selector: where.eq('parkingListingId', parkingListingId),
+      selector: where.oneFrom('parkingListingId', ids.toList()),
     );
 
     final start = startDateTime.toUtc();
@@ -1342,14 +1369,16 @@ class MongoVehicleOwnerRepository implements VehicleOwnerRepository {
     final parkingPrefs = MongoJson.asMap(doc['parkingPreferences']) ?? const {};
     final prefs = ParkingPreferences.fromJson(parkingPrefs);
     final ownerDetails = MongoJson.asMap(doc['ownerDetails']);
-    final capacity = ParkingSlotCalculator.resolveCapacity(
-      requestType: doc['requestType'] as String?,
-      areaSqFt: landDetails.areaSqFt,
-      storedNumberOfCars: prefs.numberOfCars > 0
-          ? prefs.numberOfCars
-          : (MongoJson.asInt(doc['capacity']) ??
-              MongoJson.asInt(doc['numberOfCars'])),
-    );
+    final storedCapacity = MongoJson.asInt(doc['capacity']) ??
+        (prefs.numberOfCars > 0 ? prefs.numberOfCars : null) ??
+        MongoJson.asInt(doc['numberOfCars']);
+    final capacity = storedCapacity != null && storedCapacity > 0
+        ? storedCapacity
+        : ParkingSlotCalculator.resolveCapacity(
+            requestType: doc['requestType'] as String?,
+            areaSqFt: landDetails.areaSqFt,
+            storedNumberOfCars: storedCapacity,
+          );
 
     final address = landDetails.landAddress?.trim();
     final ownerName = (ownerDetails?['fullName'] as String?)?.trim();

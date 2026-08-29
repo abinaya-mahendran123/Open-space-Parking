@@ -27,6 +27,7 @@ class AuthMethodButton extends StatelessWidget {
         onPressed: enabled ? onPressed : null,
         style: OutlinedButton.styleFrom(
           foregroundColor: colorScheme.onSurface,
+          backgroundColor: colorScheme.surfaceContainerLowest,
           side: BorderSide(color: colorScheme.outline.withValues(alpha: 0.55)),
           shape: const StadiumBorder(),
           padding: const EdgeInsets.symmetric(horizontal: 20),
@@ -45,6 +46,7 @@ class AuthMethodButton extends StatelessWidget {
                 label,
                 style: Theme.of(context).textTheme.titleSmall?.copyWith(
                       fontWeight: FontWeight.w500,
+                      color: colorScheme.onSurface,
                     ),
                 textAlign: TextAlign.center,
                 overflow: TextOverflow.ellipsis,

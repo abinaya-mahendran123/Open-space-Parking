@@ -6,6 +6,7 @@ import 'package:open_space_parking/core/common/exceptions/app_exception.dart';
 import 'package:open_space_parking/core/providers/core_providers.dart';
 import 'package:open_space_parking/core/routes/route_paths.dart';
 import 'package:open_space_parking/core/routes/role_navigation.dart';
+import 'package:open_space_parking/core/theme/app_colors.dart';
 import 'package:open_space_parking/core/widgets/buttons/primary_button.dart';
 import 'package:open_space_parking/features/authentication/domain/entities/user_role.dart';
 import 'package:open_space_parking/features/authentication/presentation/providers/auth_form_providers.dart';
@@ -89,14 +90,11 @@ class _RoleSelectionPageState extends ConsumerState<RoleSelectionPage> {
 
     return AuthScaffold(
       title: 'Choose Your Role',
+      style: AuthScaffoldStyle.form,
+      subtitle: 'Select how you want to use Open Space Parking',
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          Text(
-            'How would you like to continue today?',
-            style: Theme.of(context).textTheme.bodyMedium,
-          ),
-          const SizedBox(height: 20),
           _RoleCard(
             role: UserRole.vehicleOwner,
             isSelected: selectedRole == UserRole.vehicleOwner,
@@ -142,8 +140,10 @@ class _RoleCard extends StatelessWidget {
 
     return Material(
       color: isSelected
-          ? colorScheme.primaryContainer.withValues(alpha: 0.35)
-          : colorScheme.surfaceContainerHighest,
+          ? (Theme.of(context).brightness == Brightness.dark
+              ? colorScheme.primaryContainer.withValues(alpha: 0.35)
+              : AppColors.brandBlueSoft)
+          : colorScheme.surfaceContainerLow,
       borderRadius: BorderRadius.circular(16),
       child: InkWell(
         onTap: onTap,
@@ -153,16 +153,30 @@ class _RoleCard extends StatelessWidget {
           decoration: BoxDecoration(
             borderRadius: BorderRadius.circular(16),
             border: Border.all(
-              color: isSelected ? colorScheme.primary : colorScheme.outlineVariant,
+              color: isSelected ? AppColors.primary : colorScheme.outlineVariant,
               width: isSelected ? 2 : 1,
             ),
           ),
           child: Row(
             children: [
-              Icon(
-                isLandOwner ? Icons.domain : Icons.directions_car_filled_outlined,
-                size: 32,
-                color: isSelected ? colorScheme.primary : colorScheme.onSurfaceVariant,
+              Container(
+                width: 48,
+                height: 48,
+                decoration: BoxDecoration(
+                  color: isSelected
+                      ? AppColors.primary.withValues(alpha: 0.12)
+                      : colorScheme.surfaceContainerHighest,
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: Icon(
+                  isLandOwner
+                      ? Icons.domain
+                      : Icons.directions_car_filled_outlined,
+                  size: 26,
+                  color: isSelected
+                      ? colorScheme.primary
+                      : colorScheme.onSurfaceVariant,
+                ),
               ),
               const SizedBox(width: 16),
               Expanded(
@@ -173,6 +187,7 @@ class _RoleCard extends StatelessWidget {
                       isLandOwner ? 'Land Owner' : 'Vehicle Owner',
                       style: Theme.of(context).textTheme.titleMedium?.copyWith(
                             fontWeight: FontWeight.w600,
+                            color: colorScheme.onSurface,
                           ),
                     ),
                     const SizedBox(height: 4),
@@ -180,7 +195,9 @@ class _RoleCard extends StatelessWidget {
                       isLandOwner
                           ? 'List parking and submit build requests'
                           : 'Search and book parking near you',
-                      style: Theme.of(context).textTheme.bodySmall,
+                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                            color: colorScheme.onSurfaceVariant,
+                          ),
                     ),
                   ],
                 ),

@@ -10,6 +10,7 @@ class MapMarkerData extends Equatable {
     this.snippet,
     this.distanceKm,
     this.payload,
+    this.availabilityTier = 2,
   });
 
   final String id;
@@ -19,6 +20,17 @@ class MapMarkerData extends Equatable {
   final double? distanceKm;
   final String? payload;
 
+  /// 0 = full, 1 = limited, 2 = available (see AppColors.availabilityTier).
+  final int availabilityTier;
+
   @override
-  List<Object?> get props => [id, coordinate, title, snippet, distanceKm, payload];
+  List<Object?> get props => [
+        id,
+        coordinate,
+        title,
+        snippet,
+        distanceKm,
+        payload,
+        availabilityTier,
+      ];
 }

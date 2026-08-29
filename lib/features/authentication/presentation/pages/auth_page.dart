@@ -430,6 +430,10 @@ class _AuthPageState extends ConsumerState<AuthPage> {
 
     return AuthScaffold(
       title: isSignUp ? 'Sign Up' : 'Sign In',
+      style: AuthScaffoldStyle.form,
+      subtitle: isSignUp
+          ? 'Create an account to get started.'
+          : 'Welcome back. Sign in to continue.',
       onBack: isLoading
           ? null
           : (_subview == _AuthSubview.picker ? _backToWelcome : _backToPicker),
@@ -438,13 +442,6 @@ class _AuthPageState extends ConsumerState<AuthPage> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            Text(
-              isSignUp
-                  ? 'Create an account to get started.'
-                  : 'Welcome back. Sign in to continue.',
-              style: Theme.of(context).textTheme.bodyLarge,
-            ),
-            const SizedBox(height: 24),
             if (_subview == _AuthSubview.picker) ...[
               if (isSignUp) ...[
                 AppTextField(
@@ -722,16 +719,38 @@ class _RoleSelector extends StatelessWidget {
         ),
         const SizedBox(height: 8),
         SegmentedButton<UserRole>(
+          style: ButtonStyle(
+            visualDensity: VisualDensity.compact,
+            padding: const WidgetStatePropertyAll(
+              EdgeInsets.symmetric(horizontal: 8, vertical: 10),
+            ),
+            textStyle: WidgetStatePropertyAll(
+              Theme.of(context).textTheme.labelLarge?.copyWith(
+                    fontWeight: FontWeight.w600,
+                  ),
+            ),
+          ),
+          showSelectedIcon: false,
           segments: const [
             ButtonSegment(
               value: UserRole.vehicleOwner,
-              label: Text('Vehicle Owner'),
-              icon: Icon(Icons.directions_car_filled_outlined),
+              label: Text(
+                'Vehicle Owner',
+                maxLines: 1,
+                softWrap: false,
+                overflow: TextOverflow.visible,
+                textAlign: TextAlign.center,
+              ),
             ),
             ButtonSegment(
               value: UserRole.landOwner,
-              label: Text('Land Owner'),
-              icon: Icon(Icons.domain),
+              label: Text(
+                'Land Owner',
+                maxLines: 1,
+                softWrap: false,
+                overflow: TextOverflow.visible,
+                textAlign: TextAlign.center,
+              ),
             ),
           ],
           selected: {selectedRole},
