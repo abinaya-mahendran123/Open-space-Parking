@@ -51,7 +51,45 @@ function testMergeKeepsPhoneFromTesseract() {
   assert.strictEqual(merged.phone, '9876543210');
 }
 
-const tests = [testStrongPaddleSkipsFallback, testMissingPhoneTriggersFallback, testMergeKeepsPhoneFromTesseract];
+function testEnrollmentSkipsTesseractFallbackWhenComplete() {
+  const plan = needsTesseractFallback(
+    {
+      fullName: '',
+      address: '268, NSK STREET, Subramaniapuram, Madurai South, Madurai, Tamil Nadu - 625011',
+      governmentIdNumber: '472246188468',
+      phone: '6369890437',
+      uploadLayout: 'enrollment_sheet',
+    },
+    'aadhaar',
+    { uploadLayout: 'enrollment_sheet' },
+  );
+  assert.strictEqual(plan.needed, false);
+  assert.strictEqual(plan.reason, 'enrollment_structured');
+}
+
+function testEnrollmentTriggersFallbackWhenPhoneMissing() {
+  const plan = needsTesseractFallback(
+    {
+      fullName: '',
+      address: '268, NSK STREET, Subramaniapuram, Madurai South, Madurai, Tamil Nadu - 625011',
+      governmentIdNumber: '472246188468',
+      phone: '',
+      uploadLayout: 'enrollment_sheet',
+    },
+    'aadhaar',
+    { uploadLayout: 'enrollment_sheet' },
+  );
+  assert.strictEqual(plan.needed, true);
+  assert.strictEqual(plan.reason, 'enrollment_missing_fields');
+}
+
+const tests = [
+  testStrongPaddleSkipsFallback,
+  testMissingPhoneTriggersFallback,
+  testMergeKeepsPhoneFromTesseract,
+  testEnrollmentSkipsTesseractFallbackWhenComplete,
+  testEnrollmentTriggersFallbackWhenPhoneMissing,
+];
 for (const fn of tests) {
   fn();
   console.log(`OK ${fn.name}`);

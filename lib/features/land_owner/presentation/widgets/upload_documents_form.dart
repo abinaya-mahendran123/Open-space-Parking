@@ -5,6 +5,7 @@ import 'package:open_space_parking/core/cloudinary/presentation/widgets/cloudina
 import 'package:open_space_parking/core/common/exceptions/app_exception.dart';
 import 'package:open_space_parking/core/services/api/digilocker_service.dart';
 import 'package:open_space_parking/features/land_owner/domain/entities/land_owner_documents.dart';
+import 'package:open_space_parking/features/land_owner/presentation/pages/digilocker_webview_page.dart';
 
 class UploadDocumentsForm extends StatefulWidget {
   const UploadDocumentsForm({
@@ -56,6 +57,12 @@ class UploadDocumentsFormState extends State<UploadDocumentsForm> {
       referenceId: 'property_tax',
       getter: _DocGetter.propertyTax,
     ),
+    _DocField(
+      label: 'Local municipality verified certificate',
+      category: CloudinaryFileCategory.document,
+      referenceId: 'municipality_certificate',
+      getter: _DocGetter.municipalityCertificate,
+    ),
   ];
 
   @override
@@ -80,6 +87,7 @@ class UploadDocumentsFormState extends State<UploadDocumentsForm> {
     if (_documents.propertyDocumentPath != null) count++;
     if (_documents.pattaPath != null) count++;
     if (_documents.propertyTaxPath != null) count++;
+    if (_documents.municipalityCertificatePath != null) count++;
     return count;
   }
 
@@ -89,6 +97,7 @@ class UploadDocumentsFormState extends State<UploadDocumentsForm> {
       _DocGetter.propertyDocument => _documents.propertyDocumentPath,
       _DocGetter.patta => _documents.pattaPath,
       _DocGetter.propertyTax => _documents.propertyTaxPath,
+      _DocGetter.municipalityCertificate => _documents.municipalityCertificatePath,
     };
   }
 
@@ -99,6 +108,8 @@ class UploadDocumentsFormState extends State<UploadDocumentsForm> {
         _documents.copyWith(propertyDocumentPath: url),
       _DocGetter.patta => _documents.copyWith(pattaPath: url),
       _DocGetter.propertyTax => _documents.copyWith(propertyTaxPath: url),
+      _DocGetter.municipalityCertificate =>
+        _documents.copyWith(municipalityCertificatePath: url),
     };
     _update(updated);
   }
@@ -114,73 +125,63 @@ class UploadDocumentsFormState extends State<UploadDocumentsForm> {
     });
 
     try {
-      final launch = await _digilockerService.launchAuth();
+      final launch = await _digilockerService.getAuthLaunch();
       _isSandbox = launch.isSandbox;
 
-      if (_isSandbox) {
-        // Sandbox: immediately exchange with mock code
-        await _exchangeCode('mock_code', isMock: true);
-      } else {
-        // Production: show dialog asking user to complete DigiLocker login
-        if (!mounted) return;
-        await _showAwaitingLoginDialog();
+      if (!mounted) return;
+
+      final result = await Navigator.of(context).push<DigiLockerWebViewResult>(
+        MaterialPageRoute(
+          builder: (_) => DigiLockerWebViewPage(
+            initialUrl: launch.url,
+            isSandbox: launch.isSandbox,
+            redirectUriPrefix:
+                launch.isSandbox ? null : launch.redirectUri,
+            expectedState: launch.isSandbox ? null : launch.state,
+          ),
+        ),
+      );
+
+      if (!mounted) return;
+
+      if (launch.isSandbox) {
+        setState(() {
+          _showManualFallback = true;
+          _digilockerError = null;
+        });
+        if (result?.completed == true) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text(
+                'Documents added in DigiLocker? Upload your property files below.',
+              ),
+            ),
+          );
+        }
+        return;
+      }
+
+      if (result == null) return;
+
+      if (result.errorMessage != null) {
+        setState(() => _digilockerError = result.errorMessage);
+        return;
+      }
+
+      if (result.isSuccess) {
+        await _exchangeCode(result.authorizationCode!);
       }
     } on AppException catch (e) {
       if (mounted) setState(() => _digilockerError = e.message);
     } catch (e) {
       if (mounted) {
-        setState(() => _digilockerError = 'DigiLocker connection failed. Try manual upload.');
+        setState(
+          () => _digilockerError =
+              'DigiLocker connection failed. Try manual upload.',
+        );
       }
     } finally {
       if (mounted) setState(() => _digilockerLoading = false);
-    }
-  }
-
-  Future<void> _showAwaitingLoginDialog() async {
-    if (!mounted) return;
-    final codeController = TextEditingController();
-    final result = await showDialog<String>(
-      context: context,
-      barrierDismissible: false,
-      builder: (ctx) => AlertDialog(
-        icon: const Icon(Icons.account_balance_outlined, size: 32),
-        title: const Text('Complete DigiLocker Login'),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            const Text(
-              'Your browser has opened DigiLocker. Complete the login with your '
-              'Aadhaar OTP, select your property document, and paste the '
-              'authorization code below.',
-              style: TextStyle(fontSize: 13),
-            ),
-            const SizedBox(height: 16),
-            TextField(
-              controller: codeController,
-              decoration: const InputDecoration(
-                labelText: 'Authorization Code',
-                hintText: 'Paste code from DigiLocker redirect',
-                border: OutlineInputBorder(),
-              ),
-            ),
-          ],
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx),
-            child: const Text('Cancel'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.pop(ctx, codeController.text.trim()),
-            child: const Text('Continue'),
-          ),
-        ],
-      ),
-    );
-    codeController.dispose();
-    if (result != null && result.isNotEmpty) {
-      await _exchangeCode(result);
     }
   }
 
@@ -490,9 +491,8 @@ class _DigiLockerCtaCard extends StatelessWidget {
             ),
             const SizedBox(height: 12),
             Text(
-              'Connect your DigiLocker account to share your Patta or property '
-              'document directly from the government database. No manual upload needed — '
-              'documents are 100% authentic and cannot be faked.',
+              'Open DigiLocker to log in with your Aadhaar and upload or share '
+              'your Patta or property documents from the government database.',
               style: Theme.of(context).textTheme.bodySmall,
             ),
             const SizedBox(height: 16),
@@ -726,7 +726,13 @@ class _Row extends StatelessWidget {
 
 // ── Private enums ─────────────────────────────────────────────────────────────
 
-enum _DocGetter { governmentId, propertyDocument, patta, propertyTax }
+enum _DocGetter {
+  governmentId,
+  propertyDocument,
+  patta,
+  propertyTax,
+  municipalityCertificate,
+}
 
 class _DocField {
   const _DocField({

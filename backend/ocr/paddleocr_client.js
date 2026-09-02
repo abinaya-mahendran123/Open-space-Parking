@@ -10,10 +10,32 @@ const { logOcr } = require('./ocr_logging');
 const DEFAULT_SERVICE_URL =
   process.env.PADDLEOCR_SERVICE_URL || 'http://127.0.0.1:8765';
 const DEFAULT_TIMEOUT_MS = Number(process.env.PADDLEOCR_TIMEOUT_MS || 180000);
-const MAX_CONCURRENT = Number(process.env.PADDLEOCR_MAX_CONCURRENT || 1);
+const MAX_CONCURRENT = Number(process.env.PADDLEOCR_MAX_CONCURRENT || 8);
+const HEALTH_CACHE_MS = Number(process.env.PADDLEOCR_HEALTH_CACHE_MS || 60000);
 
 let activeCount = 0;
 const waitQueue = [];
+const healthCaches = new Map();
+let workerRoundRobin = 0;
+
+function listServiceUrls() {
+  const multi = String(process.env.PADDLEOCR_SERVICE_URLS || '').trim();
+  if (multi) {
+    return multi
+      .split(',')
+      .map((part) => part.trim().replace(/\/$/, ''))
+      .filter(Boolean);
+  }
+  return [DEFAULT_SERVICE_URL.replace(/\/$/, '')];
+}
+
+function pickServiceUrl() {
+  const urls = listServiceUrls();
+  if (urls.length === 1) return urls[0];
+  const url = urls[workerRoundRobin % urls.length];
+  workerRoundRobin += 1;
+  return url;
+}
 
 function acquireSlot() {
   return new Promise((resolve) => {
@@ -56,12 +78,28 @@ function paddleScriptPath() {
 }
 
 function paddleLangs() {
-  return (
-    process.env.PADDLEOCR_LANGS || 'en,ta,hi'
-  )
+  // English is enough for Aadhaar labels (PO, PIN, Mobile). ta/hi add minutes
+  // of cold-start model download and routinely exceed HTTP timeouts on Windows.
+  const langs = (process.env.PADDLEOCR_LANGS || 'en')
     .split(',')
     .map((part) => part.trim())
     .filter(Boolean);
+  return langs.length ? langs : ['en'];
+}
+
+function effectivePaddleLangs(requested) {
+  const allowed = new Set(paddleLangs());
+  const picked = (requested || []).filter((lang) => allowed.has(lang));
+  return picked.length ? picked : paddleLangs();
+}
+
+function paddleHttpTimeoutMs(options = {}) {
+  return Number(
+    process.env.PADDLEOCR_HTTP_TIMEOUT_MS ||
+      process.env.PADDLEOCR_TIMEOUT_MS ||
+      options.timeoutMs ||
+      DEFAULT_TIMEOUT_MS,
+  );
 }
 
 function postJson(url, body, timeoutMs) {
@@ -89,7 +127,10 @@ function postJson(url, body, timeoutMs) {
           try {
             const json = JSON.parse(raw);
             if (res.statusCode >= 400) {
-              reject(new Error(json.error || `PaddleOCR HTTP ${res.statusCode}`));
+              const err = new Error(json.error || `PaddleOCR HTTP ${res.statusCode}`);
+              err.statusCode = res.statusCode;
+              err.retryAfterSeconds = json.retryAfterSeconds;
+              reject(err);
               return;
             }
             resolve(json);
@@ -134,6 +175,25 @@ function getJson(url, timeoutMs) {
     req.on('timeout', () => req.destroy(new Error('PaddleOCR health timeout')));
     req.on('error', reject);
   });
+}
+
+async function ensureServiceHealthy(serviceUrl, timeoutMs) {
+  const now = Date.now();
+  const cached = healthCaches.get(serviceUrl);
+  if (cached?.ok && now - cached.at < HEALTH_CACHE_MS) {
+    return;
+  }
+  const health = await getJson(`${serviceUrl}/health`, timeoutMs);
+  if (!health || !health.ok) {
+    throw new Error(`PaddleOCR health check failed for ${serviceUrl}`);
+  }
+  if (health.modelsReady === false) {
+    throw new Error(
+      health.modelsError ||
+        'PaddleOCR models are still downloading/loading. Retry in a minute.',
+    );
+  }
+  healthCaches.set(serviceUrl, { at: now, ok: true });
 }
 
 async function writeTempImage(buffer) {
@@ -204,12 +264,10 @@ async function recognizeBuffer(buffer, options = {}) {
     throw err;
   }
 
-  const timeoutMs = Math.min(
-    options.timeoutMs || DEFAULT_TIMEOUT_MS,
-    Number(process.env.PADDLEOCR_HTTP_TIMEOUT_MS || 45000),
-  );
-  const langs = options.langs || paddleLangs();
-  const serviceUrl = (options.serviceUrl || DEFAULT_SERVICE_URL).replace(/\/$/, '');
+  const timeoutMs = paddleHttpTimeoutMs(options);
+  const langs = effectivePaddleLangs(options.langs || paddleLangs());
+  const tried = new Set();
+  let serviceUrl = (options.serviceUrl || pickServiceUrl()).replace(/\/$/, '');
   const allowSubprocess = process.env.PADDLEOCR_ALLOW_SUBPROCESS === '1';
 
   await acquireSlot();
@@ -217,40 +275,43 @@ async function recognizeBuffer(buffer, options = {}) {
   let tempPath = null;
 
   try {
-    // Prefer HTTP worker. If it's down or still warming, fail fast → Tesseract.
-    try {
-      const health = await getJson(`${serviceUrl}/health`, 2500);
-      if (!health || !health.ok) {
-        throw new Error('PaddleOCR health check failed');
-      }
-      if (health.modelsReady === false) {
-        throw new Error(
-          health.modelsError ||
-            'PaddleOCR models are still downloading/loading. Retry in a minute.',
-        );
-      }
-    } catch (healthError) {
-      logOcr('paddle_skip', { reason: healthError.message || String(healthError) });
-      throw healthError;
-    }
-
     tempPath = await writeTempImage(buffer);
 
-    try {
-      const result = await postJson(
-        `${serviceUrl}/ocr`,
-        { imagePath: tempPath, langs },
-        timeoutMs,
-      );
-      logOcr('engine=paddleocr mode=http', {
-        paddleTimeMs: Date.now() - started,
-        langsUsed: result.langsUsed,
-      });
-      return { ...result, mode: 'http' };
-    } catch (httpError) {
-      const reason = httpError.message || String(httpError);
-      logOcr('paddle_http_failed', { reason });
-      if (!allowSubprocess) throw httpError;
+    while (true) {
+      tried.add(serviceUrl);
+      try {
+        await ensureServiceHealthy(serviceUrl, 2500);
+      } catch (healthError) {
+        logOcr('paddle_skip', { reason: healthError.message || String(healthError), serviceUrl });
+        throw healthError;
+      }
+
+      try {
+        const result = await postJson(
+          `${serviceUrl}/ocr`,
+          { imagePath: tempPath, langs },
+          timeoutMs,
+        );
+        logOcr('engine=paddleocr mode=http', {
+          paddleTimeMs: Date.now() - started,
+          langsUsed: result.langsUsed,
+          serviceUrl,
+        });
+        return { ...result, mode: 'http' };
+      } catch (httpError) {
+        const reason = httpError.message || String(httpError);
+        const statusCode = httpError.statusCode || 0;
+        logOcr('paddle_http_failed', { reason, serviceUrl, statusCode });
+
+        const fallbackUrl = listServiceUrls().find((url) => !tried.has(url));
+        if (statusCode === 503 && fallbackUrl) {
+          serviceUrl = fallbackUrl;
+          continue;
+        }
+
+        if (!allowSubprocess) throw httpError;
+        break;
+      }
     }
 
     if (!allowSubprocess) {
@@ -283,5 +344,6 @@ module.exports = {
   recognizeBuffer,
   isServiceHealthy,
   paddleLangs,
+  listServiceUrls,
   DEFAULT_TIMEOUT_MS,
 };

@@ -28,6 +28,7 @@ const {
 } = require('./parking_listings');
 const { recommendNearbyParking } = require('./parking_recommendations');
 const { extractGovernmentIdDetails } = require('./government_id_ocr');
+const { runQueuedOcr, getOcrQueueStats } = require('./ocr/ocr_request_queue');
 const { handleAuthUrl, handleExchange, handleFetchDocument } = require('./digilocker');
 const { handleSendOtp, handleVerifyOtp, verifyOtpToken } = require('./otp_service');
 
@@ -701,7 +702,8 @@ app.get('/api/health', (_req, res) => {
       : 'mongodb (set DATABASE_URL for production)',
     razorpay: RAZORPAY_DEMO ? 'demo' : 'live',
     companyAccountConfigured: Boolean(RAZORPAY_COMPANY_ACCOUNT_ID),
-    ocrBuild: 'aadhaar-fullcard-2026-08-27',
+    ocrBuild: 'aadhaar-fullcard-2026-09-01',
+    ocrQueue: getOcrQueueStats(),
     scanBuild: 'razorpay-confirm-v2-2026-08-27',
   });
 });
@@ -718,20 +720,34 @@ app.post('/api/digilocker/fetch-document', handleFetchDocument);
 app.post('/api/ocr/government-id', async (req, res) => {
   try {
     const { frontUrl, backUrl, idType, frontBase64, backBase64 } = req.body || {};
-    const extracted = await extractGovernmentIdDetails({
-      frontUrl,
-      backUrl,
-      idType,
-      frontBase64,
-      backBase64,
-    });
+    const extracted = await runQueuedOcr(() =>
+      extractGovernmentIdDetails({
+        frontUrl,
+        backUrl,
+        idType,
+        frontBase64,
+        backBase64,
+      }),
+    );
     res.json(extracted);
   } catch (error) {
     const message = error?.message || 'Could not extract details from ID images.';
+    if (error?.code === 'OCR_OVERLOADED' || error?.code === 'OCR_QUEUE_TIMEOUT') {
+      const retryAfter = Number(error.retryAfterSeconds || 15);
+      res.set('Retry-After', String(retryAfter));
+      return res.status(503).json({
+        error: message,
+        retryAfterSeconds: retryAfter,
+        queue: getOcrQueueStats(),
+      });
+    }
     const status =
       message.includes('required') ||
       message.includes('Unsupported') ||
-      message.includes('missing on the server')
+      message.includes('missing on the server') ||
+      message.includes('does not look like') ||
+      message.includes('Please upload') ||
+      message.includes('looks like a')
         ? 400
         : 500;
     res.status(status).json({ error: message });

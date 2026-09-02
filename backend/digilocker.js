@@ -25,13 +25,13 @@ const querystring = require('querystring');
 const CLIENT_ID = process.env.DIGILOCKER_CLIENT_ID || '';
 const CLIENT_SECRET = process.env.DIGILOCKER_CLIENT_SECRET || '';
 const REDIRECT_URI =
-  process.env.DIGILOCKER_REDIRECT_URI ||
-  'https://digilocker.meripehchaan.gov.in/public/oauth2/1/callback';
+  process.env.DIGILOCKER_REDIRECT_URI || 'openspaceparking://digilocker-callback';
 
 const SANDBOX_MODE = !CLIENT_ID || !CLIENT_SECRET;
 
 const DIGILOCKER_BASE = 'https://api.digitallocker.gov.in';
 const AUTH_BASE = 'https://digilocker.meripehchaan.gov.in';
+const DIGILOCKER_PORTAL_URL = `${AUTH_BASE}/`;
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -93,9 +93,9 @@ function httpsGet(url, headers = {}) {
 
 // ─── Sandbox mock data ────────────────────────────────────────────────────────
 
-function sandboxAuthUrl(state) {
-  // Return a special sandbox URL the Flutter app handles by showing mock flow
-  return `openspaceparking://digilocker-sandbox?state=${state}&mock=1`;
+function sandboxAuthUrl(_state) {
+  // Real DigiLocker portal — user can log in and manage/upload documents.
+  return DIGILOCKER_PORTAL_URL;
 }
 
 function sandboxExchange() {
@@ -233,13 +233,20 @@ function handleAuthUrl(req, res) {
       url: sandboxAuthUrl(state),
       isSandbox: true,
       state,
+      redirectUri: REDIRECT_URI,
       message:
-        'DigiLocker is in sandbox mode. Set DIGILOCKER_CLIENT_ID and ' +
-        'DIGILOCKER_CLIENT_SECRET in .env for production.',
+        'DigiLocker portal opened. Log in with Aadhaar to upload or manage documents. ' +
+        'Set DIGILOCKER_CLIENT_ID and DIGILOCKER_CLIENT_SECRET in .env for automatic document import.',
     });
   }
 
-  return res.json({ ok: true, url: buildAuthUrl(state), isSandbox: false, state });
+  return res.json({
+    ok: true,
+    url: buildAuthUrl(state),
+    isSandbox: false,
+    state,
+    redirectUri: REDIRECT_URI,
+  });
 }
 
 /**
@@ -251,9 +258,14 @@ async function handleExchange(req, res) {
   const { code, isMock } = req.body || {};
 
   if (SANDBOX_MODE || isMock) {
-    const token = sandboxExchange();
-    const files = sandboxDocumentList();
-    return res.json({ ok: true, ...token, files });
+    return res.json({
+      ok: true,
+      isSandbox: true,
+      access_token: '',
+      files: [],
+      message:
+        'DigiLocker sandbox mode — no sample documents. Upload property files manually or configure DIGILOCKER_CLIENT_ID for production.',
+    });
   }
 
   if (!code) return res.status(400).json({ error: 'code is required' });
@@ -277,7 +289,10 @@ async function handleFetchDocument(req, res) {
   const { accessToken, uri, isMock } = req.body || {};
 
   if (SANDBOX_MODE || isMock) {
-    return res.json({ ok: true, document: sandboxFetchDocument(uri || 'mock/uri') });
+    return res.status(503).json({
+      error:
+        'DigiLocker sandbox mode — upload property documents manually or configure production credentials.',
+    });
   }
 
   if (!accessToken || !uri) {

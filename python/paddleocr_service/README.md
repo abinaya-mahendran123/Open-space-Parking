@@ -41,7 +41,7 @@ Default: `http://127.0.0.1:8765`
 |----------|---------|---------|
 | `PADDLEOCR_SERVICE_PORT` | `8765` | HTTP port |
 | `PADDLEOCR_SERVICE_HOST` | `127.0.0.1` | Bind address |
-| `PADDLEOCR_LANGS` | `en,ta,hi` | Languages per request |
+| `PADDLEOCR_LANGS` | `en` | Languages (use `en` only on laptops; add `ta,hi` only with ≥2GB RAM) |
 | `PADDLEOCR_USE_GPU` | `false` | GPU inference |
 
 Node backend reads `PADDLEOCR_SERVICE_URL` (default `http://127.0.0.1:8765`).

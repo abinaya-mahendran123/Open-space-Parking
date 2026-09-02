@@ -65,6 +65,16 @@
 				<string>com.googleusercontent.apps.514956128372-a1aac5qlpe4s0i4ej0tqr6251m1uvb4k</string>
 			</array>
 		</dict>
+		<dict>
+			<key>CFBundleTypeRole</key>
+			<string>Editor</string>
+			<key>CFBundleURLName</key>
+			<string>digilocker-callback</string>
+			<key>CFBundleURLSchemes</key>
+			<array>
+				<string>openspaceparking</string>
+			</array>
+		</dict>
 	</array>
 </dict>
 </plist>

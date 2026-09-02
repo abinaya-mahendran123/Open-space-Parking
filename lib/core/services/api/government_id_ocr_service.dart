@@ -15,6 +15,8 @@ class GovernmentIdExtractionResult {
     required this.address,
     required this.governmentIdNumber,
     this.aadhaarNumber,
+    this.detectedSide,
+    this.ocrAccepted = false,
   });
 
   final String fullName;
@@ -22,6 +24,10 @@ class GovernmentIdExtractionResult {
   final String address;
   final String governmentIdNumber;
   final String? aadhaarNumber;
+  /// `back`, `front`, or null when unknown.
+  final String? detectedSide;
+  /// True when OCR extracted enough to accept this upload (name optional on back).
+  final bool ocrAccepted;
 }
 
 class GovernmentIdOcrService {
@@ -80,18 +86,29 @@ class GovernmentIdOcrService {
     }
   }
 
-  /// Ping /api/health with backoff so a waking Render instance can finish boot.
+  /// Fast health check first; long backoff only when the API is unreachable (e.g. sleeping Render).
   Future<void> _ensureApiAwake() async {
+    try {
+      await _apiClient.checkHealth().timeout(const Duration(seconds: 5));
+      return;
+    } catch (_) {
+      // Fall through to backoff only when the first ping fails.
+    }
+
     NetworkException? lastError;
     for (var i = 0; i < _wakeAttempts; i += 1) {
       try {
-        await _apiClient.checkHealth();
+        await _apiClient.checkHealth().timeout(const Duration(seconds: 8));
         return;
       } on NetworkException catch (error) {
         lastError = error;
         if (i < _wakeAttempts - 1) {
           await Future<void>.delayed(_wakeDelay);
           await EnvironmentConfig.refreshReachableApiUrl();
+        }
+      } on TimeoutException {
+        if (i < _wakeAttempts - 1) {
+          await Future<void>.delayed(_wakeDelay);
         }
       }
     }
@@ -131,6 +148,8 @@ class GovernmentIdOcrService {
       governmentIdNumber:
           (response['governmentIdNumber'] as String? ?? '').trim(),
       aadhaarNumber: (response['aadhaarNumber'] as String?)?.trim(),
+      detectedSide: (response['detectedSide'] as String?)?.trim(),
+      ocrAccepted: response['ocrAccepted'] == true,
     );
   }
 

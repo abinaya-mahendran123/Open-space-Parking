@@ -1,7 +1,5 @@
 import 'dart:math';
 
-import 'package:url_launcher/url_launcher.dart';
-
 import 'package:open_space_parking/core/common/exceptions/app_exception.dart';
 import 'package:open_space_parking/core/services/api/api_client.dart';
 
@@ -77,21 +75,30 @@ class DigiLockerFile {
   }
 }
 
+/// Authorization session metadata for opening DigiLocker in a WebView.
+class DigiLockerAuthLaunch {
+  const DigiLockerAuthLaunch({
+    required this.url,
+    required this.state,
+    required this.isSandbox,
+    this.redirectUri,
+  });
+
+  final String url;
+  final String state;
+  final bool isSandbox;
+  final String? redirectUri;
+}
+
 /// Handles the DigiLocker OAuth flow and document fetching.
-///
-/// In sandbox mode (no real DigiLocker credentials configured), all calls
-/// return mock verified data so the full UI flow can be tested locally.
 class DigiLockerService {
   DigiLockerService({ApiClient? apiClient})
       : _apiClient = apiClient ?? ApiClient();
 
   final ApiClient _apiClient;
 
-  /// Step 1: Get the DigiLocker authorization URL and open it in the browser.
-  ///
-  /// Returns the state token (used to match the callback).
-  /// In sandbox mode this launches a mock URL and returns immediately.
-  Future<({String state, bool isSandbox})> launchAuth() async {
+  /// Step 1: Get the DigiLocker URL to open (portal or OAuth authorize page).
+  Future<DigiLockerAuthLaunch> getAuthLaunch() async {
     final state = _randomState();
     try {
       final result = await _apiClient
@@ -99,32 +106,22 @@ class DigiLockerService {
           .timeout(const Duration(seconds: 10));
 
       final url = result['url'] as String? ?? '';
-      final isSandbox = result['isSandbox'] as bool? ?? false;
-
       if (url.isEmpty) {
-        throw const AppException('Could not get DigiLocker authorization URL.');
+        throw const AppException('Could not get DigiLocker URL.');
       }
 
-      // Sandbox URL uses a custom scheme — skip actual launching in sandbox
-      if (!isSandbox) {
-        final uri = Uri.parse(url);
-        if (!await canLaunchUrl(uri)) {
-          throw const AppException(
-            'Cannot open DigiLocker. Make sure a browser is installed.',
-          );
-        }
-        await launchUrl(uri, mode: LaunchMode.externalApplication);
-      }
-
-      return (state: state, isSandbox: isSandbox);
+      return DigiLockerAuthLaunch(
+        url: url,
+        state: result['state'] as String? ?? state,
+        isSandbox: result['isSandbox'] as bool? ?? false,
+        redirectUri: result['redirectUri'] as String?,
+      );
     } on AppException {
       rethrow;
     }
   }
 
   /// Step 2: Exchange the authorization code for a token and get file list.
-  ///
-  /// In sandbox mode pass [isMock]=true — code can be any string.
   Future<({String accessToken, List<DigiLockerFile> files, bool isMock})>
       exchangeCode(String code, {bool isMock = false}) async {
     try {
