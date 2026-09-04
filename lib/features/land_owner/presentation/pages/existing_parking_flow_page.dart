@@ -9,6 +9,7 @@ import 'package:open_space_parking/core/utils/parking_slot_calculator.dart';
 import 'package:open_space_parking/core/widgets/buttons/primary_button.dart';
 import 'package:open_space_parking/core/utils/profile_prefill.dart';
 import 'package:open_space_parking/features/authentication/presentation/providers/auth_state_provider.dart';
+import 'package:open_space_parking/features/land_owner/presentation/providers/aadhaar_ocr_provider.dart';
 import 'package:open_space_parking/features/land_owner/presentation/providers/land_owner_providers.dart';
 import 'package:open_space_parking/features/notification/domain/entities/notification_recipient_type.dart';
 import 'package:open_space_parking/features/notification/presentation/providers/notification_providers.dart';
@@ -31,7 +32,11 @@ class _ExistingParkingFlowPageState extends ConsumerState<ExistingParkingFlowPag
   final _landFormKey = GlobalKey<LandDetailsFormState>();
   final _docsFormKey = GlobalKey<UploadDocumentsFormState>();
 
-  static const _stepLabels = ['Owner Details', 'Upload Documents', 'Land Details'];
+  static const _stepLabels = [
+    'Aadhaar Upload',
+    'Land & Area',
+    'Document Verification',
+  ];
 
   @override
   void initState() {
@@ -126,12 +131,12 @@ class _ExistingParkingFlowPageState extends ConsumerState<ExistingParkingFlowPag
     if (step == 0 && !(_ownerFormKey.currentState?.validateAndSave() ?? false)) {
       return;
     }
-    if (step == 1 && !(_docsFormKey.currentState?.isComplete ?? false)) {
-      ref.read(snackbarServiceProvider).showError('Please upload all documents.');
+    if (step == 1 &&
+        !await (_landFormKey.currentState?.validateAndSave() ?? Future.value(false))) {
       return;
     }
-    if (step == 2 &&
-        !await (_landFormKey.currentState?.validateAndSave() ?? Future.value(false))) {
+    if (step == 2 && !(_docsFormKey.currentState?.isComplete ?? false)) {
+      ref.read(snackbarServiceProvider).showError('Please upload all documents.');
       return;
     }
 
@@ -140,6 +145,18 @@ class _ExistingParkingFlowPageState extends ConsumerState<ExistingParkingFlowPag
 
   @override
   Widget build(BuildContext context) {
+    final session = ref.watch(authStateProvider).session;
+    ref.listen<AadhaarOcrState>(aadhaarOcrProvider, (previous, next) {
+      if (next.isRunning || next.result == null || next.uploadUrl == null) return;
+      final details = ownerDetailsFromOcr(
+        result: next.result!,
+        uploadedUrl: next.uploadUrl!,
+        accountEmail: session?.email,
+        existing: ref.read(existingParkingFormProvider).ownerDetails,
+      );
+      ref.read(existingParkingFormProvider.notifier).setOwnerDetails(details);
+    });
+
     final form = ref.watch(existingParkingFormProvider);
     final isLoading = ref.watch(landOwnerLoadingProvider);
     final step = form.currentStep;
@@ -169,13 +186,7 @@ class _ExistingParkingFlowPageState extends ConsumerState<ExistingParkingFlowPag
             accountEmail: ref.watch(authStateProvider).session?.email,
             onSave: _saveOwnerDetails,
           ),
-        1 => UploadDocumentsForm(
-            key: _docsFormKey,
-            initial: form.documents,
-            ownerId: ref.watch(authStateProvider).session?.userId ?? '',
-            onChanged: ref.read(existingParkingFormProvider.notifier).setDocuments,
-          ),
-        2 => Column(
+        1 => Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
               LandDetailsForm(
@@ -200,6 +211,12 @@ class _ExistingParkingFlowPageState extends ConsumerState<ExistingParkingFlowPag
                 ),
               ],
             ],
+          ),
+        2 => UploadDocumentsForm(
+            key: _docsFormKey,
+            initial: form.documents,
+            ownerId: ref.watch(authStateProvider).session?.userId ?? '',
+            onChanged: ref.read(existingParkingFormProvider.notifier).setDocuments,
           ),
         _ => const SizedBox.shrink(),
       },

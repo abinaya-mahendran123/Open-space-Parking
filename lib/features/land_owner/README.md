@@ -5,8 +5,8 @@ Production-ready land owner feature with clean architecture.
 ## Features
 
 - Dashboard with two request options
-- **I Want to Build Parking** (5-step flow)
-- **Already Have Parking** (3-step flow)
+- **I Want to Build Parking** (5-step flow: Aadhaar → Land & Area → Documents → Preferences → Ticket)
+- **Already Have Parking** (3-step flow: Aadhaar → Land & Area → Documents)
 - Request History
 - Profile management
 - Notifications

@@ -13,6 +13,7 @@ import 'package:open_space_parking/features/land_owner/domain/entities/owner_det
 import 'package:open_space_parking/features/land_owner/domain/entities/parking_preferences.dart';
 import 'package:open_space_parking/features/land_owner/domain/entities/parking_type.dart';
 import 'package:open_space_parking/features/land_owner/domain/entities/request_priority.dart';
+import 'package:open_space_parking/features/land_owner/presentation/providers/aadhaar_ocr_provider.dart';
 import 'package:open_space_parking/features/land_owner/presentation/providers/land_owner_providers.dart';
 import 'package:open_space_parking/features/notification/domain/entities/notification_recipient_type.dart';
 import 'package:open_space_parking/features/notification/presentation/providers/notification_providers.dart';
@@ -36,9 +37,9 @@ class _BuildParkingFlowPageState extends ConsumerState<BuildParkingFlowPage> {
   final _rateController = TextEditingController();
 
   static const _stepLabels = [
-    'Owner Details',
-    'Upload Documents',
-    'Land Details',
+    'Aadhaar Upload',
+    'Land & Area',
+    'Document Verification',
     'Parking Preferences',
     'Generate Ticket',
   ];
@@ -154,12 +155,12 @@ class _BuildParkingFlowPageState extends ConsumerState<BuildParkingFlowPage> {
     if (step == 0 && !(_ownerFormKey.currentState?.validateAndSave() ?? false)) {
       return;
     }
-    if (step == 1 && !(_docsFormKey.currentState?.isComplete ?? false)) {
-      ref.read(snackbarServiceProvider).showError('Please upload all documents.');
+    if (step == 1 &&
+        !await (_landFormKey.currentState?.validateAndSave() ?? Future.value(false))) {
       return;
     }
-    if (step == 2 &&
-        !await (_landFormKey.currentState?.validateAndSave() ?? Future.value(false))) {
+    if (step == 2 && !(_docsFormKey.currentState?.isComplete ?? false)) {
+      ref.read(snackbarServiceProvider).showError('Please upload all documents.');
       return;
     }
     if (step == 3) {
@@ -178,6 +179,18 @@ class _BuildParkingFlowPageState extends ConsumerState<BuildParkingFlowPage> {
 
   @override
   Widget build(BuildContext context) {
+    final session = ref.watch(authStateProvider).session;
+    ref.listen<AadhaarOcrState>(aadhaarOcrProvider, (previous, next) {
+      if (next.isRunning || next.result == null || next.uploadUrl == null) return;
+      final details = ownerDetailsFromOcr(
+        result: next.result!,
+        uploadedUrl: next.uploadUrl!,
+        accountEmail: session?.email,
+        existing: ref.read(buildParkingFormProvider).ownerDetails,
+      );
+      ref.read(buildParkingFormProvider.notifier).setOwnerDetails(details);
+    });
+
     final form = ref.watch(buildParkingFormProvider);
     final isLoading = ref.watch(landOwnerLoadingProvider);
     final step = form.currentStep;
@@ -230,17 +243,17 @@ class _BuildParkingFlowPageState extends ConsumerState<BuildParkingFlowPage> {
           onSave: _saveOwnerDetails,
         );
       case 1:
+        return LandDetailsForm(
+          key: _landFormKey,
+          initial: form.landDetails,
+          onSave: ref.read(buildParkingFormProvider.notifier).setLandDetails,
+        );
+      case 2:
         return UploadDocumentsForm(
           key: _docsFormKey,
           initial: form.documents,
           ownerId: ref.watch(authStateProvider).session?.userId ?? '',
           onChanged: ref.read(buildParkingFormProvider.notifier).setDocuments,
-        );
-      case 2:
-        return LandDetailsForm(
-          key: _landFormKey,
-          initial: form.landDetails,
-          onSave: ref.read(buildParkingFormProvider.notifier).setLandDetails,
         );
       case 3:
         return Column(

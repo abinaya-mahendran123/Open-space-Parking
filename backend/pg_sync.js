@@ -96,14 +96,26 @@ function rowId(doc) {
   return oidHex(doc && doc._id);
 }
 
-const UNIQUE_FALLBACK = {
-  users: 'email',
-  vehicle_owner_profiles: 'vehicle_owner_id',
-  land_owner_profiles: 'owner_id',
-  land_owner_requests: 'ticket_id',
-  bookings: 'booking_ref',
-  employees: 'email',
+const UNIQUE_FALLBACKS = {
+  users: ['email', 'phone'],
+  vehicle_owner_profiles: ['vehicle_owner_id'],
+  land_owner_profiles: ['owner_id'],
+  land_owner_requests: ['ticket_id'],
+  bookings: ['booking_ref'],
+  employees: ['email', 'phone'],
 };
+
+async function upsertByColumn(pool, table, row, keys, altColumn) {
+  const setSql = keys
+    .filter((key) => key !== altColumn)
+    .map((key, i) => `"${key}" = $${i + 1}`)
+    .join(', ');
+  const setValues = keys.filter((key) => key !== altColumn).map((key) => row[key]);
+  await pool.query(
+    `update public.${table} set ${setSql} where "${altColumn}" = $${setValues.length + 1}`,
+    [...setValues, row[altColumn]],
+  );
+}
 
 async function upsert(pool, table, row) {
   const keys = Object.keys(row).filter((key) => row[key] !== undefined);
@@ -122,17 +134,18 @@ async function upsert(pool, table, row) {
       values,
     );
   } catch (error) {
-    const alt = UNIQUE_FALLBACK[table];
-    if (error.code !== '23505' || !alt || row[alt] == null) throw error;
-    const setSql = keys
-      .filter((key) => key !== alt)
-      .map((key, i) => `"${key}" = $${i + 1}`)
-      .join(', ');
-    const setValues = keys.filter((key) => key !== alt).map((key) => row[key]);
-    await pool.query(
-      `update public.${table} set ${setSql} where "${alt}" = $${setValues.length + 1}`,
-      [...setValues, row[alt]],
-    );
+    if (error.code !== '23505') throw error;
+    const fallbacks = UNIQUE_FALLBACKS[table] || [];
+    for (const alt of fallbacks) {
+      if (row[alt] == null || String(row[alt]).trim() === '') continue;
+      try {
+        await upsertByColumn(pool, table, row, keys, alt);
+        return;
+      } catch (fallbackError) {
+        if (fallbackError.code !== '23505') throw fallbackError;
+      }
+    }
+    throw error;
   }
 }
 

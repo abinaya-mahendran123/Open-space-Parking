@@ -137,6 +137,8 @@ function startPaddle(pythonBin) {
     PADDLEOCR_SERVICE_URL: serviceUrl,
     PADDLEOCR_PYTHON: pythonBin,
     PADDLEOCR_SCRIPT: scriptPath,
+    // Match Node client default — avoid loading ta/hi mid-request (HTTP timeout).
+    PADDLEOCR_LANGS: process.env.PADDLEOCR_LANGS || 'en',
   };
 
   paddleChild = spawn(pythonBin, [scriptPath, 'serve'], {
@@ -163,6 +165,7 @@ function startNode() {
   const env = {
     ...process.env,
     PADDLEOCR_SERVICE_URL: serviceUrl,
+    PADDLEOCR_LANGS: process.env.PADDLEOCR_LANGS || 'en',
   };
   const pythonBin = resolvePython();
   if (pythonBin) {

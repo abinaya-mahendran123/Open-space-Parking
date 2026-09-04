@@ -1,4 +1,4 @@
-const { buildPreprocessedBuffers, cropAadhaarNumberBands } = require('../ocr_preprocess');
+const { buildPreprocessedBuffers, cropAadhaarNumberBands, bufferMeetsMinOcrSize } = require('../ocr_preprocess');
 const {
   mergeExtracted,
   scoreOcrExtraction,
@@ -52,6 +52,7 @@ async function recognizeWithPsm(worker, buffer, psm, extraParams = {}) {
  * Kept short (≤4 recognizes) so Render does not return HTTP 502.
  */
 async function recognizeAadhaarNumber(buffer) {
+  if (!(await bufferMeetsMinOcrSize(buffer))) return '';
   const worker = await getWorkerEng();
   let bands = await cropAadhaarNumberBands(buffer);
   if (!bands.length) bands = [buffer];
@@ -61,6 +62,7 @@ async function recognizeAadhaarNumber(buffer) {
   let best = '';
   try {
     for (const band of bands) {
+      if (!(await bufferMeetsMinOcrSize(band))) continue;
       for (const psm of ['7', '6']) {
         const result = await recognizeWithPsm(worker, band, psm, {
           tessedit_char_whitelist: '0123456789 ',

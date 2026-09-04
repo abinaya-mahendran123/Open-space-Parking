@@ -198,6 +198,10 @@ class AdminTicketDetailPage extends ConsumerWidget {
                         _DocRow('Property Document', ticket.documents.propertyDocumentPath),
                         _DocRow('Patta', ticket.documents.pattaPath),
                         _DocRow('Property Tax', ticket.documents.propertyTaxPath),
+                        _DocRow(
+                          'Local municipality verified Document',
+                          ticket.documents.municipalityCertificatePath,
+                        ),
                         const SizedBox(height: 4),
                         Text(
                           'Employee site visit required to verify manually uploaded documents.',

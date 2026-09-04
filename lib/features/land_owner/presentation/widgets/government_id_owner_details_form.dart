@@ -1,5 +1,3 @@
-import 'dart:typed_data';
-
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
@@ -21,6 +19,7 @@ import 'package:open_space_parking/core/utils/validators.dart';
 import 'package:open_space_parking/core/widgets/textfields/app_text_field.dart';
 import 'package:open_space_parking/features/land_owner/domain/entities/government_id_type.dart';
 import 'package:open_space_parking/features/land_owner/domain/entities/owner_details.dart';
+import 'package:open_space_parking/features/land_owner/presentation/providers/aadhaar_ocr_provider.dart';
 
 Uint8List _copyToUint8List(List<int> bytes) => Uint8List.fromList(bytes);
 
@@ -46,7 +45,6 @@ class GovernmentIdOwnerDetailsForm extends ConsumerStatefulWidget {
 class GovernmentIdOwnerDetailsFormState
     extends ConsumerState<GovernmentIdOwnerDetailsForm> {
   final _formKey = GlobalKey<FormState>();
-  final _ocrService = GovernmentIdOcrService();
 
   late final TextEditingController _nameController;
   late final TextEditingController _phoneController;
@@ -55,14 +53,29 @@ class GovernmentIdOwnerDetailsFormState
 
   String? _uploadedUrl;
   Uint8List? _previewBytes;
+  Uint8List? _ocrImageBytes;
   bool _isPdfUpload = false;
   UploadProgress _uploadProgress = const UploadProgress();
   bool _isDeleting = false;
-  bool _extracting = false;
   String? _extractError;
 
   bool get _hasFile => _uploadedUrl != null && _uploadedUrl!.isNotEmpty;
   bool get _isUploading => _uploadProgress.isBusy;
+
+  bool _isOcrRunning(WidgetRef ref) {
+    final ocr = ref.watch(aadhaarOcrProvider);
+    return ocr.isRunning && ocr.uploadUrl == _uploadedUrl;
+  }
+
+  bool _isWrongDocumentMessage(String message) {
+    final lower = message.toLowerCase();
+    return lower.contains('does not look like an aadhaar') ||
+        lower.contains('please upload your aadhaar card only') ||
+        lower.contains('looks like a pan') ||
+        lower.contains('looks like a driving') ||
+        lower.contains('looks like a voter') ||
+        lower.contains('looks like a passport');
+  }
 
   @override
   void initState() {
@@ -126,6 +139,7 @@ class GovernmentIdOwnerDetailsFormState
         fileBytes: ocrBytes,
         fileName: name,
         previewBytes: ocrBytes,
+        ocrBytes: ocrBytes,
         isPdf: false,
       );
     } on PlatformException catch (e) {
@@ -178,7 +192,9 @@ class GovernmentIdOwnerDetailsFormState
     if (kIsWeb) {
       if (picked.bytes == null || picked.bytes!.isEmpty) return;
       fileBytes = picked.bytes!;
-      previewBytes = isPdf ? null : picked.bytes;
+      if (!isPdf) {
+        previewBytes = await downscaleForOcr(picked.bytes!);
+      }
     } else {
       final path = picked.path;
       if (path == null || path.isEmpty) return;
@@ -193,6 +209,7 @@ class GovernmentIdOwnerDetailsFormState
       fileBytes: fileBytes,
       fileName: picked.name,
       previewBytes: previewBytes,
+      ocrBytes: previewBytes,
       isPdf: isPdf,
     );
   }
@@ -201,6 +218,7 @@ class GovernmentIdOwnerDetailsFormState
     required List<int> fileBytes,
     required String fileName,
     required Uint8List? previewBytes,
+    Uint8List? ocrBytes,
     required bool isPdf,
   }) async {
     final category =
@@ -208,6 +226,7 @@ class GovernmentIdOwnerDetailsFormState
 
     setState(() {
       _previewBytes = previewBytes;
+      _ocrImageBytes = isPdf ? null : (ocrBytes ?? previewBytes);
       _isPdfUpload = isPdf;
       _uploadProgress = const UploadProgress(
         status: UploadStatus.uploading,
@@ -243,7 +262,7 @@ class GovernmentIdOwnerDetailsFormState
         );
       });
 
-      await _extractDetails();
+      _startOcrExtract();
     } on AppException catch (e) {
       if (!mounted) return;
       setState(() {
@@ -328,85 +347,95 @@ class GovernmentIdOwnerDetailsFormState
     );
   }
 
-  Future<void> _extractDetails() async {
-    if (_uploadedUrl == null || _uploadedUrl!.isEmpty || _extracting) return;
-
-    setState(() {
-      _extracting = true;
-      _extractError = null;
-    });
-
-    try {
-      final result = await _ocrService.extractDetails(
-        frontUrl: _uploadedUrl!,
-        backUrl: _uploadedUrl!,
-        idType: GovernmentIdType.aadhaar,
-        imageBytes: _previewBytes,
-      );
-
-      if (!mounted) return;
-
-      if (result.fullName.isNotEmpty) {
-        _nameController.text = result.fullName;
-      }
-      // Only fill phone from Aadhaar when OCR found an explicitly labeled number.
-      if (result.phone.isNotEmpty &&
-          RegExp(r'^[6-9]\d{9}$').hasMatch(result.phone)) {
-        _phoneController.text = result.phone;
-      }
-      if (result.address.isNotEmpty) {
-        _addressController.text = result.address;
-      }
-      final idNumber = (result.aadhaarNumber?.isNotEmpty == true
-              ? result.aadhaarNumber!
-              : result.governmentIdNumber)
-          .replaceAll(RegExp(r'\D'), '');
-      if (idNumber.length == 12) {
-        _idNumberController.text = idNumber;
-      }
-
-      setState(() => _extracting = false);
-
-      final missing = <String>[];
-      if (_nameController.text.trim().isEmpty) missing.add('name');
-      if (_addressController.text.trim().isEmpty) missing.add('address');
-      if (_idNumberController.text.replaceAll(RegExp(r'\D'), '').length != 12) {
-        missing.add('Aadhaar number');
-      }
-      if (missing.isNotEmpty) {
-        setState(() {
-          _extractError =
-              'Could not read ${missing.join(', ')} clearly. '
-              'Use a clear photo of the full card (not PDF). '
-              'You can type any missing fields below and Continue.';
-        });
-      } else {
-        setState(() {
-          _extractError = null;
-        });
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text(
-                'Details filled from Aadhaar. Please verify name, address, and number.',
-              ),
-            ),
-          );
-        }
-      }
-    } on AppException catch (e) {
-      if (!mounted) return;
-      setState(() {
-        _extracting = false;
-        _extractError = e.message;
-      });
-    } catch (_) {
-      if (!mounted) return;
-      setState(() {
-        _extracting = false;
-        _extractError = 'Could not extract details. Please fill in manually.';
-      });
+  void _applyOcrResult(GovernmentIdExtractionResult result) {
+    if (result.fullName.isNotEmpty) {
+      _nameController.text = result.fullName;
     }
+    if (result.phone.isNotEmpty &&
+        RegExp(r'^[6-9]\d{9}$').hasMatch(result.phone)) {
+      _phoneController.text = result.phone;
+    }
+    if (result.address.isNotEmpty) {
+      _addressController.text = result.address;
+    }
+    final idNumber = (result.aadhaarNumber?.isNotEmpty == true
+            ? result.aadhaarNumber!
+            : result.governmentIdNumber)
+        .replaceAll(RegExp(r'\D'), '');
+    if (idNumber.length == 12) {
+      _idNumberController.text = idNumber;
+    }
+
+    final isBackSide = result.detectedSide == 'back' ||
+        result.ocrAccepted &&
+            result.fullName.isEmpty &&
+            result.address.isNotEmpty;
+    final hasValidId =
+        _idNumberController.text.replaceAll(RegExp(r'\D'), '').length == 12;
+    final hasAddress = _addressController.text.trim().length >= 12;
+
+    if (result.ocrAccepted ||
+        (isBackSide && hasValidId && hasAddress) ||
+        (isBackSide && hasAddress && _nameController.text.trim().isNotEmpty)) {
+      setState(() => _extractError = null);
+      return;
+    }
+
+    final missing = <String>[];
+    if (_nameController.text.trim().isEmpty && !isBackSide) {
+      missing.add('name');
+    }
+    if (_addressController.text.trim().isEmpty) missing.add('address');
+    if (!hasValidId) missing.add('Aadhaar number');
+    if (missing.isNotEmpty) {
+      setState(() {
+        _extractError =
+            'Could not read ${missing.join(', ')} clearly. '
+            'Use a clear photo of the full card (not PDF). '
+            'You can type any missing fields below and Continue.';
+      });
+    } else {
+      setState(() => _extractError = null);
+    }
+  }
+
+  void _startOcrExtract() {
+    if (_uploadedUrl == null || _uploadedUrl!.isEmpty) return;
+
+    setState(() => _extractError = null);
+
+    ref.read(aadhaarOcrProvider.notifier).startExtract(
+          uploadUrl: _uploadedUrl!,
+          imageBytes: _ocrImageBytes ?? _previewBytes,
+        );
+  }
+
+  void _handleOcrState(AadhaarOcrState ocr) {
+    if (ocr.uploadUrl != _uploadedUrl) return;
+    if (ocr.isRunning) return;
+
+    if (ocr.error != null) {
+      if (_isWrongDocumentMessage(ocr.error!)) {
+        _nameController.clear();
+        _addressController.clear();
+        _idNumberController.clear();
+        _phoneController.clear();
+      }
+      setState(() => _extractError = ocr.error);
+      return;
+    }
+
+    final result = ocr.result;
+    if (result == null) return;
+
+    _applyOcrResult(result);
+
+    final details = ownerDetailsFromOcr(
+      result: result,
+      uploadedUrl: _uploadedUrl!,
+      accountEmail: widget.accountEmail,
+    );
+    widget.onSave(details);
   }
 
   Future<void> _removeUpload() async {
@@ -420,6 +449,7 @@ class GovernmentIdOwnerDetailsFormState
         setState(() {
           _uploadedUrl = null;
           _previewBytes = null;
+          _ocrImageBytes = null;
           _isPdfUpload = false;
           _uploadProgress = const UploadProgress();
           _extractError = null;
@@ -465,6 +495,28 @@ class GovernmentIdOwnerDetailsFormState
   @override
   Widget build(BuildContext context) {
     final colorScheme = Theme.of(context).colorScheme;
+    final ocr = ref.watch(aadhaarOcrProvider);
+    ref.listen<AadhaarOcrState>(aadhaarOcrProvider, (previous, next) {
+      if (!mounted) return;
+      if (next.uploadUrl != _uploadedUrl) return;
+      if (next.isRunning) return;
+      if (previous?.jobId == next.jobId && previous?.isRunning == next.isRunning) {
+        return;
+      }
+      _handleOcrState(next);
+    });
+
+    if (!ocr.isRunning &&
+        ocr.result != null &&
+        ocr.uploadUrl == _uploadedUrl &&
+        _nameController.text.isEmpty &&
+        _addressController.text.isEmpty) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) _handleOcrState(ocr);
+      });
+    }
+
+    final isExtracting = _isOcrRunning(ref);
 
     return Form(
       key: _formKey,
@@ -482,7 +534,7 @@ class GovernmentIdOwnerDetailsFormState
             hasFile: _hasFile,
             isUploading: _isUploading,
             isDeleting: _isDeleting,
-            isExtracting: _extracting,
+            isExtracting: isExtracting,
             isPdf: _isPdfUpload ||
                 (_uploadedUrl?.toLowerCase().contains('.pdf') ?? false),
             previewBytes: _previewBytes,
@@ -490,7 +542,7 @@ class GovernmentIdOwnerDetailsFormState
             progress: _uploadProgress,
             onUpload: _showPickerOptions,
             onRemove: _removeUpload,
-            onRescan: () => _extractDetails(),
+            onRescan: _startOcrExtract,
           ),
           if (_extractError != null) ...[
             const SizedBox(height: 8),

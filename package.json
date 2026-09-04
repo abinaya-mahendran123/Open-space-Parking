@@ -1,0 +1,9 @@
+{
+  "name": "open-space-parking",
+  "private": true,
+  "description": "Open Space Parking monorepo — run backend from repo root",
+  "scripts": {
+    "start": "npm start --prefix backend",
+    "dev": "npm run dev --prefix backend"
+  }
+}

@@ -3,7 +3,7 @@ const http = require('http');
 const https = require('https');
 const path = require('path');
 
-const { splitSideBySide } = require('./ocr_preprocess');
+const { prepareAadhaarUpload } = require('./ocr_preprocess');
 const { extractAadhaarFromQr } = require('./aadhaar_qr');
 const {
   ID_TYPES,
@@ -11,6 +11,8 @@ const {
   mergeExtracted,
   isCompleteAadhaarQr,
   isUsefulPartialQr,
+  assertAadhaarDocument,
+  finalizeAadhaarExtraction,
 } = require('./ocr/field_extraction');
 const { runOcrPipeline } = require('./ocr/ocr_pipeline');
 const { terminateWorkers } = require('./ocr/tesseract_engine');
@@ -297,6 +299,7 @@ async function extractGovernmentIdDetails({
     pdfTextExtracted.governmentIdNumber &&
     pdfTextExtracted.address
   ) {
+    assertAadhaarDocument(pdfTextExtracted);
     return pdfTextExtracted;
   }
 
@@ -309,6 +312,11 @@ async function extractGovernmentIdDetails({
   let backBuffer;
   let extraBackBuffer = null;
   let fullRawBuffer = null;
+  let uploadLayout = 'single';
+  let sameBuffer = true;
+  let addressCropBuffer = null;
+  let cardBackBuffer = null;
+  let qrExtracted = null;
 
   try {
     if (sameUrl) {
@@ -319,15 +327,39 @@ async function extractGovernmentIdDetails({
           'Could not read this Aadhaar PDF automatically. Upload a clear PNG/JPG photo of the card (or a screenshot of the PDF), then tap Re-scan.',
         );
       }
-      const split = await splitSideBySide(fullRawBuffer);
-      if (split) {
-        frontBuffer = split.frontBuffer;
-        backBuffer = split.backBuffer;
-        if (split.bottomRight) extraBackBuffer = split.bottomRight;
-      } else {
-        frontBuffer = fullRawBuffer;
-        backBuffer = fullRawBuffer;
+      const [prepared, qrFromImage] = await Promise.all([
+        prepareAadhaarUpload(fullRawBuffer),
+        idType === 'aadhaar'
+          ? extractAadhaarFromQr(fullRawBuffer).catch((error) => {
+              logOcr('qr_failed', { reason: error?.message || String(error) });
+              return null;
+            })
+          : Promise.resolve(null),
+      ]);
+      frontBuffer = prepared.frontBuffer;
+      backBuffer = prepared.backBuffer;
+      sameBuffer = prepared.sameBuffer;
+      uploadLayout = prepared.layout;
+      addressCropBuffer = prepared.addressCropBuffer || null;
+      cardBackBuffer = prepared.cardBackBuffer || null;
+      if (qrFromImage && isCompleteAadhaarQr(qrFromImage)) {
+        logOcr('qrResult=complete', { totalTimeMs: Date.now() - started });
+        return {
+          ...qrFromImage,
+          aadhaarNumber:
+            qrFromImage.aadhaarNumber || qrFromImage.governmentIdNumber || '',
+          extractionSource: 'aadhaar_qr',
+        };
       }
+      if (idType === 'aadhaar' && qrFromImage) {
+        qrExtracted = qrFromImage;
+      }
+      logOcr('upload_layout', {
+        layout: uploadLayout,
+        sameBuffer,
+        hasAddressCrop: !!addressCropBuffer,
+        hasCardBackCrop: !!cardBackBuffer,
+      });
     } else {
       const [frontConverted, backConverted] = await Promise.all([
         fetchImageBufferForOcr(frontUrl, frontBase64),
@@ -341,6 +373,8 @@ async function extractGovernmentIdDetails({
       }
       frontBuffer = frontConverted;
       backBuffer = backConverted || frontConverted;
+      sameBuffer = frontBuffer === backBuffer;
+      uploadLayout = sameBuffer ? 'single' : 'dual_horizontal';
     }
   } catch (error) {
     const message = error?.message || String(error);
@@ -352,8 +386,7 @@ async function extractGovernmentIdDetails({
     throw error;
   }
 
-  let qrExtracted = null;
-  if (idType === 'aadhaar') {
+  if (idType === 'aadhaar' && !qrExtracted) {
     // One buffer only — multi-variant QR on free Render often ate 2+ minutes.
     const qrBuffer = fullRawBuffer || frontBuffer;
     try {
@@ -373,33 +406,59 @@ async function extractGovernmentIdDetails({
     logOcr('qrResult=partial_or_none');
   }
 
-  const sameBuffer = frontBuffer === backBuffer;
+  const sameBufferFinal = frontBuffer === backBuffer;
+  let ocrFrontBuffer = frontBuffer;
+  let ocrBackBuffer = backBuffer;
+  let supplementaryBuffers = cardBackBuffer
+    ? [cardBackBuffer]
+    : [addressCropBuffer].filter(Boolean);
+  if (uploadLayout === 'enrollment_sheet' && addressCropBuffer) {
+    ocrBackBuffer = addressCropBuffer;
+    supplementaryBuffers = cardBackBuffer ? [cardBackBuffer] : [];
+  }
   let extracted = await runOcrPipeline({
-    frontBuffer,
-    backBuffer,
-    extraBackBuffer,
-    sameBuffer,
+    frontBuffer: ocrFrontBuffer,
+    backBuffer: ocrBackBuffer,
+    extraBackBuffer: supplementaryBuffers[0] || null,
+    supplementaryBuffers,
+    sameBuffer: sameBufferFinal,
+    uploadLayout,
     idType,
+    uidScanBuffer: fullRawBuffer || frontBuffer,
   });
 
   if (qrExtracted) {
-    extracted = mergeWithPreference(qrExtracted, extracted);
+    extracted = mergeWithPreference(qrExtracted, extracted, {
+      detectedSide: extracted.detectedSide,
+      uploadLayout: extracted.uploadLayout || uploadLayout,
+    });
     if (!extracted.extractionSource) {
       extracted.extractionSource = 'ocr';
     }
   }
   if (pdfTextExtracted) {
-    extracted = mergeWithPreference(pdfTextExtracted, extracted);
+    extracted = mergeWithPreference(pdfTextExtracted, extracted, {
+      detectedSide: extracted.detectedSide,
+      uploadLayout: extracted.uploadLayout || uploadLayout,
+    });
   }
 
   if (idType === 'aadhaar' && extracted.governmentIdNumber) {
     extracted.aadhaarNumber = extracted.governmentIdNumber;
   }
 
+  if (idType === 'aadhaar') {
+    extracted = finalizeAadhaarExtraction(extracted, uploadLayout);
+    assertAadhaarDocument(extracted);
+  }
+
   logOcr('extract_complete', {
     totalTimeMs: Date.now() - started,
     extractionSource: extracted.extractionSource,
     ocrEngine: extracted.ocrEngine,
+    uploadLayout: extracted.uploadLayout || uploadLayout,
+    detectedSide: extracted.detectedSide,
+    ocrAccepted: extracted.ocrAccepted,
   });
 
   return extracted;

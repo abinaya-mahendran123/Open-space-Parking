@@ -4,6 +4,9 @@ const {
   scoreOcrExtraction,
   scoreNameCandidate,
   isValidAadhaarChecksum,
+  isAadhaarBackSide,
+  pickBetterAddress,
+  mergeAddresses,
 } = require('./field_extraction');
 const { paddleResultToText, averageConfidence } = require('./paddleocr_text');
 
@@ -43,9 +46,10 @@ function mergeEngineResults(primary, fallback, idType) {
         ? primaryFields.fullName || fallbackFields.fullName || ''
         : fallbackFields.fullName || primaryFields.fullName || '',
     address:
-      (primaryFields.address || '').length >= (fallbackFields.address || '').length
-        ? primaryFields.address || fallbackFields.address || ''
-        : fallbackFields.address || primaryFields.address || '',
+      mergeAddresses(primaryFields.address, fallbackFields.address) ||
+      primaryFields.address ||
+      fallbackFields.address ||
+      '',
     phone: primaryFields.phone || fallbackFields.phone || '',
     governmentIdNumber:
       [primaryFields.governmentIdNumber, fallbackFields.governmentIdNumber].find(
@@ -54,6 +58,9 @@ function mergeEngineResults(primary, fallback, idType) {
       primaryFields.governmentIdNumber ||
       fallbackFields.governmentIdNumber ||
       '',
+    detectedSide: primaryFields.detectedSide || fallbackFields.detectedSide,
+    uploadLayout: primaryFields.uploadLayout || fallbackFields.uploadLayout,
+    ocrAccepted: primaryFields.ocrAccepted ?? fallbackFields.ocrAccepted,
   };
 }
 
@@ -70,15 +77,54 @@ function mergeFrontBackFieldBundles(frontBundle, backBundle) {
   };
 }
 
-function needsTesseractFallback(fields, idType) {
+function needsTesseractFallback(fields, idType, options = {}) {
+  const uploadLayout = String(options.uploadLayout || fields.uploadLayout || '');
+  if (uploadLayout === 'enrollment_sheet') {
+    const uid = String(fields.governmentIdNumber || fields.aadhaarNumber || '').replace(
+      /\D/g,
+      '',
+    );
+    const missing = {
+      uid: uid.length !== 12 || !isValidAadhaarChecksum(uid),
+      phone: !fields.phone,
+      address: !fields.address || fields.address.length < 20 || !/\b\d{6}\b/.test(fields.address),
+    };
+    if (missing.uid || missing.phone || missing.address) {
+      return {
+        needed: true,
+        reason: 'enrollment_missing_fields',
+        missing: {
+          name: false,
+          address: missing.address,
+          id: missing.uid,
+          phone: missing.phone,
+        },
+        targeted: true,
+      };
+    }
+    return { needed: false, reason: 'enrollment_structured' };
+  }
+
+  const isBack = idType === 'aadhaar' && isAadhaarBackSide(fields);
   const missing = {
-    name: !fields.fullName,
+    name: !isBack && !fields.fullName,
     address: !fields.address || fields.address.length < 20,
     id:
       idType === 'aadhaar' &&
       (!fields.governmentIdNumber || !isValidAadhaarChecksum(fields.governmentIdNumber)),
     phone: !fields.phone,
   };
+
+  // Back-side crops often lack name/UID — don't force slow Tesseract when address+phone are present.
+  if (
+    idType === 'aadhaar' &&
+    isBack &&
+    fields.phone &&
+    fields.address &&
+    fields.address.length >= 20
+  ) {
+    return { needed: false, reason: 'back_sufficient' };
+  }
 
   if (missing.phone) {
     return { needed: true, reason: 'missing_phone', missing, targeted: true };

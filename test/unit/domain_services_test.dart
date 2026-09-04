@@ -18,6 +18,7 @@ void main() {
         propertyDocumentPath: 'https://cdn.example.com/prop.pdf',
         pattaPath: 'https://cdn.example.com/patta.pdf',
         propertyTaxPath: 'https://cdn.example.com/tax.pdf',
+        municipalityCertificatePath: 'https://cdn.example.com/municipality.pdf',
       );
 
       expect(docs.isComplete, isTrue);
@@ -49,6 +50,7 @@ void main() {
         propertyDocumentPath: 'b',
         pattaPath: 'c',
         propertyTaxPath: 'd',
+        municipalityCertificatePath: 'e',
       );
 
       final restored = LandOwnerDocuments.fromJson(docs.toJson());

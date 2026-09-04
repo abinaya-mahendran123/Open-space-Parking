@@ -9,6 +9,7 @@ class LandOwnerDocuments extends Equatable {
     this.propertyDocumentPath,
     this.pattaPath,
     this.propertyTaxPath,
+    this.municipalityCertificatePath,
     // DigiLocker fields
     this.digilockerVerified = false,
     this.digilockerOwnerName,
@@ -29,6 +30,7 @@ class LandOwnerDocuments extends Equatable {
   final String? propertyDocumentPath;
   final String? pattaPath;
   final String? propertyTaxPath;
+  final String? municipalityCertificatePath;
 
   /// DigiLocker verification data (populated when land owner verifies via DigiLocker).
   final bool digilockerVerified;
@@ -47,13 +49,15 @@ class LandOwnerDocuments extends Equatable {
       digilockerVerified ||
       (propertyDocumentPath != null &&
           pattaPath != null &&
-          propertyTaxPath != null);
+          propertyTaxPath != null &&
+          municipalityCertificatePath != null);
 
   Map<String, dynamic> toJson() => {
         'governmentIdPath': governmentIdPath,
         'propertyDocumentPath': propertyDocumentPath,
         'pattaPath': pattaPath,
         'propertyTaxPath': propertyTaxPath,
+        'municipalityCertificatePath': municipalityCertificatePath,
         'digilockerVerified': digilockerVerified,
         'digilockerOwnerName': digilockerOwnerName,
         'digilockerSurveyNumber': digilockerSurveyNumber,
@@ -79,6 +83,7 @@ class LandOwnerDocuments extends Equatable {
       propertyDocumentPath: json['propertyDocumentPath'] as String?,
       pattaPath: json['pattaPath'] as String?,
       propertyTaxPath: json['propertyTaxPath'] as String?,
+      municipalityCertificatePath: json['municipalityCertificatePath'] as String?,
       digilockerVerified: json['digilockerVerified'] as bool? ?? false,
       digilockerOwnerName: json['digilockerOwnerName'] as String?,
       digilockerSurveyNumber: json['digilockerSurveyNumber'] as String?,
@@ -97,6 +102,7 @@ class LandOwnerDocuments extends Equatable {
     Object? propertyDocumentPath = _unset,
     Object? pattaPath = _unset,
     Object? propertyTaxPath = _unset,
+    Object? municipalityCertificatePath = _unset,
     bool? digilockerVerified,
     Object? digilockerOwnerName = _unset,
     Object? digilockerSurveyNumber = _unset,
@@ -120,6 +126,9 @@ class LandOwnerDocuments extends Equatable {
       propertyTaxPath: identical(propertyTaxPath, _unset)
           ? this.propertyTaxPath
           : propertyTaxPath as String?,
+      municipalityCertificatePath: identical(municipalityCertificatePath, _unset)
+          ? this.municipalityCertificatePath
+          : municipalityCertificatePath as String?,
       digilockerVerified: digilockerVerified ?? this.digilockerVerified,
       digilockerOwnerName: identical(digilockerOwnerName, _unset)
           ? this.digilockerOwnerName
@@ -157,6 +166,7 @@ class LandOwnerDocuments extends Equatable {
         propertyDocumentPath,
         pattaPath,
         propertyTaxPath,
+        municipalityCertificatePath,
         digilockerVerified,
         digilockerOwnerName,
         digilockerSurveyNumber,

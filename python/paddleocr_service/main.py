@@ -8,7 +8,7 @@ Run locally:
 
 Environment:
   PADDLEOCR_SERVICE_PORT  (default 8765)
-  PADDLEOCR_LANGS         (default en,ta,hi — comma-separated)
+  PADDLEOCR_LANGS         (default en — add ta,hi only when RAM allows)
   PADDLEOCR_USE_GPU       (default false)
 """
 from __future__ import annotations
@@ -32,6 +32,11 @@ _engine_lock = threading.Lock()
 _models_ready = False
 _models_error: str | None = None
 _app = Flask(__name__)
+_MAX_INFLIGHT = max(1, int(os.environ.get("PADDLEOCR_MAX_INFLIGHT", "2")))
+_OCR_ACQUIRE_TIMEOUT_SEC = float(os.environ.get("PADDLEOCR_ACQUIRE_TIMEOUT_SEC", "180"))
+_ocr_semaphore = threading.Semaphore(_MAX_INFLIGHT)
+_active_ocr = 0
+_active_lock = threading.Lock()
 
 # Prefer English first on small hosts; add ta,hi via PADDLEOCR_LANGS when RAM allows.
 DEFAULT_LANGS = ["en"]
@@ -43,6 +48,23 @@ def configured_langs() -> list[str]:
     return langs or DEFAULT_LANGS
 
 
+def resolve_langs(requested: list[str] | None) -> list[str]:
+    """Only run OCR with languages that were warmed at startup."""
+    configured = configured_langs()
+    if not requested:
+        return configured
+    filtered = [lang for lang in requested if lang in configured]
+    if filtered:
+        skipped = [lang for lang in requested if lang not in configured]
+        if skipped:
+            print(
+                f"[PaddleOCR] ignoring langs not in PADDLEOCR_LANGS: {skipped}",
+                flush=True,
+            )
+        return filtered
+    return configured
+
+
 def get_engine(lang: str):
     with _engine_lock:
         if lang in _engines:
@@ -51,8 +73,9 @@ def get_engine(lang: str):
 
         print(f"[PaddleOCR] loading model lang={lang} (may download on first run)...")
         use_gpu = os.environ.get("PADDLEOCR_USE_GPU", "false").lower() == "true"
+        use_angle_cls = os.environ.get("PADDLEOCR_USE_ANGLE_CLS", "true").lower() == "true"
         engine = PaddleOCR(
-            use_angle_cls=True,
+            use_angle_cls=use_angle_cls,
             lang=lang,
             use_gpu=use_gpu,
             show_log=False,
@@ -102,7 +125,7 @@ def read_image(path: str) -> np.ndarray:
 
 def run_ocr_on_image(image_path: str, langs: list[str] | None = None) -> dict:
     started = time.time()
-    langs = langs or configured_langs()
+    langs = resolve_langs(langs)
     image = read_image(image_path)
     items: list[dict] = []
     langs_used: list[str] = []
@@ -148,12 +171,14 @@ def run_ocr_on_image(image_path: str, langs: list[str] | None = None) -> dict:
                     }
                 )
 
-    # De-duplicate near-identical lines; keep highest confidence.
+    # Keep both language variants when text differs (e.g. Tamil + English name).
     deduped: dict[str, dict] = {}
     for item in items:
         if item.get("error"):
             continue
-        key = item["text"].lower().strip()
+        key = item["text"].strip()
+        if not key:
+            continue
         prev = deduped.get(key)
         if prev is None or item["confidence"] > prev["confidence"]:
             deduped[key] = item
@@ -187,6 +212,8 @@ def index():
 
 @_app.get("/health")
 def health():
+    with _active_lock:
+        active = _active_ocr
     return jsonify(
         {
             "ok": True,
@@ -195,6 +222,8 @@ def health():
             "modelsError": _models_error,
             "langsConfigured": configured_langs(),
             "enginesLoaded": sorted(_engines.keys()),
+            "maxInflight": _MAX_INFLIGHT,
+            "activeOcr": active,
         }
     )
 
@@ -221,8 +250,21 @@ def ocr_http():
             }
         ), 503
 
+    acquired = _ocr_semaphore.acquire(timeout=_OCR_ACQUIRE_TIMEOUT_SEC)
+    if not acquired:
+        return jsonify(
+            {
+                "error": "OCR worker is at capacity. Retry shortly.",
+                "engine": "paddleocr",
+                "retryAfterSeconds": 15,
+            }
+        ), 503
+
     tmp_path = None
     try:
+        with _active_lock:
+            global _active_ocr
+            _active_ocr += 1
         if request.is_json:
             body = request.get_json(silent=True) or {}
             image_path = body.get("imagePath")
@@ -247,6 +289,9 @@ def ocr_http():
     except Exception as exc:  # noqa: BLE001
         return jsonify({"error": str(exc), "engine": "paddleocr"}), 500
     finally:
+        with _active_lock:
+            _active_ocr = max(0, _active_ocr - 1)
+        _ocr_semaphore.release()
         if tmp_path and os.path.isfile(tmp_path):
             try:
                 os.remove(tmp_path)
