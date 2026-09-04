@@ -68,7 +68,7 @@ class _AccountSettingsPageState extends ConsumerState<AccountSettingsPage> {
       case ThemeMode.dark:
         return 'Dark app look';
       case ThemeMode.system:
-        return 'Open Sky app look';
+        return 'Asphalt Pro — dark road brand';
       case ThemeMode.light:
         return 'Bright light app look';
     }

@@ -120,14 +120,37 @@ class Validators {
     return null;
   }
 
-  /// Required Razorpay Route linked account for land-owner 90% payout.
-  static String? razorpayLinkedAccount(String? value) {
-    final id = value?.trim() ?? '';
-    if (id.isEmpty) {
-      return 'Razorpay linked account is required';
+  static String? requiredIfsc(String? value) {
+    if (value == null || value.trim().isEmpty) {
+      return 'IFSC code is required';
     }
-    if (!RegExp(r'^acc_[A-Za-z0-9]+$').hasMatch(id)) {
-      return 'Enter a valid ID (e.g. acc_xxxxxxxxxx)';
+    return optionalIfsc(value);
+  }
+
+  static String? requiredBankAccount(String? value) {
+    final account = value?.trim() ?? '';
+    if (account.length < 8 || account.length > 35) {
+      return 'Enter a valid bank account number';
+    }
+    if (!RegExp(r'^\d+$').hasMatch(account)) {
+      return 'Bank account number must be digits only';
+    }
+    return null;
+  }
+
+  static String? requiredPan(String? value) {
+    final pan = value?.trim().toUpperCase() ?? '';
+    if (pan.isEmpty) return 'PAN is required for payout setup';
+    if (!RegExp(r'^[A-Z]{5}[0-9]{4}[A-Z]$').hasMatch(pan)) {
+      return 'Enter a valid PAN (e.g. ABCDE1234F)';
+    }
+    return null;
+  }
+
+  static String? requiredAccountHolder(String? value) {
+    final name = value?.trim() ?? '';
+    if (name.length < 4) {
+      return 'Enter account holder name (min 4 characters)';
     }
     return null;
   }

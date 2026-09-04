@@ -52,12 +52,30 @@ class AppColors {
   static const Color availableMedium = limited;
   static const Color availableNone = full;
 
-  // App "System" theme — branded Open Sky (always light; never phone theme).
-  static const Color systemBackground = background; // #F7F9FC
-  static const Color systemSurface = surface;
-  static const Color systemPrimary = primary;
+  // App "System" theme — Option A: Asphalt Pro (dark road brand; never phone theme).
+  static const Color systemAsphalt = Color(0xFF263238);
+  static const Color systemCard = Color(0xFF37474F);
+  static const Color systemRoadBlue = Color(0xFF2196F3);
+  static const Color systemLaneWhite = Color(0xFFFFFFFF);
+  static const Color systemParkingGreen = Color(0xFF2E7D32);
+  static const Color systemWarning = Color(0xFFF9A825);
+  static const Color systemDanger = Color(0xFFD32F2F);
+  static const Color systemTextMuted = Color(0xFFB0BEC5);
+  static const Color systemPrimarySoft = Color(0xFF1565C0);
+  static const Color systemPrimaryContainer = Color(0xFF1E4976);
+  static const Color systemGreenContainer = Color(0xFF1B5E20);
+  static const Color systemWarningContainer = Color(0xFF5D4037);
+  static const Color systemDangerContainer = Color(0xFF4E342E);
+  static const Color systemBorder = Color(0xFF455A64);
+  static const Color systemDivider = Color(0xFF546E7A);
+  static const Color systemElevated = Color(0xFF455A64);
 
-  /// Crisp bright Light theme (distinct from System Open Sky).
+  // Aliases for system theme build()
+  static const Color systemBackground = systemAsphalt;
+  static const Color systemSurface = systemCard;
+  static const Color systemPrimary = systemRoadBlue;
+
+  /// Crisp bright Light theme (white + royal blue).
   static const Color lightBackground = Color(0xFFFAFBFD);
   static const Color lightPrimary = Color(0xFF1D4ED8);
 
@@ -99,43 +117,43 @@ class AppColors {
     surfaceDim: Color(0xFFE4EAF3),
   );
 
-  /// App System look — soft Open Sky blue-gray; does not follow phone dark mode.
+  /// Asphalt Pro — dark road-surface brand (distinct from Light & Dark).
   static ColorScheme systemScheme = const ColorScheme(
-    brightness: Brightness.light,
-    primary: primary,
-    onPrimary: Colors.white,
-    primaryContainer: brandBlueSoft,
-    onPrimaryContainer: Color(0xFF1E3A8A),
-    secondary: available,
-    onSecondary: Colors.white,
-    secondaryContainer: availableLight,
-    onSecondaryContainer: Color(0xFF14532D),
-    tertiary: Color(0xFF0EA5E9),
-    onTertiary: Colors.white,
-    tertiaryContainer: Color(0xFFE0F2FE),
-    onTertiaryContainer: Color(0xFF0C4A6E),
-    error: full,
-    onError: Colors.white,
-    errorContainer: fullLight,
-    onErrorContainer: Color(0xFF991B1B),
-    surface: systemBackground,
-    onSurface: textPrimary,
-    onSurfaceVariant: textSecondary,
-    outline: border,
-    outlineVariant: divider,
-    shadow: Color(0x14111827),
-    scrim: Color(0x66111827),
-    inverseSurface: Color(0xFF1E293B),
-    onInverseSurface: darkText,
-    inversePrimary: darkPrimary,
-    surfaceTint: primary,
-    surfaceContainerHighest: Color(0xFFE8EDF4),
-    surfaceContainerHigh: Color(0xFFF1F5F9),
-    surfaceContainer: systemSurface,
-    surfaceContainerLow: systemSurface,
-    surfaceContainerLowest: systemSurface,
-    surfaceBright: systemSurface,
-    surfaceDim: Color(0xFFE8EDF5),
+    brightness: Brightness.dark,
+    primary: systemRoadBlue,
+    onPrimary: systemLaneWhite,
+    primaryContainer: systemPrimaryContainer,
+    onPrimaryContainer: Color(0xFFBBDEFB),
+    secondary: systemParkingGreen,
+    onSecondary: systemLaneWhite,
+    secondaryContainer: systemGreenContainer,
+    onSecondaryContainer: Color(0xFFC8E6C9),
+    tertiary: systemWarning,
+    onTertiary: systemAsphalt,
+    tertiaryContainer: systemWarningContainer,
+    onTertiaryContainer: Color(0xFFFFE082),
+    error: systemDanger,
+    onError: systemLaneWhite,
+    errorContainer: systemDangerContainer,
+    onErrorContainer: Color(0xFFFFCDD2),
+    surface: systemAsphalt,
+    onSurface: systemLaneWhite,
+    onSurfaceVariant: systemTextMuted,
+    outline: systemBorder,
+    outlineVariant: systemDivider,
+    shadow: Color(0x40000000),
+    scrim: Color(0x99000000),
+    inverseSurface: systemLaneWhite,
+    onInverseSurface: systemAsphalt,
+    inversePrimary: systemPrimarySoft,
+    surfaceTint: systemRoadBlue,
+    surfaceContainerHighest: systemElevated,
+    surfaceContainerHigh: systemCard,
+    surfaceContainer: systemCard,
+    surfaceContainerLow: Color(0xFF2C393F),
+    surfaceContainerLowest: systemAsphalt,
+    surfaceBright: systemElevated,
+    surfaceDim: Color(0xFF1E272C),
   );
 
   static ColorScheme darkScheme = const ColorScheme(

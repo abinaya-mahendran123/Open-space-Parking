@@ -18,7 +18,7 @@ class AppTheme {
     cardOverride: AppColors.lightSurface,
   );
 
-  /// App System theme — Open Sky look (does not follow phone theme).
+  /// App System theme — Asphalt Pro (does not follow phone theme).
   static final ThemeData system = _build(
     AppColors.systemScheme,
     scaffoldOverride: AppColors.systemBackground,

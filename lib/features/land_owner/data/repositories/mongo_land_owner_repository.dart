@@ -2,11 +2,14 @@ import 'dart:math';
 
 import 'package:mongo_dart/mongo_dart.dart';
 
+import 'package:open_space_parking/core/common/exceptions/app_exception.dart';
+import 'package:open_space_parking/core/common/exceptions/network_exception.dart';
 import 'package:open_space_parking/core/config/app_constants.dart';
 import 'package:open_space_parking/core/integration/notification_helper.dart';
 import 'package:open_space_parking/core/utils/mongo_json.dart';
 import 'package:open_space_parking/core/utils/parking_slot_calculator.dart';
 import 'package:open_space_parking/core/utils/profile_prefill.dart';
+import 'package:open_space_parking/core/services/api/api_client.dart';
 import 'package:open_space_parking/core/services/mongodb/mongo_collection_service.dart';
 import 'package:open_space_parking/core/services/mongodb/mongo_database_service.dart';
 import 'package:open_space_parking/features/land_owner/domain/entities/land_details.dart';
@@ -16,6 +19,7 @@ import 'package:open_space_parking/features/land_owner/domain/entities/land_owne
 import 'package:open_space_parking/features/land_owner/domain/entities/owner_details.dart';
 import 'package:open_space_parking/features/land_owner/domain/entities/parking_preferences.dart';
 import 'package:open_space_parking/features/land_owner/domain/entities/parking_type.dart';
+import 'package:open_space_parking/features/land_owner/domain/entities/land_owner_payout_terms.dart';
 import 'package:open_space_parking/features/land_owner/domain/entities/payout_account.dart';
 import 'package:open_space_parking/features/land_owner/domain/entities/request_priority.dart';
 import 'package:open_space_parking/features/land_owner/domain/entities/request_status.dart';
@@ -27,13 +31,16 @@ class MongoLandOwnerRepository implements LandOwnerRepository {
     required MongoDatabaseService mongoDatabaseService,
     required MongoCollectionService mongoCollectionService,
     required NotificationHelper notificationHelper,
+    ApiClient? apiClient,
   })  : _databaseService = mongoDatabaseService,
         _collectionService = mongoCollectionService,
-        _notificationHelper = notificationHelper;
+        _notificationHelper = notificationHelper,
+        _apiClient = apiClient ?? ApiClient();
 
   final MongoDatabaseService _databaseService;
   final MongoCollectionService _collectionService;
   final NotificationHelper _notificationHelper;
+  final ApiClient _apiClient;
 
   @override
   Future<LandOwnerRequest> submitBuildParkingRequest({
@@ -205,6 +212,100 @@ class MongoLandOwnerRepository implements LandOwnerRepository {
     final nested = MongoJson.asMap(profile?['payout']);
     if (nested == null) return null;
     return PayoutAccount.fromJson(nested);
+  }
+
+  @override
+  Future<PayoutAccount> onboardRazorpayPayout({
+    required String ownerId,
+    required OwnerDetails ownerDetails,
+    required PayoutAccount payoutAccount,
+  }) async {
+    try {
+      final response = await _apiClient.post(
+        '/api/land-owners/$ownerId/razorpay/onboard',
+        {
+          'ownerDetails': ownerDetails.toJson(),
+          'payout': payoutAccount.toJson(),
+        },
+      );
+      final nested = MongoJson.asMap(response['payout']);
+      if (nested == null) {
+        throw const AppException('Payout account was not returned by the server.');
+      }
+      return PayoutAccount.fromJson(nested);
+    } on NetworkException catch (e) {
+      throw AppException(e.message);
+    }
+  }
+
+  @override
+  Future<PayoutAccount?> refreshRazorpayPayoutStatus(String ownerId) async {
+    try {
+      final response = await _apiClient.get(
+        '/api/land-owners/$ownerId/razorpay/status',
+      );
+      final nested = MongoJson.asMap(response['payout']);
+      if (nested == null) return null;
+      return PayoutAccount.fromJson(nested);
+    } on NetworkException catch (e) {
+      throw AppException(e.message);
+    }
+  }
+
+  @override
+  Future<bool> hasAcceptedPayoutTerms(String ownerId) async {
+    await _ensureConnected();
+    final profile = await _collectionService.findOne(
+      collectionName: AppConstants.landOwnerProfilesCollection,
+      selector: where.eq('ownerId', ownerId),
+    );
+    if (profile == null) return false;
+    final terms = MongoJson.asMap(profile['payoutTerms']);
+    if (terms == null) return false;
+    final accepted = terms['accepted'] == true;
+    final version = '${terms['version'] ?? ''}';
+    return accepted && version == LandOwnerPayoutTerms.version;
+  }
+
+  @override
+  Future<void> acceptPayoutTerms(String ownerId) async {
+    await _ensureConnected();
+    final now = DateTime.now().toUtc().toIso8601String();
+    final terms = {
+      'accepted': true,
+      'acceptedAt': now,
+      'version': LandOwnerPayoutTerms.version,
+    };
+
+    final existing = await _collectionService.findOne(
+      collectionName: AppConstants.landOwnerProfilesCollection,
+      selector: where.eq('ownerId', ownerId),
+    );
+
+    if (existing == null) {
+      await _collectionService.insertOne(
+        collectionName: AppConstants.landOwnerProfilesCollection,
+        document: {
+          'ownerId': ownerId,
+          'ownerDetails': {
+            'fullName': '',
+            'phone': '',
+            'email': '',
+            'address': '',
+          },
+          'payoutTerms': terms,
+          'createdAt': now,
+          'updatedAt': now,
+        },
+      );
+      return;
+    }
+
+    await _collectionService.updateOne(
+      collectionName: AppConstants.landOwnerProfilesCollection,
+      selector: where.eq('ownerId', ownerId),
+      modifier: modify.set('payoutTerms', terms).set('updatedAt', now),
+    );
   }
 
   Future<LandOwnerRequest> _submitRequest({

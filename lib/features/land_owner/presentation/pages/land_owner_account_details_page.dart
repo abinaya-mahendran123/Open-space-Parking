@@ -24,41 +24,56 @@ class _LandOwnerAccountDetailsPageState
     extends ConsumerState<LandOwnerAccountDetailsPage> {
   final _formKey = GlobalKey<FormState>();
   late final TextEditingController _accountNameController;
+  late final TextEditingController _panController;
   late final TextEditingController _upiController;
   late final TextEditingController _bankAccountController;
   late final TextEditingController _ifscController;
-  late final TextEditingController _razorpayAccountController;
+  late final TextEditingController _cityController;
+  late final TextEditingController _stateController;
+  late final TextEditingController _postalController;
   bool _payoutInitialized = false;
   bool _saving = false;
+  bool _refreshingStatus = false;
   bool _payoutListenerRegistered = false;
+  PayoutAccount? _savedPayout;
 
   @override
   void initState() {
     super.initState();
     _accountNameController = TextEditingController();
+    _panController = TextEditingController();
     _upiController = TextEditingController();
     _bankAccountController = TextEditingController();
     _ifscController = TextEditingController();
-    _razorpayAccountController = TextEditingController();
+    _cityController = TextEditingController();
+    _stateController = TextEditingController();
+    _postalController = TextEditingController();
   }
 
   @override
   void dispose() {
     _accountNameController.dispose();
+    _panController.dispose();
     _upiController.dispose();
     _bankAccountController.dispose();
     _ifscController.dispose();
-    _razorpayAccountController.dispose();
+    _cityController.dispose();
+    _stateController.dispose();
+    _postalController.dispose();
     super.dispose();
   }
 
   void _fillPayout(PayoutAccount? payout) {
     if (_payoutInitialized || payout == null) return;
     _accountNameController.text = payout.accountHolderName ?? '';
+    _panController.text = payout.pan ?? '';
     _upiController.text = payout.upiId ?? '';
     _bankAccountController.text = payout.bankAccountNumber ?? '';
     _ifscController.text = payout.ifscCode ?? '';
-    _razorpayAccountController.text = payout.razorpayLinkedAccountId ?? '';
+    _cityController.text = payout.city ?? '';
+    _stateController.text = payout.state ?? '';
+    _postalController.text = payout.postalCode ?? '';
+    _savedPayout = payout;
     _payoutInitialized = true;
   }
 
@@ -75,7 +90,9 @@ class _LandOwnerAccountDetailsPageState
 
     setState(() => _saving = true);
     try {
-      await ref.read(landOwnerRepositoryProvider).updateOwnerProfile(
+      final payout = await ref
+          .read(landOwnerRepositoryProvider)
+          .onboardRazorpayPayout(
             ownerId: ownerId,
             ownerDetails: OwnerDetails(
               fullName: merged.fullName,
@@ -85,14 +102,29 @@ class _LandOwnerAccountDetailsPageState
             ),
             payoutAccount: PayoutAccount(
               accountHolderName: _accountNameController.text.trim(),
+              pan: _panController.text.trim().toUpperCase(),
               upiId: _upiController.text.trim(),
               bankAccountNumber: _bankAccountController.text.trim(),
               ifscCode: _ifscController.text.trim().toUpperCase(),
-              razorpayLinkedAccountId: _razorpayAccountController.text.trim(),
+              city: _cityController.text.trim(),
+              state: _stateController.text.trim().toUpperCase(),
+              postalCode: _postalController.text.trim(),
+              razorpayLinkedAccountId: _savedPayout?.razorpayLinkedAccountId,
+              razorpayProductId: _savedPayout?.razorpayProductId,
+              razorpayActivationStatus: _savedPayout?.razorpayActivationStatus,
             ),
           );
+      _savedPayout = payout;
       ref.invalidate(landOwnerPayoutProvider(ownerId));
-      ref.read(snackbarServiceProvider).showSuccess('Account details saved.');
+      ref.invalidate(landOwnerProfileProvider(ownerId));
+      final message = payout.razorpayStatusMessage?.trim().isNotEmpty == true
+          ? payout.razorpayStatusMessage!
+          : 'Account details saved.';
+      if (payout.razorpayActivationStatus == 'failed') {
+        ref.read(snackbarServiceProvider).showError(message);
+      } else {
+        ref.read(snackbarServiceProvider).showSuccess(message);
+      }
     } on AppException catch (e) {
       ref.read(snackbarServiceProvider).showError(e.message);
     } catch (_) {
@@ -101,6 +133,30 @@ class _LandOwnerAccountDetailsPageState
           .showError('Could not update account details.');
     } finally {
       if (mounted) setState(() => _saving = false);
+    }
+  }
+
+  Future<void> _refreshStatus(String ownerId) async {
+    setState(() => _refreshingStatus = true);
+    try {
+      final payout = await ref
+          .read(landOwnerRepositoryProvider)
+          .refreshRazorpayPayoutStatus(ownerId);
+      if (payout != null) {
+        _savedPayout = payout;
+        ref.invalidate(landOwnerPayoutProvider(ownerId));
+        ref.read(snackbarServiceProvider).showSuccess(
+              payout.razorpayStatusMessage ?? payout.statusLabel,
+            );
+      }
+    } on AppException catch (e) {
+      ref.read(snackbarServiceProvider).showError(e.message);
+    } catch (_) {
+      ref
+          .read(snackbarServiceProvider)
+          .showError('Could not refresh payout status.');
+    } finally {
+      if (mounted) setState(() => _refreshingStatus = false);
     }
   }
 
@@ -129,10 +185,13 @@ class _LandOwnerAccountDetailsPageState
           existing: profileAsync.asData?.value,
           showLoadError: true,
         ),
-        data: (_) => _form(
-          ownerId,
-          existing: profileAsync.asData?.value,
-        ),
+        data: (payout) {
+          _savedPayout ??= payout;
+          return _form(
+            ownerId,
+            existing: profileAsync.asData?.value,
+          );
+        },
       ),
     );
   }
@@ -142,6 +201,9 @@ class _LandOwnerAccountDetailsPageState
     OwnerDetails? existing,
     bool showLoadError = false,
   }) {
+    final theme = Theme.of(context);
+    final status = _savedPayout;
+
     return SingleChildScrollView(
       padding: const EdgeInsets.all(16),
       child: Form(
@@ -152,7 +214,7 @@ class _LandOwnerAccountDetailsPageState
             if (showLoadError) ...[
               Text(
                 'Could not refresh payout details. You can still edit and save.',
-                style: Theme.of(context).textTheme.bodySmall,
+                style: theme.textTheme.bodySmall,
                 textAlign: TextAlign.center,
               ),
               TextButton(
@@ -164,53 +226,156 @@ class _LandOwnerAccountDetailsPageState
             ],
             Text(
               'Payout account (90% of parking fees)',
-              style: Theme.of(context).textTheme.titleMedium,
+              style: theme.textTheme.titleMedium,
             ),
             const SizedBox(height: 6),
             Text(
-              '90% goes to this account. 10% goes to Open Space Parking.',
-              style: Theme.of(context).textTheme.bodySmall,
+              '90% goes to this bank account. 10% stays with E Star (merchant). '
+              'Saving creates a Razorpay linked account automatically — you do not enter an acc_ ID.',
+              style: theme.textTheme.bodySmall,
             ),
+            if (status != null) ...[
+              const SizedBox(height: 16),
+              _StatusCard(
+                payout: status,
+                refreshing: _refreshingStatus,
+                onRefresh: status.hasRazorpayLinkedAccount
+                    ? () => _refreshStatus(ownerId)
+                    : null,
+              ),
+            ],
             const SizedBox(height: 16),
             AppTextField(
               controller: _accountNameController,
               label: 'Account holder name',
+              validator: Validators.requiredAccountHolder,
             ),
             const SizedBox(height: 12),
             AppTextField(
-              controller: _upiController,
-              label: 'UPI ID',
-              hint: 'name@oksbi',
-              validator: Validators.optionalUpi,
+              controller: _panController,
+              label: 'PAN',
+              hint: 'ABCDE1234F',
+              textCapitalization: TextCapitalization.characters,
+              validator: Validators.requiredPan,
             ),
             const SizedBox(height: 12),
             AppTextField(
               controller: _bankAccountController,
               label: 'Bank account number',
               keyboardType: TextInputType.number,
+              validator: Validators.requiredBankAccount,
             ),
             const SizedBox(height: 12),
             AppTextField(
               controller: _ifscController,
               label: 'IFSC code',
               hint: 'SBIN0001234',
-              validator: Validators.optionalIfsc,
+              textCapitalization: TextCapitalization.characters,
+              validator: Validators.requiredIfsc,
             ),
             const SizedBox(height: 12),
             AppTextField(
-              controller: _razorpayAccountController,
-              label: 'Razorpay linked account',
-              hint: 'acc_xxxxxxxxxx',
-              validator: Validators.razorpayLinkedAccount,
+              controller: _cityController,
+              label: 'City',
+            ),
+            const SizedBox(height: 12),
+            AppTextField(
+              controller: _stateController,
+              label: 'State',
+              hint: 'TN / KA / MH',
+              textCapitalization: TextCapitalization.characters,
+            ),
+            const SizedBox(height: 12),
+            AppTextField(
+              controller: _postalController,
+              label: 'PIN code',
+              keyboardType: TextInputType.number,
+            ),
+            const SizedBox(height: 12),
+            AppTextField(
+              controller: _upiController,
+              label: 'UPI ID (optional)',
+              hint: 'name@oksbi',
+              validator: Validators.optionalUpi,
             ),
             const SizedBox(height: 24),
             PrimaryButton(
-              label: 'Save',
+              label: 'Save & set up payout',
               isLoading: _saving,
               onPressed: () => _save(ownerId, existing),
             ),
           ],
         ),
+      ),
+    );
+  }
+}
+
+class _StatusCard extends StatelessWidget {
+  const _StatusCard({
+    required this.payout,
+    required this.refreshing,
+    this.onRefresh,
+  });
+
+  final PayoutAccount payout;
+  final bool refreshing;
+  final VoidCallback? onRefresh;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final status = (payout.razorpayActivationStatus ?? '').toLowerCase();
+    final color = switch (status) {
+      'activated' => Colors.green.shade700,
+      'failed' => theme.colorScheme.error,
+      'not_configured' => theme.colorScheme.outline,
+      _ => theme.colorScheme.primary,
+    };
+
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        border: Border.all(color: color.withValues(alpha: 0.35)),
+        borderRadius: BorderRadius.circular(12),
+        color: color.withValues(alpha: 0.06),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            payout.statusLabel,
+            style: theme.textTheme.titleSmall?.copyWith(color: color),
+          ),
+          if (payout.hasRazorpayLinkedAccount) ...[
+            const SizedBox(height: 4),
+            Text(
+              'Linked account: ${payout.razorpayLinkedAccountId}',
+              style: theme.textTheme.bodySmall,
+            ),
+          ],
+          if ((payout.razorpayStatusMessage ?? '').isNotEmpty) ...[
+            const SizedBox(height: 4),
+            Text(
+              payout.razorpayStatusMessage!,
+              style: theme.textTheme.bodySmall,
+            ),
+          ],
+          if (onRefresh != null) ...[
+            const SizedBox(height: 8),
+            TextButton.icon(
+              onPressed: refreshing ? null : onRefresh,
+              icon: refreshing
+                  ? const SizedBox(
+                      width: 16,
+                      height: 16,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    )
+                  : const Icon(Icons.refresh, size: 18),
+              label: const Text('Refresh status'),
+            ),
+          ],
+        ],
       ),
     );
   }

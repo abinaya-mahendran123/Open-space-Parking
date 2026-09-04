@@ -63,7 +63,7 @@ class OpenSpaceParkingApp extends ConsumerWidget {
     final router = ref.watch(appRouterProvider);
     final snackbarService = ref.watch(snackbarServiceProvider);
     // Watch only the mode — ThemeData are cached statics.
-    // ThemeMode.system = app Open Sky theme (never phone light/dark).
+    // ThemeMode.system = Asphalt Pro app theme (never phone light/dark).
     final appAppearance = ref.watch(themeModeProvider);
     final useSystemLook = appAppearance == ThemeMode.system;
 

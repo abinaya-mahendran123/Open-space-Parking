@@ -41,6 +41,13 @@ final landOwnerPayoutProvider =
   return ref.read(landOwnerRepositoryProvider).getPayoutAccount(ownerId);
 });
 
+/// Whether the land owner accepted the current payout terms version.
+final landOwnerPayoutTermsAcceptedProvider =
+    FutureProvider.family<bool, String>((ref, ownerId) async {
+  if (ownerId.trim().isEmpty) return false;
+  return ref.read(landOwnerRepositoryProvider).hasAcceptedPayoutTerms(ownerId);
+});
+
 final landOwnerNotificationsProvider =
     FutureProvider.family<List<LandOwnerNotification>, String>((ref, ownerId) async {
   if (ownerId.trim().isEmpty) return const [];

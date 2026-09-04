@@ -19,6 +19,7 @@ import 'package:open_space_parking/features/employee/presentation/pages/employee
 import 'package:open_space_parking/features/employee/presentation/pages/employee_ticket_detail_page.dart';
 import 'package:open_space_parking/features/land_owner/presentation/pages/build_parking_flow_page.dart';
 import 'package:open_space_parking/features/land_owner/presentation/pages/existing_parking_flow_page.dart';
+import 'package:open_space_parking/features/land_owner/presentation/pages/land_owner_payout_terms_page.dart';
 import 'package:open_space_parking/features/land_owner/presentation/pages/land_owner_shell_page.dart';
 import 'package:open_space_parking/features/vehicle_owner/presentation/pages/booking_detail_page.dart';
 import 'package:open_space_parking/features/vehicle_owner/presentation/pages/booking_flow_page.dart';
@@ -76,6 +77,7 @@ final appRouterProvider = Provider<GoRouter>((ref) {
         RoutePaths.landOwnerProfile,
         RoutePaths.landOwnerBuildParking,
         RoutePaths.landOwnerExistingParking,
+        RoutePaths.landOwnerPayoutTerms,
       };
 
       final isVehicleOwnerPath = RoutePaths.isVehicleOwnerRoute(location);
@@ -267,28 +269,46 @@ final appRouterProvider = Provider<GoRouter>((ref) {
       ),
 
       GoRoute(
+        path: RoutePaths.landOwnerPayoutTerms,
+        builder: (_, __) => const LandOwnerPayoutTermsPage(),
+      ),
+      GoRoute(
         path: RoutePaths.landOwnerDashboard,
-        builder: (_, __) => const LandOwnerShellPage(initialIndex: 0),
+        builder: (_, __) => const LandOwnerTermsGate(
+          child: LandOwnerShellPage(initialIndex: 0),
+        ),
       ),
       GoRoute(
         path: RoutePaths.landOwnerHistory,
-        builder: (_, __) => const LandOwnerShellPage(initialIndex: 1),
+        builder: (_, __) => const LandOwnerTermsGate(
+          child: LandOwnerShellPage(initialIndex: 1),
+        ),
       ),
       GoRoute(
         path: RoutePaths.landOwnerNotifications,
-        builder: (_, __) => const LandOwnerShellPage(initialIndex: 2),
+        builder: (_, __) => const LandOwnerTermsGate(
+          child: LandOwnerShellPage(initialIndex: 2),
+        ),
       ),
       GoRoute(
         path: RoutePaths.landOwnerProfile,
-        builder: (_, __) => const LandOwnerShellPage(initialIndex: 3),
+        builder: (_, __) => const LandOwnerTermsGate(
+          child: LandOwnerShellPage(initialIndex: 3),
+        ),
       ),
       GoRoute(
         path: RoutePaths.landOwnerBuildParking,
-        builder: (_, __) => const BuildParkingFlowPage(),
+        builder: (_, __) => const LandOwnerTermsGate(
+          afterAcceptRoute: RoutePaths.landOwnerBuildParking,
+          child: BuildParkingFlowPage(),
+        ),
       ),
       GoRoute(
         path: RoutePaths.landOwnerExistingParking,
-        builder: (_, __) => const ExistingParkingFlowPage(),
+        builder: (_, __) => const LandOwnerTermsGate(
+          afterAcceptRoute: RoutePaths.landOwnerExistingParking,
+          child: ExistingParkingFlowPage(),
+        ),
       ),
 
       GoRoute(

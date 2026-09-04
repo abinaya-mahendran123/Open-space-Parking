@@ -16,7 +16,7 @@ String dashboardRouteForRole(UserRole? role) {
 /// First destination after auth + role selection (onboarding entry points).
 String onboardingRouteForRole(UserRole? role) {
   return switch (role) {
-    UserRole.landOwner => RoutePaths.landOwnerBuildParking,
+    UserRole.landOwner => RoutePaths.landOwnerDashboard,
     UserRole.vehicleOwner => RoutePaths.vehicleOwnerSearch,
     UserRole.admin => RoutePaths.adminPortal,
     UserRole.employee => RoutePaths.employeeDashboard,

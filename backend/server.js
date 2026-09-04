@@ -30,6 +30,11 @@ const { recommendNearbyParking } = require('./parking_recommendations');
 const { extractGovernmentIdDetails } = require('./government_id_ocr');
 const { handleAuthUrl, handleExchange, handleFetchDocument } = require('./digilocker');
 const { handleSendOtp, handleVerifyOtp, verifyOtpToken } = require('./otp_service');
+const {
+  onboardLandOwnerLinkedAccount,
+  refreshLandOwnerLinkedAccountStatus,
+  canAutoTransferToLandOwner,
+} = require('./razorpay_route');
 
 (function loadLocalEnv() {
   const envPath = path.join(__dirname, '.env');
@@ -709,6 +714,146 @@ app.get('/api/health', (_req, res) => {
 // ── Backend OTP (no Firebase billing required) ─────────────────────────────
 app.post('/api/auth/otp/send', handleSendOtp);
 app.post('/api/auth/otp/verify', handleVerifyOtp);
+
+// ── Land owner Razorpay Route linked-account onboarding ────────────────────
+app.post(
+  '/api/land-owners/:ownerId/razorpay/onboard',
+  requireAuth,
+  async (req, res) => {
+    try {
+      const ownerId = String(req.params.ownerId || '').trim();
+      if (!ownerId) {
+        return res.status(400).json({ error: 'ownerId is required' });
+      }
+      if (
+        req.auth?.userId &&
+        String(req.auth.userId) !== ownerId &&
+        req.auth.role !== 'admin'
+      ) {
+        return res.status(403).json({ error: 'Not allowed to update this payout account.' });
+      }
+
+      const body = req.body || {};
+      const profile = await db.collection('land_owner_profiles').findOne({
+        ownerId: String(ownerId),
+      });
+      const existingPayout = profile?.payout || null;
+      const ownerDetails = {
+        ...(profile?.ownerDetails || {}),
+        ...(body.ownerDetails || {}),
+      };
+      const payoutInput = {
+        ...(existingPayout || {}),
+        ...(body.payout || {}),
+      };
+
+      const onboarded = await onboardLandOwnerLinkedAccount({
+        ownerId,
+        ownerDetails,
+        payout: payoutInput,
+        existingPayout,
+      });
+
+      const now = new Date().toISOString();
+      if (!profile) {
+        await db.collection('land_owner_profiles').insertOne({
+          ownerId: String(ownerId),
+          ownerDetails,
+          payout: onboarded,
+          createdAt: now,
+          updatedAt: now,
+        });
+      } else {
+        await db.collection('land_owner_profiles').updateOne(
+          { ownerId: String(ownerId) },
+          {
+            $set: {
+              ownerDetails: {
+                ...(profile.ownerDetails || {}),
+                ...ownerDetails,
+              },
+              payout: onboarded,
+              updatedAt: now,
+            },
+          },
+        );
+      }
+
+      return res.json({
+        ok: true,
+        payout: onboarded,
+        razorpayLinkedAccountId: onboarded.razorpayLinkedAccountId || null,
+        razorpayActivationStatus: onboarded.razorpayActivationStatus || null,
+        message: onboarded.razorpayStatusMessage || 'Payout account saved.',
+      });
+    } catch (error) {
+      console.error('[razorpay/onboard]', error);
+      return res.status(error.statusCode || 500).json({
+        error: error.message || 'Could not create Razorpay linked account.',
+      });
+    }
+  },
+);
+
+app.get(
+  '/api/land-owners/:ownerId/razorpay/status',
+  requireAuth,
+  async (req, res) => {
+    try {
+      const ownerId = String(req.params.ownerId || '').trim();
+      if (!ownerId) {
+        return res.status(400).json({ error: 'ownerId is required' });
+      }
+      if (
+        req.auth?.userId &&
+        String(req.auth.userId) !== ownerId &&
+        req.auth.role !== 'admin'
+      ) {
+        return res.status(403).json({ error: 'Not allowed to view this payout account.' });
+      }
+
+      const profile = await db.collection('land_owner_profiles').findOne({
+        ownerId: String(ownerId),
+      });
+      if (!profile?.payout) {
+        return res.json({
+          ok: true,
+          payout: null,
+          razorpayActivationStatus: null,
+        });
+      }
+
+      const refreshed = await refreshLandOwnerLinkedAccountStatus(profile.payout);
+      if (
+        refreshed &&
+        refreshed.razorpayActivationStatus !== profile.payout.razorpayActivationStatus
+      ) {
+        await db.collection('land_owner_profiles').updateOne(
+          { ownerId: String(ownerId) },
+          {
+            $set: {
+              payout: refreshed,
+              updatedAt: new Date().toISOString(),
+            },
+          },
+        );
+      }
+
+      return res.json({
+        ok: true,
+        payout: refreshed,
+        razorpayLinkedAccountId: refreshed?.razorpayLinkedAccountId || null,
+        razorpayActivationStatus: refreshed?.razorpayActivationStatus || null,
+        message: refreshed?.razorpayStatusMessage || null,
+      });
+    } catch (error) {
+      console.error('[razorpay/status]', error);
+      return res.status(error.statusCode || 500).json({
+        error: error.message || 'Could not refresh Razorpay payout status.',
+      });
+    }
+  },
+);
 
 // ── DigiLocker property document verification ──────────────────────────────
 app.get('/api/digilocker/auth-url', handleAuthUrl);
@@ -1791,9 +1936,10 @@ const PLATFORM_COMMISSION_PERCENT = Number(
   process.env.PLATFORM_COMMISSION_PERCENT || 10,
 );
 const PLATFORM_ACCOUNT_NAME =
-  process.env.PLATFORM_ACCOUNT_NAME || 'Media account (Open Space Parking)';
-// Razorpay linked account ID that receives the 10% platform commission.
-// Set this to your own acc_... ID for testing; replace with company account in production.
+  process.env.PLATFORM_ACCOUNT_NAME || 'E Star';
+// Optional: Route linked account for the 10% commission.
+// Leave empty for E Star merchant setup — 10% stays on the merchant account
+// after the 90% land-owner transfer.
 const RAZORPAY_COMPANY_ACCOUNT_ID =
   process.env.RAZORPAY_COMPANY_ACCOUNT_ID || '';
 
@@ -2086,13 +2232,17 @@ app.post('/api/payments/razorpay/create-order', async (req, res) => {
     const splitAmounts = splitParkingPayment(amount);
     const { ownerId, payout } = await resolveLandOwnerPayout(booking);
     const linkedAccount = String(payout?.razorpayLinkedAccountId || '').trim();
-    const canAutoTransfer = !RAZORPAY_DEMO && linkedAccount.startsWith('acc_');
+    // E Star merchant keeps 10% on the main account. Auto-transfer 90% only when
+    // the land-owner Route linked account is activated (acc_... + activated).
+    const canAutoTransfer =
+      !RAZORPAY_DEMO && canAutoTransferToLandOwner(payout);
     const split = {
       ...splitAmounts,
       landOwnerId: ownerId,
       landOwnerUpi: payout?.upiId || null,
       landOwnerAccountHolder: payout?.accountHolderName || null,
       razorpayLinkedAccountId: linkedAccount || null,
+      razorpayActivationStatus: payout?.razorpayActivationStatus || null,
       settlementStatus: canAutoTransfer ? 'transfer_on_order' : 'pending_manual',
     };
 

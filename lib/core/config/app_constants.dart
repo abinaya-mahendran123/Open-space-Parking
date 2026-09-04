@@ -27,13 +27,11 @@ class AppConstants {
   static const String documentsCollection = 'documents';
   static const String notificationsCollection = 'notifications';
 
-  /// Driver pays the full bill; 10% stays on the platform (company) Razorpay
-  /// account and 90% is settled to the land owner payout account.
-  /// The company account ID is configured via RAZORPAY_COMPANY_ACCOUNT_ID
-  /// in backend/.env (not hardcoded here).
+  /// Driver pays the full bill; 10% stays on the E Star merchant Razorpay
+  /// account and 90% is settled to the land owner Route linked account.
+  /// Leave RAZORPAY_COMPANY_ACCOUNT_ID empty so commission stays on merchant.
   static const int platformCommissionPercent = 10;
-  static const String platformPayoutAccountName =
-      'Media account (Open Space Parking)';
+  static const String platformPayoutAccountName = 'E Star';
 
   /// Default admin portal credentials (local demo only).
   /// Override in production with backend `.env` values — never commit real passwords.

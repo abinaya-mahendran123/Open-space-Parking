@@ -84,6 +84,7 @@ Future<void> configureDependencies() async {
         mongoDatabaseService: sl<MongoDatabaseService>(),
         mongoCollectionService: sl<MongoCollectionService>(),
         notificationHelper: sl<NotificationHelper>(),
+        apiClient: sl.isRegistered<ApiClient>() ? sl<ApiClient>() : ApiClient(),
       ),
     );
   }

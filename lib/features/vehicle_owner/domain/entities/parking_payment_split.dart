@@ -3,7 +3,7 @@ class ParkingPaymentSplit {
   ParkingPaymentSplit._();
 
   static const int platformCommissionPercent = 10;
-  static const String platformAccountName = 'Media account (Open Space Parking)';
+  static const String platformAccountName = 'E Star';
   static const String landOwnerShareLabel = 'Land owner';
 
   static int _paise(double total) => (total * 100).round();

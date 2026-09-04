@@ -39,6 +39,7 @@ class RoutePaths {
   static const String landOwnerProfile = '/land-owner/profile';
   static const String landOwnerBuildParking = '/land-owner/build-parking';
   static const String landOwnerExistingParking = '/land-owner/existing-parking';
+  static const String landOwnerPayoutTerms = '/land-owner/payout-terms';
 
   static const String vehicleOwnerDashboard = '/vehicle-owner/dashboard';
   static const String vehicleOwnerSearch = '/vehicle-owner/search';
