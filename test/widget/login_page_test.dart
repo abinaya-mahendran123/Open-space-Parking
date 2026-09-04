@@ -65,7 +65,7 @@ void main() {
           phoneAuthStepProvider.overrideWith((ref) => PhoneAuthStep.enterPhone),
           snackbarServiceProvider.overrideWithValue(SnackbarService()),
         ],
-        child: const MaterialApp(home: AuthPage()),
+        child: const MaterialApp(home: AuthPage(mode: AuthFormMode.signIn)),
       );
     }
 

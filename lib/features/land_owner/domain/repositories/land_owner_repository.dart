@@ -20,6 +20,7 @@ abstract class LandOwnerRepository {
     required OwnerDetails ownerDetails,
     required LandOwnerDocuments documents,
     required LandDetails landDetails,
+    double? hourlyRate,
   });
 
   Future<List<LandOwnerRequest>> getRequestHistory(String ownerId);

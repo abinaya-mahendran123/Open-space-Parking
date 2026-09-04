@@ -74,26 +74,85 @@ function matchValue(actual, expected) {
     return oidHex(actual) === oidHex(expected);
   }
   if (isPlainObject(expected)) {
+    let matchedOperator = false;
+
     if (Object.prototype.hasOwnProperty.call(expected, '$exists')) {
+      matchedOperator = true;
       const shouldExist = expected.$exists !== false;
-      return shouldExist
-        ? actual !== undefined && actual !== null
-        : actual === undefined || actual === null;
+      const exists =
+        actual !== undefined && actual !== null;
+      if (shouldExist ? !exists : exists) return false;
     }
     if (Object.prototype.hasOwnProperty.call(expected, '$ne')) {
-      if (actual == null && expected.$ne === true) return true;
-      return !looseEq(actual, expected.$ne);
+      matchedOperator = true;
+      if (actual == null && expected.$ne === true) {
+        // keep going — treated as match for this op
+      } else if (looseEq(actual, expected.$ne)) {
+        return false;
+      }
     }
     if (Object.prototype.hasOwnProperty.call(expected, '$in')) {
-      return expected.$in.some((item) => looseEq(actual, item));
+      matchedOperator = true;
+      if (!expected.$in.some((item) => looseEq(actual, item))) return false;
+    }
+    if (
+      Object.prototype.hasOwnProperty.call(expected, '$gt') ||
+      Object.prototype.hasOwnProperty.call(expected, '$gte') ||
+      Object.prototype.hasOwnProperty.call(expected, '$lt') ||
+      Object.prototype.hasOwnProperty.call(expected, '$lte')
+    ) {
+      matchedOperator = true;
+      if (actual == null) return false;
+      const left = actual instanceof Date ? actual.toISOString() : actual;
+      const compare = (op, bound) => {
+        if (bound == null) return true;
+        const right = bound instanceof Date ? bound.toISOString() : bound;
+        const aNum = Number(left);
+        const bNum = Number(right);
+        if (Number.isFinite(aNum) && Number.isFinite(bNum)) {
+          if (op === '$gt') return aNum > bNum;
+          if (op === '$gte') return aNum >= bNum;
+          if (op === '$lt') return aNum < bNum;
+          if (op === '$lte') return aNum <= bNum;
+        }
+        const aStr = String(left);
+        const bStr = String(right);
+        if (op === '$gt') return aStr > bStr;
+        if (op === '$gte') return aStr >= bStr;
+        if (op === '$lt') return aStr < bStr;
+        if (op === '$lte') return aStr <= bStr;
+        return false;
+      };
+      if (Object.prototype.hasOwnProperty.call(expected, '$gt') &&
+          !compare('$gt', expected.$gt)) {
+        return false;
+      }
+      if (Object.prototype.hasOwnProperty.call(expected, '$gte') &&
+          !compare('$gte', expected.$gte)) {
+        return false;
+      }
+      if (Object.prototype.hasOwnProperty.call(expected, '$lt') &&
+          !compare('$lt', expected.$lt)) {
+        return false;
+      }
+      if (Object.prototype.hasOwnProperty.call(expected, '$lte') &&
+          !compare('$lte', expected.$lte)) {
+        return false;
+      }
     }
     if (Object.prototype.hasOwnProperty.call(expected, '$oid')) {
-      return oidHex(actual) === expected.$oid;
+      matchedOperator = true;
+      if (oidHex(actual) !== expected.$oid) return false;
     }
     if (expected.$regex) {
+      matchedOperator = true;
       const flags = expected.$options || 'i';
-      return new RegExp(expected.$regex, flags).test(String(actual || ''));
+      if (!new RegExp(expected.$regex, flags).test(String(actual || ''))) {
+        return false;
+      }
     }
+
+    if (matchedOperator) return true;
   }
   return looseEq(actual, expected);
 }
@@ -236,6 +295,10 @@ class PgCursor {
     this._docs = docs;
   }
 
+  project() {
+    return this;
+  }
+
   sort() {
     return this;
   }
@@ -253,6 +316,51 @@ class PgCursor {
   async toArray() {
     return this._docs.map((d) => structuredClone(d));
   }
+}
+
+/**
+ * Minimal aggregate support for admin analytics ($match + $group with $last).
+ */
+function runSimpleAggregate(docs, pipeline = []) {
+  let rows = docs.map((d) => structuredClone(d));
+  for (const stage of pipeline) {
+    if (!stage || typeof stage !== 'object') continue;
+    if (stage.$match) {
+      rows = rows.filter((doc) => matchFilter(doc, stage.$match));
+      continue;
+    }
+    if (stage.$group) {
+      const group = stage.$group;
+      const idExpr = group._id;
+      const buckets = new Map();
+      for (const doc of rows) {
+        let key;
+        if (typeof idExpr === 'string' && idExpr.startsWith('$')) {
+          key = getPath(doc, idExpr.slice(1));
+        } else {
+          key = idExpr;
+        }
+        const mapKey = key == null ? '__null__' : String(key);
+        let bucket = buckets.get(mapKey);
+        if (!bucket) {
+          bucket = { _id: key };
+          buckets.set(mapKey, bucket);
+        }
+        for (const [field, expr] of Object.entries(group)) {
+          if (field === '_id') continue;
+          if (expr && typeof expr === 'object' && expr.$last) {
+            const path = String(expr.$last).startsWith('$')
+              ? String(expr.$last).slice(1)
+              : String(expr.$last);
+            bucket[field] = getPath(doc, path);
+          }
+        }
+      }
+      rows = Array.from(buckets.values());
+      continue;
+    }
+  }
+  return rows;
 }
 
 class PgCollection {
@@ -330,6 +438,9 @@ class PgCollection {
     });
     const cursor = {
       _p: promise,
+      project() {
+        return cursor;
+      },
       sort() {
         return cursor;
       },
@@ -344,6 +455,18 @@ class PgCollection {
       async toArray() {
         const docs = await cursor._p;
         return docs.map((d) => structuredClone(d));
+      },
+    };
+    return cursor;
+  }
+
+  aggregate(pipeline = []) {
+    const promise = this._all().then((docs) =>
+      runSimpleAggregate(docs, pipeline),
+    );
+    const cursor = {
+      async toArray() {
+        return promise;
       },
     };
     return cursor;

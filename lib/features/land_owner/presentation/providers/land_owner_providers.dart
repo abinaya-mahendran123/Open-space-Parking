@@ -38,6 +38,7 @@ final landOwnerProfileProvider =
 final landOwnerPayoutProvider =
     FutureProvider.family<PayoutAccount?, String>((ref, ownerId) async {
   if (ownerId.trim().isEmpty) return null;
+  ref.keepAlive();
   return ref.read(landOwnerRepositoryProvider).getPayoutAccount(ownerId);
 });
 
@@ -51,6 +52,7 @@ final landOwnerPayoutTermsAcceptedProvider =
 final landOwnerNotificationsProvider =
     FutureProvider.family<List<LandOwnerNotification>, String>((ref, ownerId) async {
   if (ownerId.trim().isEmpty) return const [];
+  ref.keepAlive();
   return ref.read(landOwnerNotificationRepositoryProvider).getNotifications(ownerId);
 });
 
@@ -73,7 +75,7 @@ class BuildParkingFormState {
     this.landDetails,
     this.priority = RequestPriority.notImmediate,
     this.parkingType = ParkingType.towerParking,
-    this.numberOfCars = 1,
+    this.numberOfCars = 0,
     this.hourlyRate,
     this.generatedTicketId,
   });
@@ -189,26 +191,31 @@ class ExistingParkingFormState {
     this.ownerDetails,
     this.documents = const LandOwnerDocuments(),
     this.landDetails,
+    this.hourlyRate,
   });
 
   final int currentStep;
   final OwnerDetails? ownerDetails;
   final LandOwnerDocuments documents;
   final LandDetails? landDetails;
+  final double? hourlyRate;
 
-  static const int totalSteps = 3;
+  static const int totalSteps = 4;
 
   ExistingParkingFormState copyWith({
     int? currentStep,
     OwnerDetails? ownerDetails,
     LandOwnerDocuments? documents,
     LandDetails? landDetails,
+    double? hourlyRate,
+    bool clearHourlyRate = false,
   }) {
     return ExistingParkingFormState(
       currentStep: currentStep ?? this.currentStep,
       ownerDetails: ownerDetails ?? this.ownerDetails,
       documents: documents ?? this.documents,
       landDetails: landDetails ?? this.landDetails,
+      hourlyRate: clearHourlyRate ? null : (hourlyRate ?? this.hourlyRate),
     );
   }
 }
@@ -238,6 +245,14 @@ class ExistingParkingFormNotifier extends StateNotifier<ExistingParkingFormState
 
   void setLandDetails(LandDetails details) {
     state = state.copyWith(landDetails: details);
+  }
+
+  void setHourlyRate(double? rate) {
+    if (rate == null || rate <= 0) {
+      state = state.copyWith(clearHourlyRate: true);
+    } else {
+      state = state.copyWith(hourlyRate: rate);
+    }
   }
 
   void reset() {

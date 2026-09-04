@@ -113,8 +113,12 @@ class AdminEmployeeDetailPage extends ConsumerWidget {
                       );
                     }
 
-                    return Column(
-                      children: tickets.map((ticket) {
+                    return ListView.builder(
+                      shrinkWrap: true,
+                      physics: const NeverScrollableScrollPhysics(),
+                      itemCount: tickets.length,
+                      itemBuilder: (context, index) {
+                        final ticket = tickets[index];
                         return _AssignedTicketCard(
                           ticket: ticket,
                           dateLabel: _dateFormat.format(
@@ -124,7 +128,7 @@ class AdminEmployeeDetailPage extends ConsumerWidget {
                             '${RoutePaths.adminTicketDetail(ticket.ticketId)}?readonly=true',
                           ),
                         );
-                      }).toList(),
+                      },
                     );
                   },
                 ),

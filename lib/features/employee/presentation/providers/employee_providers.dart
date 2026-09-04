@@ -57,17 +57,20 @@ final employeeDashboardStatsProvider =
 
 final assignedProjectsProvider =
     FutureProvider.family<List<LandOwnerRequest>, String>((ref, employeeId) {
+  ref.keepAlive();
   return ref.read(employeeRepositoryProvider).getAssignedProjects(employeeId);
 });
 
 final completedProjectsProvider =
     FutureProvider.family<List<LandOwnerRequest>, String>((ref, employeeId) {
+  ref.keepAlive();
   return ref.read(employeeRepositoryProvider).getCompletedProjects(employeeId);
 });
 
 final employeeTicketProvider =
     FutureProvider.family<LandOwnerRequest?, ({String ticketId, String employeeId})>(
   (ref, args) {
+    ref.keepAlive();
     return ref.read(employeeRepositoryProvider).getTicketById(
           ticketId: args.ticketId,
           employeeId: args.employeeId,
@@ -77,16 +80,19 @@ final employeeTicketProvider =
 
 final ticketQuotationProvider =
     FutureProvider.family<Quotation?, String>((ref, ticketId) {
+  ref.keepAlive();
   return ref.read(employeeRepositoryProvider).getQuotation(ticketId);
 });
 
 final progressHistoryProvider =
     FutureProvider.family<List<ConstructionProgressEntry>, String>((ref, ticketId) {
+  ref.keepAlive();
   return ref.read(employeeRepositoryProvider).getProgressHistory(ticketId);
 });
 
 final employeeNotificationsProvider =
     FutureProvider.family<List<EmployeeNotification>, String>((ref, employeeId) {
+  ref.keepAlive();
   return ref.read(employeeRepositoryProvider).getNotifications(employeeId);
 });
 
@@ -124,12 +130,14 @@ bool _looksLikePhoneOrLoginId(String value) {
 
 final employeeUnreadCountProvider =
     FutureProvider.family<int, String>((ref, employeeId) async {
+  ref.keepAlive();
   if (employeeId.isEmpty) return 0;
   return ref.read(employeeRepositoryProvider).getUnreadCount(employeeId);
 });
 
 /// Admin-assigned mobile for the signed-in employee (session, then DB).
 final employeeAssignedPhoneProvider = FutureProvider<String>((ref) async {
+  ref.keepAlive();
   final session = ref.watch(authStateProvider).session;
   if (session == null || session.role != UserRole.employee) return '';
 

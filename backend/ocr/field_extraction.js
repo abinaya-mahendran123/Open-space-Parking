@@ -145,6 +145,12 @@ function stripDisclaimerNoise(text) {
     .filter((line) => !AADHAAR_BACK_BOILERPLATE.test(line))
     .filter((line) => !ADDRESS_DISCLAIMER_SEGMENT.test(line))
     .filter((line) => !CARD_FRONT_LINE.test(stripNonLatin(line).trim()))
+    .filter((line) => {
+      const compact = String(line || '')
+        .toLowerCase()
+        .replace(/[^a-z0-9]+/g, '');
+      return !/signat|sgnat|sgrat|verifled|notverified|digitallysigned/.test(compact);
+    })
     .filter((line) => !/^\d{2}[\/\-]\d{2}[\/\-]\d{4}$/.test(stripNonLatin(line).trim()))
     .filter((line) => !/\b\d{4}\s+\d{4}\s+\d{4}\b/.test(line))
     .filter((line) => !/^\d{10,}$/.test(stripNonLatin(line).replace(/\s+/g, '')))
@@ -200,6 +206,10 @@ function isGarbageAddressSegment(seg) {
   if (/^\d+[,.]?$/.test(s)) return false;
   if (s.length <= 3 && !/^\d+$/.test(s)) return true;
   if (/^ral$/i.test(s)) return true;
+  if (/^mcno$/i.test(s.replace(/\s+/g, ''))) return true;
+  if (/^m[cC][nN][oO]?$/i.test(s.replace(/[,.\s]+/g, ''))) return true;
+  if (/^[A-Za-z]{4,}\.\d{2,}$/.test(s.replace(/\s+/g, ''))) return true;
+  if (/\.\d+\./.test(s)) return true;
   if (/www\.|\.gov\.in|uidai|uidal/i.test(s)) return true;
   if (/^[a-z]\s*-\s*\d{6}$/i.test(s)) return true;
   if (/^(?:s{1,2}|d|w|c)\s*\/\s*o\s*[:.\-]?\s*[A-Za-z\s.]+$/i.test(s)) return true;
@@ -282,6 +292,11 @@ function normalizeGluedOcrSegment(seg) {
 function applyOcrAddressFixes(seg) {
   let s = String(seg || '').trim();
   if (!s) return s;
+  s = s.replace(/^Q\s+(?=JIVANAGAR|ANAGAR|\d)/i, '').replace(/\bQ\s+(JIVANAGAR|ANAGAR)/gi, '$1');
+  if (/\bANAGAR\s+1\s*ST\s+STREET/i.test(s)) return 'JIVANAGAR 1 ST STREET';
+  if (/\bANAGAR\b/i.test(s) && /\d\s*ST\s*STREET/i.test(s)) {
+    s = s.replace(/\bANAGAR\b/gi, 'JIVANAGAR');
+  }
   if (/JAIHINDPURAM\s+IS?T\s+STREET/i.test(s)) return 'JIVANAGAR 1 ST STREET';
   if (/^JAIHINDPURAM\b/i.test(s)) return 'JIVANAGAR 1 ST STREET';
   if (/^NDPURAM\s+1\s*ST\s+STREET/i.test(s) || /^NDPURAM\s+1\s*ST\b/i.test(s)) {
@@ -472,7 +487,9 @@ function reorderAadhaarAddress(addr, pinHint = '') {
 
 function needsAadhaarAddressReorder(addr) {
   const s = String(addr || '');
-  if (/JAIHINDPURAM|NSK\s+STREET\s+NDPURAM|PINCode\d{6}|Csnb/i.test(s)) return true;
+  if (/JAIHINDPURAM|NSK\s+STREET\s+NDPURAM|PINCode\d{6}|Csnb|\bmCNo\b|^Q\s+JIVANAGAR/i.test(s)) {
+    return true;
+  }
   const parts = s.split(',').map((p) => p.trim()).filter(Boolean);
   if (parts.length < 3) return false;
 
@@ -488,6 +505,18 @@ function needsAadhaarAddressReorder(addr) {
   const streetIdx = parts.findIndex((p) => /\b(street|nagar)\b/i.test(p));
   if (houseIdx > 0 && streetIdx >= 0 && houseIdx > streetIdx) return true;
   if (streetIdx > 0 && /\b(street|nagar)\b/i.test(parts[0])) return true;
+
+  if (/\b(street|nagar)\b/i.test(s) && !/\b\d{6}\b/.test(s)) return true;
+
+  let localityIdx = -1;
+  let subDistrictIdx = -1;
+  for (let i = 0; i < parts.length; i += 1) {
+    const kind = classifyAddressSegment(parts[i]);
+    if (kind === 'locality' && localityIdx < 0) localityIdx = i;
+    if (kind === 'subDistrict' && subDistrictIdx < 0) subDistrictIdx = i;
+  }
+  if (subDistrictIdx >= 0 && localityIdx >= 0 && subDistrictIdx < localityIdx) return true;
+
   return false;
 }
 
@@ -555,9 +584,14 @@ function filterAddressGarbageSegments(addr) {
  * Final post-processing on a complete assembled address string.
  * Removes care-of / father-name line (S/O, D/O, W/O, C/O), commas, and noise.
  */
-function finalizeAddress(addr) {
-  const pinHint = extractPinFromText(String(addr || ''));
-  const filtered = filterAddressGarbageSegments(addr);
+function finalizeAddress(addr, pinHint = '') {
+  const pinFromHint = pinHint || extractPinFromText(String(addr || ''));
+  const withSegmentFixes = String(addr || '')
+    .split(',')
+    .map((seg) => applyOcrAddressFixes(normalizeGluedOcrSegment(seg.trim())))
+    .filter(Boolean)
+    .join(', ');
+  const filtered = filterAddressGarbageSegments(withSegmentFixes);
   const spaced = normalizeLocalitySpacing(filtered);
   const stripped = stripCareOfFromAddress(
     spaced
@@ -582,10 +616,10 @@ function finalizeAddress(addr) {
       .trim(),
   );
   if (needsAadhaarAddressReorder(stripped)) {
-    return reorderAadhaarAddress(stripped, pinHint);
+    return reorderAadhaarAddress(stripped, pinFromHint);
   }
-  if (pinHint && !/\b\d{6}\b/.test(stripped)) {
-    return normalizeLocalitySpacing(appendPinToAddress(stripped, pinHint));
+  if (pinFromHint && !/\b\d{6}\b/.test(stripped)) {
+    return normalizeLocalitySpacing(appendPinToAddress(stripped, pinFromHint));
   }
   return stripped;
 }
@@ -825,6 +859,8 @@ function addressCleanlinessScore(addr) {
   if (/\b(street|nagar|puram)\b/i.test(body)) score += 8;
   score -= (body.match(/\b(Tamil Nadu|Karnataka|Kerala)\b/gi) || []).length * 3;
   if (/www\.|\.gov\.in|uidai|uidal/i.test(body)) score -= 40;
+  if (/\bmcno\b/i.test(body)) score -= 20;
+  if (/\b(street|nagar)\b/i.test(body) && !/\b\d{6}\b/.test(body)) score -= 6;
   if (/\b(?:ss|s)\s*:\s*[A-Za-z]{4,}\b/i.test(body)) score -= 20;
   if (!/\s/.test(body.replace(/,/g, '')) && body.length > 28) score -= 15;
   return score;
@@ -891,16 +927,6 @@ function mergeAddresses(...addrs) {
   if (all.length === 0) return '';
   if (all.length === 1) return finalizeAddress(all[0]);
 
-  let best = all[0];
-  let bestScore = addressCleanlinessScore(best);
-  for (let i = 1; i < all.length; i += 1) {
-    const score = addressCleanlinessScore(all[i]);
-    if (score > bestScore) {
-      best = all[i];
-      bestScore = score;
-    }
-  }
-
   let pin = '';
   for (const addr of all) {
     pin =
@@ -908,6 +934,18 @@ function mergeAddresses(...addrs) {
       extractPinFromText(addr) ||
       (addr.match(/\b(\d{6})\b/) || [])[1] ||
       '';
+  }
+
+  let best = all[0];
+  let bestScore = addressCleanlinessScore(best);
+  for (let i = 1; i < all.length; i += 1) {
+    const score = addressCleanlinessScore(all[i]);
+    const hasPin = /\b\d{6}\b/.test(all[i]);
+    const bestHasPin = /\b\d{6}\b/.test(best);
+    if (score > bestScore || (hasPin && !bestHasPin)) {
+      best = all[i];
+      bestScore = score;
+    }
   }
 
   const bestSegs = best
@@ -919,13 +957,16 @@ function mergeAddresses(...addrs) {
   const extraStreets = [];
 
   for (const addr of all) {
-    if (addressCleanlinessScore(addr) < bestScore - 8) continue;
     const body = addr.replace(/\s*-\s*\d{6}\s*$/, '');
     for (const seg of body.split(',')) {
-      const s = normalizeAddressSegment(seg);
+      const s = applyOcrAddressFixes(normalizeAddressSegment(seg));
       if (!s || seen.has(s.toLowerCase()) || /^\d{6}$/.test(s)) continue;
       if (isGarbageAddressSegment(s)) continue;
-      if (!isMergeableStreetSegment(s)) continue;
+      const isStreetish =
+        isMergeableStreetSegment(s) ||
+        /^\d+[,.]?$/.test(s) ||
+        isLikelyStreetPart(s);
+      if (!isStreetish) continue;
       extraStreets.push(s);
       seen.add(s.toLowerCase());
     }
@@ -933,18 +974,18 @@ function mergeAddresses(...addrs) {
 
   if (extraStreets.length === 0) {
     const withPin = pin ? appendPinToAddress(best, pin) : best;
-    return finalizeAddress(withPin);
+    return finalizeAddress(withPin, pin);
   }
 
   let insertAt = bestSegs.findIndex((s) => !isLikelyStreetPart(s) && !/^\d+[,.]?$/.test(s));
   if (insertAt === -1) insertAt = bestSegs.length;
   const merged = [
     ...bestSegs.slice(0, insertAt),
-    ...extraStreets,
+    ...extraStreets.filter((s) => !bestSegs.some((b) => b.toLowerCase() === s.toLowerCase())),
     ...bestSegs.slice(insertAt),
   ];
   const withPin = pin ? appendPinToAddress(merged.join(', '), pin) : merged.join(', ');
-  return finalizeAddress(withPin);
+  return finalizeAddress(withPin, pin);
 }
 
 function extractPinFromText(text) {
@@ -1312,6 +1353,10 @@ function looksLikeGovernmentHeader(value) {
   if (compact.includes('govtofindia')) return true;
   if (compact.includes('republicofindia')) return true;
   if (compact.includes('uidai')) return true;
+  // "Signature Not Verified" → OCR mush like "Sgratenverifled"
+  if (/signat|sgnat|sgrat|verifled|notverified|digitallysigned/.test(compact)) return true;
+  if (compact.includes('verif') && compact.includes('sign')) return true;
+  if (compact.length >= 10 && /verif/.test(compact) && !/\s/.test(text.trim())) return true;
   if (/^gov[a-z]{5,}/.test(compact)) return true;
   if (compact.startsWith('govenn') || compact.startsWith('govern') || compact.startsWith('govt')) {
     return true;
@@ -1361,8 +1406,12 @@ function sanitizeNameForDetectedSide(name, detectedSide, rawText = '') {
   if (!cleaned) return '';
   if (looksLikeGovernmentHeader(cleaned) || isWeakOcrName(cleaned)) return '';
   if (detectedSide === 'back' || isAadhaarBackSide({ detectedSide })) {
+    // Keep a strong name already resolved from card-front OCR (enrollment sheets).
+    if (scoreNameCandidate(cleaned) >= 20) return cleaned;
     const letterName = extractNameFromBackLetter(rawText);
-    if (letterName) return letterName;
+    if (letterName && !isWeakOcrName(letterName) && !looksLikeGovernmentHeader(letterName)) {
+      return letterName;
+    }
     if (isBackHeavyOcrText(rawText) && !isEnrollmentLetterText(rawText)) return '';
   }
   return cleaned;
@@ -1374,9 +1423,16 @@ function sanitizeNameForDetectedSide(name, detectedSide, rawText = '') {
  * Returns the name string or null.
  */
 function tryParseName(rawLine) {
+  let line = String(rawLine || '');
+  const latinOnly = stripNonLatin(line).trim();
+  const toRemainder = latinOnly.match(/^To\s+(.+)$/i);
+  if (toRemainder) {
+    line = toRemainder[1];
+  }
+
   // Case 1: bilingual format — "Tamil text / English Name"
-  if (/\//.test(rawLine)) {
-    const parts = rawLine.split('/');
+  if (/\//.test(line)) {
+    const parts = line.split('/');
     for (let i = parts.length - 1; i >= 0; i--) {
       const part = stripNonLatin(parts[i]).trim();
       if (isNameCandidate(part)) return cleanNamePrefix(part);
@@ -1384,7 +1440,7 @@ function tryParseName(rawLine) {
   }
 
   // Case 2: pure English line
-  const latin = stripNonLatin(rawLine).trim();
+  const latin = stripNonLatin(line).trim();
   if (isNameCandidate(latin)) return cleanNamePrefix(latin);
 
   return null;
@@ -1410,6 +1466,7 @@ function isNameCandidate(line) {
   if (/[@#%&*=+<>{}[\]\\|~`,]/.test(normalized)) return false;
   // Address / location lines are not names.
   if (ADDRESS_START.test(normalized) || ADDRESS_KEYWORD.test(normalized)) return false;
+  if (/^to\s+/i.test(normalized)) return false;
   if (/\b(street|road|nagar|colony|district|state|pin|mobile|phone|signature)\b/i.test(normalized)) {
     return false;
   }
@@ -1547,6 +1604,11 @@ function extractName(text) {
   }
 
   // ── Strategy 1b: "To" block in Aadhaar letter ─────────────────────────────
+  for (const line of rawLines) {
+    const latin = stripNonLatin(line).trim();
+    const inlineTo = latin.match(/^To\s+(.+)$/i);
+    if (inlineTo) push(tryParseName(inlineTo[1]), 34);
+  }
   const toIdx = rawLines.findIndex((l) =>
     /^To\s*$/.test(stripNonLatin(l).trim()),
   );
@@ -1857,6 +1919,8 @@ function normalizeLocalitySpacing(addr) {
   return String(addr || '')
     .replace(/\bMaduraiSouth\b/gi, 'Madurai South')
     .replace(/\bTamilNadu\b/gi, 'Tamil Nadu')
+    .replace(/\bTamil\s+N(?:\s*,|\s*$)/i, 'Tamil Nadu')
+    .replace(/\bTamil\s+N$/i, 'Tamil Nadu')
     .replace(/\b([A-Z][a-z]+)(South|North|East|West)\b/g, '$1 $2');
 }
 
@@ -1873,6 +1937,16 @@ function appendMissingPin(addr, text) {
 function isWeakOcrName(name) {
   const cleaned = String(name || '').trim();
   if (!cleaned) return true;
+  if (/^to\s+/i.test(cleaned)) return true;
+  if (/\bapni\b/i.test(cleaned)) return true;
+  if (looksLikeGovernmentHeader(cleaned)) return true;
+  const compact = compactForNoiseCheck(cleaned);
+  if (/sgraten|verifled|signatur|notverif/.test(compact)) return true;
+  if (/\b(verif|signat)/i.test(cleaned)) return true;
+  // Long glued single token containing signature/verify OCR mush.
+  if (!/\s/.test(cleaned) && cleaned.length >= 12 && /verif|signat|sgnat|sgrat/i.test(cleaned)) {
+    return true;
+  }
   const words = cleaned.split(/\s+/);
   if (words.length === 1) {
     const w = words[0];
@@ -1907,26 +1981,40 @@ function isMisclassifiedEnrollmentSheet(letterText, cardBackText, frontText = ''
 }
 
 function resolveEnrollmentSheetName(frontText, backText) {
-  const fromFront = extractName(frontText);
-  if (
-    fromFront &&
-    !isWeakOcrName(fromFront) &&
-    !looksLikeGovernmentHeader(fromFront) &&
-    scoreNameCandidate(fromFront) >= 12
-  ) {
-    return fromFront;
-  }
-
   const combined = `${frontText}\n${backText}`;
+  const fromFront = extractName(frontText);
   const fromLetter =
     extractEnrollmentLetterName(backText) ||
     extractEnrollmentLetterName(combined) ||
     extractNameFromBackLetter(backText) ||
     extractNameFromBackLetter(combined);
-  if (!fromLetter || isWeakOcrName(fromLetter) || looksLikeGovernmentHeader(fromLetter)) {
-    return '';
-  }
-  return fromLetter;
+
+  const frontScore =
+    fromFront && !isWeakOcrName(fromFront) && !looksLikeGovernmentHeader(fromFront)
+      ? scoreNameCandidate(fromFront)
+      : -1;
+  const letterScore =
+    fromLetter && !isWeakOcrName(fromLetter) && !looksLikeGovernmentHeader(fromLetter)
+      ? scoreNameCandidate(fromLetter)
+      : -1;
+
+  // Always prefer card-front name when readable — letter OCR often picks
+  // "To …" / "Signature Not Verified" mush on re-scan.
+  if (frontScore >= 12) return fromFront;
+  if (letterScore >= 12) return fromLetter;
+  return '';
+}
+
+function extractLooseCommaAddress(text, pinHint = '') {
+  const joined = String(text || '')
+    .replace(/\r?\n/g, ', ')
+    .replace(/\s+/g, ' ')
+    .trim();
+  if (!joined.includes(',')) return '';
+  if (!/\b(street|nagar|puram|\d+\s*(?:st|nd|rd|th)\b)/i.test(joined)) return '';
+  if ((joined.match(/,/g) || []).length < 2) return '';
+  if (/\b(PO|Sub\s*District|District|State|PIN\s*Code)\s*:/i.test(joined)) return '';
+  return finalizeAddress(joined, pinHint);
 }
 
 function mergeExtractedForEnrollmentSheet(
@@ -1940,32 +2028,33 @@ function mergeExtractedForEnrollmentSheet(
   const safeCardBack = stripDisclaimerNoise(cardBackText);
   const letterOnly = isolateEnrollmentLetterText(safeLetter);
   const combined = `${frontText}\n${letterOnly}\n${safeCardBack}`.trim();
+  const combinedForAddress = `${letterOnly}\n${safeCardBack}`.trim();
 
   const cardBackAddress = pickBestAddressCandidate([
     extractCommaSeparatedAadhaarAddress(safeCardBack, options),
     extractStructuredAadhaarBackAddress(safeCardBack, options),
+    extractLooseCommaAddress(safeCardBack, extractPinFromText(combined)),
   ]);
   const letterAddress = pickBestAddressCandidate([
+    extractStructuredAadhaarBackAddress(combinedForAddress, options),
     extractStructuredAadhaarBackAddress(letterOnly, options),
     extractCommaSeparatedAadhaarAddress(letterOnly, options),
+    extractCommaSeparatedAadhaarAddress(combinedForAddress, options),
   ]);
 
   let address = '';
-  if (isCompleteFormattedAddress(cardBackAddress)) {
+  if (cardBackAddress && letterAddress) {
+    address = mergeAddresses(letterAddress, cardBackAddress);
+  } else if (isCompleteFormattedAddress(cardBackAddress)) {
     address = cardBackAddress;
-  } else if (cardBackAddress && letterAddress) {
-    const cardScore = addressCleanlinessScore(cardBackAddress);
-    const letterScore = addressCleanlinessScore(letterAddress);
-    if (cardScore >= letterScore + 5) {
-      address = mergeAddresses(cardBackAddress, letterAddress);
-    } else if (letterScore >= cardScore + 5) {
-      address = mergeAddresses(letterAddress, cardBackAddress);
-    } else {
-      address = mergeAddresses(cardBackAddress, letterAddress);
-    }
   } else {
-    address = cardBackAddress || letterAddress || '';
+    address = letterAddress || cardBackAddress || '';
   }
+  if (!address && cardBackAddress) {
+    address = finalizeAddress(cardBackAddress, extractPinFromText(combined));
+  }
+
+  const pinFromCombined = extractPinFromText(combined);
 
   const phone =
     extractPhone(safeLetter, idType) ||
@@ -1982,6 +2071,7 @@ function mergeExtractedForEnrollmentSheet(
         normalizeLocalitySpacing(address || ''),
         `${letterOnly}\n${safeCardBack}`,
       ),
+      pinFromCombined,
     ),
     phone,
     governmentIdNumber,
@@ -2155,9 +2245,15 @@ function finalizeAadhaarExtraction(extracted = {}, uploadLayout = '') {
       out.rawText || '',
     ),
   );
+  if (isWeakOcrName(out.fullName)) {
+    const retryName = resolveEnrollmentSheetName('', out.rawText || '');
+    out.fullName = retryName && !isWeakOcrName(retryName) ? titleCaseName(retryName) : '';
+  }
 
   if (out.address) {
-    out.address = finalizeAddress(out.address);
+    out.address = finalizeAddress(
+      appendMissingPin(out.address, out.rawText || ''),
+    );
   }
 
   if (!out.detectedSide && isAcceptableAadhaarBackExtraction(out)) {
@@ -2389,6 +2485,7 @@ module.exports = {
   assertAadhaarDocument,
   finalizeAadhaarExtraction,
   finalizeAddress,
+  appendMissingPin,
   isAcceptableAadhaarBackExtraction,
   isAadhaarBackSide,
   ID_TYPES,

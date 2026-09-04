@@ -35,6 +35,39 @@ import 'package:open_space_parking/features/maps/presentation/pages/map_picker_p
 import 'package:open_space_parking/features/maps/presentation/pages/nearby_parking_map_page.dart';
 import 'package:open_space_parking/features/maps/presentation/pages/saved_coordinates_page.dart';
 
+/// Shared page keys keep role shells mounted across tab URL changes so
+/// navigation stays instant (no remount / fade transition).
+const _adminShellPageKey = ValueKey<String>('admin-shell');
+const _employeeShellPageKey = ValueKey<String>('employee-shell');
+const _landOwnerShellPageKey = ValueKey<String>('land-owner-shell');
+const _vehicleOwnerShellPageKey = ValueKey<String>('vehicle-owner-shell');
+
+Page<void> _noTransitionShellPage({
+  required LocalKey key,
+  required Widget child,
+}) {
+  return NoTransitionPage<void>(key: key, child: child);
+}
+
+/// Short fade for pushed detail/flow routes (default MaterialPage feels sluggish).
+Page<void> _fastPage({
+  required GoRouterState state,
+  required Widget child,
+}) {
+  return CustomTransitionPage<void>(
+    key: state.pageKey,
+    child: child,
+    transitionDuration: const Duration(milliseconds: 120),
+    reverseTransitionDuration: const Duration(milliseconds: 100),
+    transitionsBuilder: (_, animation, __, child) {
+      return FadeTransition(
+        opacity: CurvedAnimation(parent: animation, curve: Curves.easeOut),
+        child: child,
+      );
+    },
+  );
+}
+
 final appRouterProvider = Provider<GoRouter>((ref) {
   final refresh = ValueNotifier<int>(0);
   ref.listen(authStateProvider, (_, __) => refresh.value++);
@@ -198,37 +231,65 @@ final appRouterProvider = Provider<GoRouter>((ref) {
       ),
       GoRoute(
         path: RoutePaths.adminPortal,
-        builder: (_, __) => const AdminShellPage(initialIndex: 0),
+        pageBuilder: (_, __) => _noTransitionShellPage(
+          key: _adminShellPageKey,
+          child: const AdminShellPage(initialIndex: 0),
+        ),
       ),
       GoRoute(
         path: RoutePaths.adminTickets,
-        builder: (_, state) => AdminShellPage(
-          initialIndex: 1,
-          ticketStatusFilter: state.uri.queryParameters['status'],
+        pageBuilder: (_, state) => _noTransitionShellPage(
+          key: _adminShellPageKey,
+          child: AdminShellPage(
+            initialIndex: 1,
+            ticketStatusFilter: state.uri.queryParameters['status'],
+          ),
         ),
       ),
       GoRoute(
         path: '/admin/tickets/:ticketId',
-        builder: (context, state) {
+        pageBuilder: (context, state) {
           final ticketId = state.pathParameters['ticketId'] ?? '';
           final readOnly = state.uri.queryParameters['readonly'] == 'true';
-          return AdminTicketDetailPage(ticketId: ticketId, readOnly: readOnly);
+          return _fastPage(
+            state: state,
+            child: AdminTicketDetailPage(
+              ticketId: ticketId,
+              readOnly: readOnly,
+            ),
+          );
         },
       ),
       GoRoute(
         path: RoutePaths.adminEmployees,
-        builder: (_, __) => const AdminShellPage(initialIndex: 2),
+        pageBuilder: (_, __) => _noTransitionShellPage(
+          key: _adminShellPageKey,
+          child: const AdminShellPage(initialIndex: 2),
+        ),
       ),
       GoRoute(
         path: '/admin/employees/:employeeId',
-        builder: (context, state) {
+        pageBuilder: (context, state) {
           final employeeId = state.pathParameters['employeeId'] ?? '';
-          return AdminEmployeeDetailPage(employeeId: employeeId);
+          return _fastPage(
+            state: state,
+            child: AdminEmployeeDetailPage(employeeId: employeeId),
+          );
         },
       ),
       GoRoute(
         path: RoutePaths.adminStatistics,
-        builder: (_, __) => const AdminShellPage(initialIndex: 3),
+        pageBuilder: (_, __) => _noTransitionShellPage(
+          key: _adminShellPageKey,
+          child: const AdminShellPage(initialIndex: 3),
+        ),
+      ),
+      GoRoute(
+        path: RoutePaths.adminOperations,
+        pageBuilder: (_, __) => _noTransitionShellPage(
+          key: _adminShellPageKey,
+          child: const AdminShellPage(initialIndex: 4),
+        ),
       ),
       GoRoute(
         path: RoutePaths.adminProfile,
@@ -242,19 +303,31 @@ final appRouterProvider = Provider<GoRouter>((ref) {
       ),
       GoRoute(
         path: RoutePaths.employeeDashboard,
-        builder: (_, __) => const EmployeeShellPage(initialIndex: 0),
+        pageBuilder: (_, __) => _noTransitionShellPage(
+          key: _employeeShellPageKey,
+          child: const EmployeeShellPage(initialIndex: 0),
+        ),
       ),
       GoRoute(
         path: RoutePaths.employeeAssigned,
-        builder: (_, __) => const EmployeeShellPage(initialIndex: 1),
+        pageBuilder: (_, __) => _noTransitionShellPage(
+          key: _employeeShellPageKey,
+          child: const EmployeeShellPage(initialIndex: 1),
+        ),
       ),
       GoRoute(
         path: RoutePaths.employeeCompleted,
-        builder: (_, __) => const EmployeeShellPage(initialIndex: 2),
+        pageBuilder: (_, __) => _noTransitionShellPage(
+          key: _employeeShellPageKey,
+          child: const EmployeeShellPage(initialIndex: 2),
+        ),
       ),
       GoRoute(
         path: RoutePaths.employeeNotifications,
-        builder: (_, __) => const EmployeeShellPage(initialIndex: 3),
+        pageBuilder: (_, __) => _noTransitionShellPage(
+          key: _employeeShellPageKey,
+          child: const EmployeeShellPage(initialIndex: 3),
+        ),
       ),
       GoRoute(
         path: RoutePaths.employeeProfile,
@@ -262,9 +335,12 @@ final appRouterProvider = Provider<GoRouter>((ref) {
       ),
       GoRoute(
         path: '/employee/tickets/:ticketId',
-        builder: (context, state) {
+        pageBuilder: (context, state) {
           final ticketId = state.pathParameters['ticketId'] ?? '';
-          return EmployeeTicketDetailPage(ticketId: ticketId);
+          return _fastPage(
+            state: state,
+            child: EmployeeTicketDetailPage(ticketId: ticketId),
+          );
         },
       ),
 
@@ -274,40 +350,58 @@ final appRouterProvider = Provider<GoRouter>((ref) {
       ),
       GoRoute(
         path: RoutePaths.landOwnerDashboard,
-        builder: (_, __) => const LandOwnerTermsGate(
-          child: LandOwnerShellPage(initialIndex: 0),
+        pageBuilder: (_, __) => _noTransitionShellPage(
+          key: _landOwnerShellPageKey,
+          child: const LandOwnerTermsGate(
+            child: LandOwnerShellPage(initialIndex: 0),
+          ),
         ),
       ),
       GoRoute(
         path: RoutePaths.landOwnerHistory,
-        builder: (_, __) => const LandOwnerTermsGate(
-          child: LandOwnerShellPage(initialIndex: 1),
+        pageBuilder: (_, __) => _noTransitionShellPage(
+          key: _landOwnerShellPageKey,
+          child: const LandOwnerTermsGate(
+            child: LandOwnerShellPage(initialIndex: 1),
+          ),
         ),
       ),
       GoRoute(
         path: RoutePaths.landOwnerNotifications,
-        builder: (_, __) => const LandOwnerTermsGate(
-          child: LandOwnerShellPage(initialIndex: 2),
+        pageBuilder: (_, __) => _noTransitionShellPage(
+          key: _landOwnerShellPageKey,
+          child: const LandOwnerTermsGate(
+            child: LandOwnerShellPage(initialIndex: 2),
+          ),
         ),
       ),
       GoRoute(
         path: RoutePaths.landOwnerProfile,
-        builder: (_, __) => const LandOwnerTermsGate(
-          child: LandOwnerShellPage(initialIndex: 3),
+        pageBuilder: (_, __) => _noTransitionShellPage(
+          key: _landOwnerShellPageKey,
+          child: const LandOwnerTermsGate(
+            child: LandOwnerShellPage(initialIndex: 3),
+          ),
         ),
       ),
       GoRoute(
         path: RoutePaths.landOwnerBuildParking,
-        builder: (_, __) => const LandOwnerTermsGate(
-          afterAcceptRoute: RoutePaths.landOwnerBuildParking,
-          child: BuildParkingFlowPage(),
+        pageBuilder: (context, state) => _fastPage(
+          state: state,
+          child: const LandOwnerTermsGate(
+            afterAcceptRoute: RoutePaths.landOwnerBuildParking,
+            child: BuildParkingFlowPage(),
+          ),
         ),
       ),
       GoRoute(
         path: RoutePaths.landOwnerExistingParking,
-        builder: (_, __) => const LandOwnerTermsGate(
-          afterAcceptRoute: RoutePaths.landOwnerExistingParking,
-          child: ExistingParkingFlowPage(),
+        pageBuilder: (context, state) => _fastPage(
+          state: state,
+          child: const LandOwnerTermsGate(
+            afterAcceptRoute: RoutePaths.landOwnerExistingParking,
+            child: ExistingParkingFlowPage(),
+          ),
         ),
       ),
 
@@ -317,76 +411,115 @@ final appRouterProvider = Provider<GoRouter>((ref) {
       ),
       GoRoute(
         path: RoutePaths.vehicleOwnerSearch,
-        builder: (_, __) => const VehicleOwnerShellPage(initialIndex: 0),
+        pageBuilder: (_, __) => _noTransitionShellPage(
+          key: _vehicleOwnerShellPageKey,
+          child: const VehicleOwnerShellPage(initialIndex: 0),
+        ),
       ),
       GoRoute(
         path: RoutePaths.vehicleOwnerFavorites,
-        builder: (_, __) => const VehicleOwnerShellPage(initialIndex: 1),
+        pageBuilder: (_, __) => _noTransitionShellPage(
+          key: _vehicleOwnerShellPageKey,
+          child: const VehicleOwnerShellPage(initialIndex: 1),
+        ),
       ),
       GoRoute(
         path: RoutePaths.vehicleOwnerBookings,
-        builder: (_, __) => const VehicleOwnerShellPage(initialIndex: 2),
+        pageBuilder: (_, __) => _noTransitionShellPage(
+          key: _vehicleOwnerShellPageKey,
+          child: const VehicleOwnerShellPage(initialIndex: 2),
+        ),
       ),
       GoRoute(
         path: RoutePaths.vehicleOwnerNotifications,
-        builder: (_, __) => const VehicleOwnerNotificationsPage(),
+        pageBuilder: (context, state) => _fastPage(
+          state: state,
+          child: const VehicleOwnerNotificationsPage(),
+        ),
       ),
       GoRoute(
         path: RoutePaths.vehicleOwnerProfile,
-        builder: (_, __) => const VehicleOwnerShellPage(initialIndex: 3),
+        pageBuilder: (_, __) => _noTransitionShellPage(
+          key: _vehicleOwnerShellPageKey,
+          child: const VehicleOwnerShellPage(initialIndex: 3),
+        ),
       ),
       GoRoute(
         path: '/vehicle-owner/parking/:listingId/check-in',
-        builder: (context, state) {
+        pageBuilder: (context, state) {
           final listingId = state.pathParameters['listingId'] ?? '';
-          return ParkingCheckInPage(listingId: listingId);
+          return _fastPage(
+            state: state,
+            child: ParkingCheckInPage(listingId: listingId),
+          );
         },
       ),
       GoRoute(
         path: '/vehicle-owner/parking/:listingId/book',
-        builder: (context, state) {
+        pageBuilder: (context, state) {
           final listingId = state.pathParameters['listingId'] ?? '';
-          return BookingFlowPage(listingId: listingId);
+          return _fastPage(
+            state: state,
+            child: BookingFlowPage(listingId: listingId),
+          );
         },
       ),
       GoRoute(
         path: '/vehicle-owner/parking/:listingId',
-        builder: (context, state) {
+        pageBuilder: (context, state) {
           final listingId = state.pathParameters['listingId'] ?? '';
-          return ParkingDetailPage(listingId: listingId);
+          return _fastPage(
+            state: state,
+            child: ParkingDetailPage(listingId: listingId),
+          );
         },
       ),
       GoRoute(
         path: '/vehicle-owner/bookings/:bookingId/ticket',
-        builder: (context, state) {
+        pageBuilder: (context, state) {
           final bookingId = state.pathParameters['bookingId'] ?? '';
-          return ParkingTicketPage(bookingId: bookingId);
+          return _fastPage(
+            state: state,
+            child: ParkingTicketPage(bookingId: bookingId),
+          );
         },
       ),
       GoRoute(
         path: '/vehicle-owner/bookings/:bookingId/pay',
-        builder: (context, state) {
+        pageBuilder: (context, state) {
           final bookingId = state.pathParameters['bookingId'] ?? '';
-          return ParkingPaymentPage(bookingId: bookingId);
+          return _fastPage(
+            state: state,
+            child: ParkingPaymentPage(bookingId: bookingId),
+          );
         },
       ),
       GoRoute(
         path: '/vehicle-owner/bookings/:bookingId/receipt',
-        builder: (context, state) {
+        pageBuilder: (context, state) {
           final bookingId = state.pathParameters['bookingId'] ?? '';
-          return ParkingReceiptPage(bookingId: bookingId);
+          return _fastPage(
+            state: state,
+            child: ParkingReceiptPage(bookingId: bookingId),
+          );
         },
       ),
       GoRoute(
         path: '/vehicle-owner/bookings/:bookingId',
-        builder: (context, state) {
+        pageBuilder: (context, state) {
           final bookingId = state.pathParameters['bookingId'] ?? '';
-          return BookingDetailPage(bookingId: bookingId);
+          return _fastPage(
+            state: state,
+            child: BookingDetailPage(bookingId: bookingId),
+          );
         },
       ),
       GoRoute(
         path: RoutePaths.securityScan,
-        builder: (_, __) => const SecurityScanPage(),
+        pageBuilder: (context, state) => _fastPage(
+          state: state,
+          child: const SecurityScanPage(),
+        ),
       ),
       GoRoute(
         path: '/security/scan',
@@ -395,15 +528,24 @@ final appRouterProvider = Provider<GoRouter>((ref) {
 
       GoRoute(
         path: RoutePaths.mapPicker,
-        builder: (_, __) => const MapPickerPage(),
+        pageBuilder: (context, state) => _fastPage(
+          state: state,
+          child: const MapPickerPage(),
+        ),
       ),
       GoRoute(
         path: RoutePaths.nearbyParkingMap,
-        builder: (_, __) => const NearbyParkingMapPage(),
+        pageBuilder: (context, state) => _fastPage(
+          state: state,
+          child: const NearbyParkingMapPage(),
+        ),
       ),
       GoRoute(
         path: RoutePaths.savedCoordinates,
-        builder: (_, __) => const SavedCoordinatesPage(),
+        pageBuilder: (context, state) => _fastPage(
+          state: state,
+          child: const SavedCoordinatesPage(),
+        ),
       ),
     ],
   );

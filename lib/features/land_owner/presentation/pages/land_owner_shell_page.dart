@@ -20,20 +20,7 @@ class LandOwnerShellPage extends ConsumerStatefulWidget {
 
 class _LandOwnerShellPageState extends ConsumerState<LandOwnerShellPage> {
   late int _currentIndex;
-
-  @override
-  void initState() {
-    super.initState();
-    _currentIndex = widget.initialIndex;
-  }
-
-  @override
-  void didUpdateWidget(covariant LandOwnerShellPage oldWidget) {
-    super.didUpdateWidget(oldWidget);
-    if (oldWidget.initialIndex != widget.initialIndex) {
-      _currentIndex = widget.initialIndex;
-    }
-  }
+  late final Set<int> _builtTabs;
 
   static const _pages = [
     LandOwnerDashboardPage(),
@@ -42,18 +29,41 @@ class _LandOwnerShellPageState extends ConsumerState<LandOwnerShellPage> {
     LandOwnerProfilePage(),
   ];
 
+  static const _tabPaths = [
+    RoutePaths.landOwnerDashboard,
+    RoutePaths.landOwnerHistory,
+    RoutePaths.landOwnerNotifications,
+    RoutePaths.landOwnerProfile,
+  ];
+
+  @override
+  void initState() {
+    super.initState();
+    _currentIndex = widget.initialIndex.clamp(0, _pages.length - 1);
+    _builtTabs = {_currentIndex};
+  }
+
+  @override
+  void didUpdateWidget(covariant LandOwnerShellPage oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.initialIndex != widget.initialIndex) {
+      final next = widget.initialIndex.clamp(0, _pages.length - 1);
+      setState(() {
+        _currentIndex = next;
+        _builtTabs.add(next);
+      });
+    }
+  }
+
   void _selectTab(int index) {
     if (_currentIndex == index) return;
-    setState(() => _currentIndex = index);
-    switch (index) {
-      case 0:
-        context.go(RoutePaths.landOwnerDashboard);
-      case 1:
-        context.go(RoutePaths.landOwnerHistory);
-      case 2:
-        context.go(RoutePaths.landOwnerNotifications);
-      case 3:
-        context.go(RoutePaths.landOwnerProfile);
+    setState(() {
+      _currentIndex = index;
+      _builtTabs.add(index);
+    });
+    final target = _tabPaths[index.clamp(0, _tabPaths.length - 1)];
+    if (GoRouterState.of(context).uri.path != target) {
+      context.go(target);
     }
   }
 
@@ -62,7 +72,14 @@ class _LandOwnerShellPageState extends ConsumerState<LandOwnerShellPage> {
     return AppShellScaffold(
       body: IndexedStack(
         index: _currentIndex,
-        children: _pages,
+        sizing: StackFit.expand,
+        children: [
+          for (var i = 0; i < _pages.length; i++)
+            if (_builtTabs.contains(i))
+              _pages[i]
+            else
+              const SizedBox.shrink(),
+        ],
       ),
       selectedIndex: _currentIndex,
       onDestinationSelected: _selectTab,

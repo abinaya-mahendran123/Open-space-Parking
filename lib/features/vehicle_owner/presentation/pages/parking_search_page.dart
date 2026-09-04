@@ -89,7 +89,6 @@ class _ParkingSearchPageState extends ConsumerState<ParkingSearchPage> {
         userLongitude: location.longitude,
       );
       ref.invalidate(locationPermissionProvider);
-      ref.invalidate(parkingListingsProvider);
 
       if (showSuccessMessage) {
         ref.read(snackbarServiceProvider).showSuccess('Location found.');
@@ -120,7 +119,6 @@ class _ParkingSearchPageState extends ConsumerState<ParkingSearchPage> {
       return;
     }
     context.push(RoutePaths.vehicleOwnerParkingDetail(key));
-    ref.invalidate(parkingListingProvider(key));
   }
 
   void _applySearch() {
@@ -131,7 +129,6 @@ class _ParkingSearchPageState extends ConsumerState<ParkingSearchPage> {
           : _searchController.text.trim(),
       clearQuery: _searchController.text.trim().isEmpty,
     );
-    ref.invalidate(parkingListingsProvider);
   }
 
   void _showFilters() {
@@ -143,7 +140,7 @@ class _ParkingSearchPageState extends ConsumerState<ParkingSearchPage> {
         borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
       ),
       builder: (_) => const SearchFiltersSheet(),
-    ).then((_) => ref.invalidate(parkingListingsProvider));
+    );
   }
 
   List<MapMarkerData> _listingMarkers(List<ParkingListing> listings) {
@@ -405,11 +402,11 @@ class _ParkingSearchPageState extends ConsumerState<ParkingSearchPage> {
                   : null,
               border: OutlineInputBorder(
                 borderRadius: BorderRadius.circular(14),
-                borderSide: BorderSide(color: AppColors.border),
+                borderSide: const BorderSide(color: AppColors.border),
               ),
               enabledBorder: OutlineInputBorder(
                 borderRadius: BorderRadius.circular(14),
-                borderSide: BorderSide(color: AppColors.border),
+                borderSide: const BorderSide(color: AppColors.border),
               ),
               focusedBorder: OutlineInputBorder(
                 borderRadius: BorderRadius.circular(14),

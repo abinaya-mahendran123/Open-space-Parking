@@ -28,16 +28,24 @@ class ParkingTicketPage extends ConsumerStatefulWidget {
 class _ParkingTicketPageState extends ConsumerState<ParkingTicketPage> {
   Timer? _pollTimer;
   Timer? _tickTimer;
+  final ValueNotifier<DateTime> _now = ValueNotifier(DateTime.now());
 
   @override
   void initState() {
     super.initState();
     _pollTimer = Timer.periodic(const Duration(seconds: 4), (_) {
       if (!mounted) return;
+      final booking = ref.read(bookingDetailProvider(widget.bookingId)).valueOrNull;
+      if (booking != null &&
+          (booking.status == BookingStatus.completed ||
+              booking.status == BookingStatus.cancelled)) {
+        return;
+      }
       ref.invalidate(bookingDetailProvider(widget.bookingId));
     });
     _tickTimer = Timer.periodic(const Duration(seconds: 1), (_) {
-      if (mounted) setState(() {});
+      if (!mounted) return;
+      _now.value = DateTime.now();
     });
   }
 
@@ -45,6 +53,7 @@ class _ParkingTicketPageState extends ConsumerState<ParkingTicketPage> {
   void dispose() {
     _pollTimer?.cancel();
     _tickTimer?.cancel();
+    _now.dispose();
     super.dispose();
   }
 
@@ -86,7 +95,13 @@ class _ParkingTicketPageState extends ConsumerState<ParkingTicketPage> {
         title: const Text('Parking pass'),
         leading: IconButton(
           icon: const Icon(Icons.close),
-          onPressed: () => context.go(RoutePaths.vehicleOwnerBookings),
+          onPressed: () {
+            if (context.canPop()) {
+              context.pop();
+            } else {
+              context.go(RoutePaths.vehicleOwnerBookings);
+            }
+          },
         ),
       ),
       body: bookingAsync.when(
@@ -174,10 +189,13 @@ class _ParkingTicketPageState extends ConsumerState<ParkingTicketPage> {
                     ),
                     if (booking.isParked) ...[
                       const SizedBox(height: 8),
-                      Text(
-                        booking.elapsedClock(),
-                        style: theme.textTheme.titleLarge?.copyWith(
-                          fontWeight: FontWeight.w700,
+                      ValueListenableBuilder<DateTime>(
+                        valueListenable: _now,
+                        builder: (_, __, ___) => Text(
+                          booking.elapsedClock(),
+                          style: theme.textTheme.titleLarge?.copyWith(
+                            fontWeight: FontWeight.w700,
+                          ),
                         ),
                       ),
                     ],
@@ -230,7 +248,7 @@ class _ParkingTicketPageState extends ConsumerState<ParkingTicketPage> {
               ] else if (booking.status == BookingStatus.completed) ...[
                 const SizedBox(height: AppSpacing.lg),
                 FilledButton.icon(
-                  onPressed: () => context.go(
+                  onPressed: () => context.push(
                     RoutePaths.vehicleOwnerBookingReceipt(booking.id),
                   ),
                   icon: const Icon(Icons.receipt_long),

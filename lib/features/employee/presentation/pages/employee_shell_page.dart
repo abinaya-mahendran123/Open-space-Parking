@@ -29,12 +29,22 @@ class _EmployeeShellPageState extends ConsumerState<EmployeeShellPage> {
     EmployeeNotificationsPage(),
   ];
 
+  static const _tabPaths = [
+    RoutePaths.employeeDashboard,
+    RoutePaths.employeeAssigned,
+    RoutePaths.employeeCompleted,
+    RoutePaths.employeeNotifications,
+  ];
+
+  late final Set<int> _builtTabs;
+
   @override
   void initState() {
     super.initState();
+    final index = widget.initialIndex.clamp(0, _pages.length - 1);
+    _builtTabs = {index};
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
-      final index = widget.initialIndex.clamp(0, _pages.length - 1);
       ref.read(employeeShellTabProvider.notifier).state = index;
     });
   }
@@ -44,22 +54,33 @@ class _EmployeeShellPageState extends ConsumerState<EmployeeShellPage> {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.initialIndex != widget.initialIndex) {
       final index = widget.initialIndex.clamp(0, _pages.length - 1);
+      setState(() => _builtTabs.add(index));
       ref.read(employeeShellTabProvider.notifier).state = index;
     }
   }
 
   void _onSelect(int index) {
-    ref.read(employeeShellTabProvider.notifier).state = index;
-    switch (index) {
-      case 0:
-        context.go(RoutePaths.employeeDashboard);
-      case 1:
-        context.go(RoutePaths.employeeAssigned);
-      case 2:
-        context.go(RoutePaths.employeeCompleted);
-      case 3:
-        context.go(RoutePaths.employeeNotifications);
+    final next = index.clamp(0, _pages.length - 1);
+    setState(() => _builtTabs.add(next));
+    ref.read(employeeShellTabProvider.notifier).state = next;
+    final target = _tabPaths[next];
+    if (GoRouterState.of(context).uri.path != target) {
+      context.go(target);
     }
+  }
+
+  Widget _tabBody(int safeIndex) {
+    return IndexedStack(
+      index: safeIndex,
+      sizing: StackFit.expand,
+      children: [
+        for (var i = 0; i < _pages.length; i++)
+          if (_builtTabs.contains(i))
+            _pages[i]
+          else
+            const SizedBox.shrink(),
+      ],
+    );
   }
 
   void _openProfile() {
@@ -140,7 +161,7 @@ class _EmployeeShellPageState extends ConsumerState<EmployeeShellPage> {
                 ],
               ),
               const VerticalDivider(width: 1),
-              Expanded(child: _pages[safeIndex]),
+              Expanded(child: _tabBody(safeIndex)),
             ],
           ),
         ),
@@ -149,7 +170,7 @@ class _EmployeeShellPageState extends ConsumerState<EmployeeShellPage> {
 
     return AppShellScaffold(
       appBar: appBar,
-      body: _pages[safeIndex],
+      body: _tabBody(safeIndex),
       selectedIndex: safeIndex,
       onDestinationSelected: _onSelect,
       destinations: const [

@@ -106,13 +106,19 @@ const UNIQUE_FALLBACKS = {
 };
 
 async function upsertByColumn(pool, table, row, keys, altColumn) {
-  const setSql = keys
-    .filter((key) => key !== altColumn)
-    .map((key, i) => `"${key}" = $${i + 1}`)
-    .join(', ');
-  const setValues = keys.filter((key) => key !== altColumn).map((key) => row[key]);
+  // Match on secondary unique fields without rewriting the primary key.
+  // Duplicate mongo docs can share an email/phone with different ids.
+  const setKeys = keys.filter((key) => key !== altColumn && key !== 'id');
+  if (!setKeys.length) return;
+  const setSql = setKeys.map((key, i) => `"${key}" = $${i + 1}`).join(', ');
+  const setValues = setKeys.map((key) => row[key]);
+  const whereIndex = setValues.length + 1;
+  const whereSql =
+    altColumn === 'email'
+      ? `lower("${altColumn}") = lower($${whereIndex})`
+      : `"${altColumn}" = $${whereIndex}`;
   await pool.query(
-    `update public.${table} set ${setSql} where "${altColumn}" = $${setValues.length + 1}`,
+    `update public.${table} set ${setSql} where ${whereSql}`,
     [...setValues, row[altColumn]],
   );
 }
@@ -145,14 +151,51 @@ async function upsert(pool, table, row) {
         if (fallbackError.code !== '23505') throw fallbackError;
       }
     }
-    throw error;
+    // Last resort: drop conflicting secondary unique fields and update by id only.
+    try {
+      const relaxed = { ...row };
+      for (const alt of fallbacks) {
+        if (alt === 'email' && relaxed.email) {
+          relaxed.email = `${relaxed.id}@dup.placeholder.local`;
+        }
+        if (alt === 'phone') {
+          relaxed.phone = null;
+        }
+      }
+      const relaxedKeys = Object.keys(relaxed).filter(
+        (key) => relaxed[key] !== undefined,
+      );
+      const relaxedCols = relaxedKeys.map((key) => `"${key}"`).join(', ');
+      const relaxedPlaceholders = relaxedKeys
+        .map((_, i) => `$${i + 1}`)
+        .join(', ');
+      const relaxedUpdates = relaxedKeys
+        .filter((key) => key !== 'id')
+        .map((key) => `"${key}" = excluded."${key}"`)
+        .join(', ');
+      await pool.query(
+        `insert into public.${table} (${relaxedCols}) values (${relaxedPlaceholders})
+         on conflict (id) do update set ${relaxedUpdates}`,
+        relaxedKeys.map((key) => relaxed[key]),
+      );
+      return;
+    } catch (_) {
+      throw error;
+    }
   }
+}
+
+function uniqueEmail(doc) {
+  const email = asText(doc.email).trim().toLowerCase();
+  if (email) return email;
+  const id = rowId(doc) || 'unknown';
+  return `user-${id}@placeholder.local`;
 }
 
 function usersRow(doc) {
   return {
     id: rowId(doc),
-    email: asText(doc.email).trim().toLowerCase(),
+    email: uniqueEmail(doc),
     phone: asNullableText(doc.phone),
     display_name: asText(doc.displayName || doc.fullName),
     role: canonicalRole(doc.role),
@@ -168,10 +211,12 @@ function usersRow(doc) {
 }
 
 function employeesRow(doc) {
+  const id = rowId(doc);
+  const emailRaw = asText(doc.email).trim().toLowerCase();
   return {
-    id: rowId(doc),
+    id,
     full_name: asText(doc.fullName || doc.displayName, 'Employee'),
-    email: asText(doc.email).trim().toLowerCase(),
+    email: emailRaw || `employee-${id}@placeholder.local`,
     phone: asText(doc.phone),
     role_title: asText(doc.roleTitle || doc.role, 'Field Employee'),
     is_active: asBool(doc.isActive, true),

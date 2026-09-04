@@ -58,7 +58,7 @@ class EmployeeDashboardPage extends ConsumerWidget {
                 children: [
                   LayoutBuilder(
                     builder: (context, constraints) {
-                      final spacing = AppSpacing.md;
+                      const spacing = AppSpacing.md;
                       final cellWidth = (constraints.maxWidth -
                               spacing * (crossAxisCount - 1)) /
                           crossAxisCount;

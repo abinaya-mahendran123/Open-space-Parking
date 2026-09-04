@@ -1,8 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
-import 'package:open_space_parking/core/theme/app_colors.dart';
-
 /// Shared shell layout with Open Sky bottom navigation.
 class AppShellScaffold extends StatefulWidget {
   const AppShellScaffold({
@@ -66,9 +64,7 @@ class _AppShellScaffoldState extends State<AppShellScaffold> {
         body: widget.body,
         bottomNavigationBar: DecoratedBox(
           decoration: BoxDecoration(
-            color: isLight
-                ? AppColors.card
-                : Theme.of(context).colorScheme.surfaceContainer,
+            color: Theme.of(context).colorScheme.surfaceContainer,
             border: Border(
               top: BorderSide(
                 color: Theme.of(context)

@@ -122,34 +122,49 @@ class _AccountSettingsPageState extends ConsumerState<AccountSettingsPage> {
                       ),
                     ),
                     const SizedBox(height: 8),
-                    for (var i = 0; i < _themeOptions.length; i++) ...[
-                      if (i > 0) const Divider(height: 1),
-                      ListTile(
-                        contentPadding: EdgeInsets.zero,
-                        title: Text(
-                          _themeLabel(_themeOptions[i]),
-                          style: Theme.of(ctx).textTheme.titleMedium?.copyWith(
-                                color: colorScheme.onSurface,
+                    RadioGroup<ThemeMode>(
+                      groupValue: draft,
+                      onChanged: (value) {
+                        if (value == null) return;
+                        setSheetState(() => draft = value);
+                      },
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          for (var i = 0; i < _themeOptions.length; i++) ...[
+                            if (i > 0) const Divider(height: 1),
+                            ListTile(
+                              contentPadding: EdgeInsets.zero,
+                              title: Text(
+                                _themeLabel(_themeOptions[i]),
+                                style: Theme.of(ctx)
+                                    .textTheme
+                                    .titleMedium
+                                    ?.copyWith(
+                                      color: colorScheme.onSurface,
+                                    ),
                               ),
-                        ),
-                        subtitle: Text(
-                          _themeSubtitle(_themeOptions[i]),
-                          style: Theme.of(ctx).textTheme.bodySmall?.copyWith(
-                                color: colorScheme.onSurfaceVariant,
+                              subtitle: Text(
+                                _themeSubtitle(_themeOptions[i]),
+                                style: Theme.of(ctx)
+                                    .textTheme
+                                    .bodySmall
+                                    ?.copyWith(
+                                      color: colorScheme.onSurfaceVariant,
+                                    ),
                               ),
-                        ),
-                        trailing: Radio<ThemeMode>(
-                          value: _themeOptions[i],
-                          groupValue: draft,
-                          activeColor: colorScheme.primary,
-                          onChanged: (value) {
-                            if (value == null) return;
-                            setSheetState(() => draft = value);
-                          },
-                        ),
-                        onTap: () => setSheetState(() => draft = _themeOptions[i]),
+                              trailing: Radio<ThemeMode>(
+                                value: _themeOptions[i],
+                                activeColor: colorScheme.primary,
+                              ),
+                              onTap: () => setSheetState(
+                                () => draft = _themeOptions[i],
+                              ),
+                            ),
+                          ],
+                        ],
                       ),
-                    ],
+                    ),
                     const SizedBox(height: 20),
                     SizedBox(
                       width: double.infinity,

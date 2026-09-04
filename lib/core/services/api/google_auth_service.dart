@@ -86,7 +86,7 @@ class GoogleAuthService {
       try {
         account = await _googleSignIn.signIn().timeout(
           // Web popup should resolve quickly; give it 60s before giving up.
-          Duration(seconds: kIsWeb ? 60 : 120),
+          const Duration(seconds: kIsWeb ? 60 : 120),
           onTimeout: () => throw const AppException(
             'Google sign-in timed out. '
             'If a popup was blocked, allow popups for this site and try again.',

@@ -8,6 +8,7 @@ import 'package:open_space_parking/core/widgets/layout/app_shell_scaffold.dart';
 import 'package:open_space_parking/features/account/presentation/pages/role_account_pages.dart';
 import 'package:open_space_parking/features/admin/presentation/pages/admin_dashboard_page.dart';
 import 'package:open_space_parking/features/admin/presentation/pages/admin_employees_page.dart';
+import 'package:open_space_parking/features/admin/presentation/pages/admin_operations_page.dart';
 import 'package:open_space_parking/features/admin/presentation/pages/admin_statistics_page.dart';
 import 'package:open_space_parking/features/admin/presentation/pages/admin_tickets_page.dart';
 import 'package:open_space_parking/features/admin/presentation/providers/admin_providers.dart';
@@ -29,12 +30,14 @@ class AdminShellPage extends ConsumerStatefulWidget {
 
 class _AdminShellPageState extends ConsumerState<AdminShellPage> {
   late int _currentIndex;
+  late final Set<int> _builtTabs;
 
   static const _pages = [
     AdminDashboardPage(),
     AdminTicketsPage(),
     AdminEmployeesPage(),
     AdminStatisticsPage(),
+    AdminOperationsPage(),
   ];
 
   static const _destinations = [
@@ -58,12 +61,26 @@ class _AdminShellPageState extends ConsumerState<AdminShellPage> {
       selectedIcon: Icon(Icons.bar_chart),
       label: 'Statistics',
     ),
+    NavigationDestination(
+      icon: Icon(Icons.insights_outlined),
+      selectedIcon: Icon(Icons.insights),
+      label: 'Operations',
+    ),
+  ];
+
+  static const _tabPaths = [
+    RoutePaths.adminPortal,
+    RoutePaths.adminTickets,
+    RoutePaths.adminEmployees,
+    RoutePaths.adminStatistics,
+    RoutePaths.adminOperations,
   ];
 
   @override
   void initState() {
     super.initState();
     _currentIndex = widget.initialIndex.clamp(0, _pages.length - 1);
+    _builtTabs = {_currentIndex};
     if (widget.ticketStatusFilter != null) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
         _applyStatusFilter(widget.ticketStatusFilter!);
@@ -75,13 +92,20 @@ class _AdminShellPageState extends ConsumerState<AdminShellPage> {
   void didUpdateWidget(covariant AdminShellPage oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.initialIndex != widget.initialIndex) {
-      setState(
-        () => _currentIndex = widget.initialIndex.clamp(0, _pages.length - 1),
-      );
+      final next = widget.initialIndex.clamp(0, _pages.length - 1);
+      setState(() {
+        _currentIndex = next;
+        _builtTabs.add(next);
+      });
     }
     if (oldWidget.ticketStatusFilter != widget.ticketStatusFilter &&
         widget.ticketStatusFilter != null) {
-      _applyStatusFilter(widget.ticketStatusFilter!);
+      final filter = widget.ticketStatusFilter!;
+      // Defer provider writes — didUpdateWidget runs during the build phase.
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        _applyStatusFilter(filter);
+      });
     }
   }
 
@@ -104,16 +128,17 @@ class _AdminShellPageState extends ConsumerState<AdminShellPage> {
   }
 
   void _onSelect(int index) {
-    setState(() => _currentIndex = index);
-    switch (index) {
-      case 0:
-        context.go(RoutePaths.adminPortal);
-      case 1:
-        context.go(RoutePaths.adminTickets);
-      case 2:
-        context.go(RoutePaths.adminEmployees);
-      case 3:
-        context.go(RoutePaths.adminStatistics);
+    final next = index.clamp(0, _pages.length - 1);
+    if (next != _currentIndex) {
+      setState(() {
+        _currentIndex = next;
+        _builtTabs.add(next);
+      });
+    }
+    final target = _tabPaths[next];
+    final currentPath = GoRouterState.of(context).uri.path;
+    if (currentPath != target) {
+      context.go(target);
     }
   }
 
@@ -128,11 +153,25 @@ class _AdminShellPageState extends ConsumerState<AdminShellPage> {
     );
   }
 
+  Widget _tabBody(int safeIndex) {
+    return IndexedStack(
+      index: safeIndex,
+      sizing: StackFit.expand,
+      children: [
+        for (var i = 0; i < _pages.length; i++)
+          if (_builtTabs.contains(i))
+            _pages[i]
+          else
+            const SizedBox.shrink(),
+      ],
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final isWide = context.isDesktop || context.isTablet;
     final safeIndex = _currentIndex.clamp(0, _pages.length - 1);
-    final body = _pages[safeIndex];
+    final body = _tabBody(safeIndex);
     final atHome = safeIndex == 0;
 
     final appBar = AppBar(
@@ -190,6 +229,11 @@ class _AdminShellPageState extends ConsumerState<AdminShellPage> {
                     icon: Icon(Icons.bar_chart_outlined),
                     selectedIcon: Icon(Icons.bar_chart),
                     label: Text('Statistics'),
+                  ),
+                  NavigationRailDestination(
+                    icon: Icon(Icons.insights_outlined),
+                    selectedIcon: Icon(Icons.insights),
+                    label: Text('Operations'),
                   ),
                 ],
               ),

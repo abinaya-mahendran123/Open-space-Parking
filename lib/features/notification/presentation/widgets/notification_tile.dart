@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 
 import 'package:open_space_parking/core/theme/app_spacing.dart';
-import 'package:open_space_parking/core/widgets/animations/app_fade_slide.dart';
 import 'package:open_space_parking/core/widgets/cards/app_card.dart';
 import 'package:open_space_parking/features/notification/domain/entities/app_notification.dart';
 
@@ -30,24 +29,23 @@ class NotificationTile extends StatelessWidget {
   Widget build(BuildContext context) {
     final colorScheme = Theme.of(context).colorScheme;
 
-    return AppFadeSlide(
-      child: AppCard(
-        onTap: onTap,
-        onLongPress: onLongPress,
-        padding: const EdgeInsets.all(AppSpacing.md),
-        color: selected
-            ? colorScheme.primaryContainer.withValues(alpha: 0.45)
-            : notification.isRead
-                ? null
-                : colorScheme.primaryContainer.withValues(alpha: 0.25),
-        child: Row(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            if (selectionMode) ...[
-              Padding(
-                padding: const EdgeInsets.only(right: AppSpacing.sm, top: 8),
-                child: Icon(
-                  selected
+    return AppCard(
+      onTap: onTap,
+      onLongPress: onLongPress,
+      padding: const EdgeInsets.all(AppSpacing.md),
+      color: selected
+          ? colorScheme.primaryContainer.withValues(alpha: 0.45)
+          : notification.isRead
+              ? null
+              : colorScheme.primaryContainer.withValues(alpha: 0.25),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          if (selectionMode) ...[
+            Padding(
+              padding: const EdgeInsets.only(right: AppSpacing.sm, top: 8),
+              child: Icon(
+                selected
                       ? Icons.check_circle
                       : Icons.radio_button_unchecked,
                   color: selected
@@ -127,7 +125,6 @@ class NotificationTile extends StatelessWidget {
               ),
           ],
         ),
-      ),
     );
   }
 }

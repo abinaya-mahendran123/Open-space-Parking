@@ -122,7 +122,13 @@ class _ParkingReceiptPageState extends ConsumerState<ParkingReceiptPage> {
         surfaceTintColor: Colors.transparent,
         leading: IconButton(
           icon: const Icon(Icons.close),
-          onPressed: () => context.go(RoutePaths.vehicleOwnerBookings),
+          onPressed: () {
+            if (context.canPop()) {
+              context.pop();
+            } else {
+              context.go(RoutePaths.vehicleOwnerBookings);
+            }
+          },
         ),
       ),
       body: bookingAsync.when(
@@ -140,7 +146,7 @@ class _ParkingReceiptPageState extends ConsumerState<ParkingReceiptPage> {
           return ListView(
             padding: const EdgeInsets.all(16),
             children: [
-              Icon(
+              const Icon(
                 Icons.check_circle,
                 size: 64,
                 color: AppColors.available,

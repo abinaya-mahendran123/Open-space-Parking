@@ -320,7 +320,7 @@ class GovernmentIdOwnerDetailsFormState
               ListTile(
                 leading: const CircleAvatar(child: Icon(Icons.camera_alt_outlined)),
                 title: const Text('Use Camera'),
-                subtitle: Text(
+                subtitle: const Text(
                   kIsWeb
                       ? 'Opens your device or browser camera to take a photo'
                       : 'Opens the phone camera to capture your Aadhaar card',

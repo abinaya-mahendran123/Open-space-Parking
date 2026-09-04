@@ -6,7 +6,6 @@ import 'package:open_space_parking/core/routes/route_paths.dart';
 import 'package:open_space_parking/core/theme/app_colors.dart';
 import 'package:open_space_parking/core/theme/app_spacing.dart';
 import 'package:open_space_parking/core/utils/responsive.dart';
-import 'package:open_space_parking/core/widgets/animations/app_fade_slide.dart';
 import 'package:open_space_parking/core/widgets/errors/app_error_widget.dart';
 import 'package:open_space_parking/core/widgets/layout/app_page_header.dart';
 import 'package:open_space_parking/core/widgets/layout/responsive_page.dart';
@@ -45,8 +44,7 @@ class AdminDashboardPage extends ConsumerWidget {
           child: ResponsivePage(
             maxWidth: responsiveMaxWidth(context),
             scrollable: true,
-            child: AppFadeSlide(
-              child: Column(
+            child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   AppPageHeader(
@@ -147,6 +145,11 @@ class AdminDashboardPage extends ConsumerWidget {
                         icon: const Icon(Icons.group_add),
                         label: const Text('Employee Management'),
                       ),
+                      FilledButton.tonalIcon(
+                        onPressed: () => context.go(RoutePaths.adminOperations),
+                        icon: const Icon(Icons.insights_outlined),
+                        label: const Text('Payments & Cars'),
+                      ),
                       OutlinedButton.icon(
                         onPressed: () => context.go(RoutePaths.adminStatistics),
                         icon: const Icon(Icons.analytics_outlined),
@@ -156,7 +159,6 @@ class AdminDashboardPage extends ConsumerWidget {
                   ),
                 ],
               ),
-            ),
           ),
         );
       },

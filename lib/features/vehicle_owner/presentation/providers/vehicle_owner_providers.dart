@@ -28,6 +28,7 @@ final searchFiltersProvider = StateProvider<SearchFilters>(
 );
 
 final parkingListingsProvider = FutureProvider<List<ParkingListing>>((ref) async {
+  ref.keepAlive();
   final filters = ref.watch(searchFiltersProvider);
   final ownerId = ref.watch(
     authStateProvider.select((state) => state.session?.userId ?? ''),
@@ -41,26 +42,31 @@ final parkingListingsProvider = FutureProvider<List<ParkingListing>>((ref) async
 
 final parkingListingProvider =
     FutureProvider.family<ParkingListing?, String>((ref, listingId) async {
+  ref.keepAlive();
   return ref.read(vehicleOwnerRepositoryProvider).getParkingListing(listingId);
 });
 
 final parkingAvailabilityProvider =
     FutureProvider.family<ParkingAvailability, String>((ref, listingId) async {
+  ref.keepAlive();
   return ref.read(vehicleOwnerRepositoryProvider).getCurrentAvailability(listingId);
 });
 
 final parkingReviewsProvider =
     FutureProvider.family<List<ParkingReview>, String>((ref, listingId) async {
+  ref.keepAlive();
   return ref.read(vehicleOwnerRepositoryProvider).getReviews(listingId);
 });
 
 final parkingRatingSummaryProvider =
     FutureProvider.family<ParkingRatingSummary, String>((ref, listingId) async {
+  ref.keepAlive();
   return ref.read(vehicleOwnerRepositoryProvider).getRatingSummary(listingId);
 });
 
 final isFavoriteProvider = FutureProvider.family<bool, ({String ownerId, String listingId})>(
   (ref, params) async {
+    ref.keepAlive();
     return ref.read(vehicleOwnerRepositoryProvider).isFavorite(
           vehicleOwnerId: params.ownerId,
           parkingListingId: params.listingId,
@@ -70,23 +76,27 @@ final isFavoriteProvider = FutureProvider.family<bool, ({String ownerId, String 
 
 final favoritesProvider =
     FutureProvider.family<List<FavoriteParking>, String>((ref, vehicleOwnerId) async {
+  ref.keepAlive();
   if (vehicleOwnerId.trim().isEmpty) return const [];
   return ref.read(vehicleOwnerRepositoryProvider).getFavorites(vehicleOwnerId);
 });
 
 final vehicleOwnerBookingsProvider =
     FutureProvider.family<List<Booking>, String>((ref, vehicleOwnerId) async {
+  ref.keepAlive();
   if (vehicleOwnerId.trim().isEmpty) return const [];
   return ref.read(vehicleOwnerRepositoryProvider).getBookings(vehicleOwnerId);
 });
 
 final bookingDetailProvider =
     FutureProvider.family<Booking?, String>((ref, bookingId) async {
+  ref.keepAlive();
   return ref.read(vehicleOwnerRepositoryProvider).getBooking(bookingId);
 });
 
 final vehicleOwnerProfileProvider =
     FutureProvider.family<VehicleOwnerProfile?, String>((ref, vehicleOwnerId) async {
+  ref.keepAlive();
   if (vehicleOwnerId.trim().isEmpty) return null;
   return ref.read(vehicleOwnerRepositoryProvider).getProfile(vehicleOwnerId);
 });
@@ -94,6 +104,7 @@ final vehicleOwnerProfileProvider =
 final vehicleOwnerNotificationsProvider =
     FutureProvider.family<List<VehicleOwnerNotification>, String>(
         (ref, vehicleOwnerId) async {
+  ref.keepAlive();
   if (vehicleOwnerId.trim().isEmpty) return const [];
   return ref
       .read(vehicleOwnerNotificationRepositoryProvider)
@@ -102,6 +113,7 @@ final vehicleOwnerNotificationsProvider =
 
 final vehicleOwnerUnreadCountProvider =
     FutureProvider.family<int, String>((ref, vehicleOwnerId) async {
+  ref.keepAlive();
   if (vehicleOwnerId.trim().isEmpty) return 0;
   return ref.read(notificationRepositoryProvider).getUnreadCount(
         recipientId: vehicleOwnerId,

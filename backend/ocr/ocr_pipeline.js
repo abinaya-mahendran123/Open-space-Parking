@@ -25,6 +25,7 @@ const {
   isMisclassifiedEnrollmentSheet,
   extractPhone,
   extractIdNumber,
+  scoreNameCandidate,
 } = require('./field_extraction');
 const { paddleResultToText, averageConfidence } = require('./paddleocr_text');
 const { logOcr } = require('./ocr_logging');
@@ -74,10 +75,14 @@ function needsContrastRetryForFields(fields, idType) {
   if (idType !== 'aadhaar') return false;
   const addr = String(fields.address || '');
   const uid = String(fields.governmentIdNumber || '').replace(/\D/g, '');
-  if (addr.length >= 20 && /\b\d{6}\b/.test(addr)) return false;
+  const nameOk = Boolean(fields.fullName) && scoreNameCandidate(fields.fullName) >= 12;
+  // Front crops: retry when name is still missing even if UID already looks valid.
+  if (!nameOk && !addr) return true;
+  if (addr.length >= 20 && /\b\d{6}\b/.test(addr) && nameOk) return false;
   if (
     uid.length === 12 &&
     isValidAadhaarChecksum(uid) &&
+    nameOk &&
     addr.length >= 12 &&
     (/\b\d{6}\b/.test(addr) ||
       /\b(street|nagar|puram|district|state|tamil)/i.test(addr))
@@ -203,7 +208,7 @@ async function runPaddleFrontBack(
   supplementaryBuffers = [],
 ) {
   const qualityPreprocess = { maxWidth: 1280, minUpscale: 1000, jpegQuality: 88 };
-  const fastCrop = { maxWidth: 1120, minUpscale: 900, jpegQuality: 85 };
+  const fastCrop = { maxWidth: 960, minUpscale: 840, jpegQuality: 82 };
   const primaryLangs = primaryOcrLangs();
   const addressLangs = addressOcrLangs();
   const isEnrollment = uploadLayout === 'enrollment_sheet';
@@ -266,7 +271,17 @@ async function runPaddleFrontBack(
       });
     });
   } else if (isEnrollment) {
-    // Two fast crops: full left column (letter + address) + card-back compressed line.
+    // Card front (name/UID) + letter/address crop + optional card-back line.
+    if (frontBuffer && frontBuffer !== backBuffer) {
+      jobs.push({
+        role: 'front',
+        buffer: frontBuffer,
+        // Contrast retry on front helps first-attempt name/UID accuracy.
+        allowContrastRetry: true,
+        preprocess: qualityPreprocess,
+        langs: primaryLangs,
+      });
+    }
     jobs.push({
       role: 'back',
       buffer: backBuffer,
@@ -380,8 +395,9 @@ async function runPaddleFrontBack(
   if (uploadLayout === 'enrollment_sheet') {
     const letterText = back?.frontText || '';
     const cardBackText = byRole.extra0?.frontText || '';
-    if (isMisclassifiedEnrollmentSheet(letterText, cardBackText, frontText)) {
-      const combinedBack = [letterText, cardBackText, frontText].filter(Boolean).join('\n');
+    const cardFrontText = byRole.front?.frontText || frontText || '';
+    if (isMisclassifiedEnrollmentSheet(letterText, cardBackText, cardFrontText)) {
+      const combinedBack = [letterText, cardBackText, cardFrontText].filter(Boolean).join('\n');
       const mismerged = mergeExtractedForSingleSide('', combinedBack, idType, 'back', {
         preserveUnicode: true,
       });
@@ -394,7 +410,7 @@ async function runPaddleFrontBack(
       };
     } else {
       const enrollmentMerged = mergeExtractedForEnrollmentSheet(
-        '',
+        cardFrontText,
         letterText,
         cardBackText,
         idType,
@@ -499,18 +515,25 @@ async function applyTesseractFallback({
   if (uploadLayout === 'enrollment_sheet') {
     const uidBuffer = uidScanBuffer || frontBuffer;
     const targets = [];
+    const roles = [];
     if (fallbackPlan.missing?.phone || fallbackPlan.missing?.address) {
       targets.push(runTesseractSide(backBuffer));
+      roles.push('back');
     }
-    if (fallbackPlan.missing?.id && uidBuffer && uidBuffer !== backBuffer) {
-      targets.push(runTesseractSide(uidBuffer));
-    } else if (fallbackPlan.missing?.id) {
-      targets.push(runTesseractSide(backBuffer));
+    if (fallbackPlan.missing?.name || fallbackPlan.missing?.id) {
+      const nameBuffer =
+        fallbackPlan.missing?.name && frontBuffer && frontBuffer !== backBuffer
+          ? frontBuffer
+          : uidBuffer;
+      targets.push(runTesseractSide(nameBuffer || backBuffer));
+      roles.push('front');
     }
     if (targets.length > 0) {
       const results = await Promise.all(targets);
-      backTess = results[0];
-      frontTess = results[1] || null;
+      for (let i = 0; i < results.length; i += 1) {
+        if (roles[i] === 'back') backTess = results[i];
+        else frontTess = results[i];
+      }
     }
   } else if (sameBuffer) {
     frontTess = await runTesseractSide(frontBuffer);
@@ -606,14 +629,7 @@ async function runOcrPipeline({
 
   const uidBuffer = uidScanBuffer || frontBuffer;
   const digitScanPromise =
-    idType === 'aadhaar'
-      ? Promise.all([
-          recognizeAadhaarNumber(uidBuffer),
-          uidBuffer !== frontBuffer ? recognizeAadhaarNumber(frontBuffer) : Promise.resolve(''),
-          uidBuffer !== backBuffer ? recognizeAadhaarNumber(backBuffer) : Promise.resolve(''),
-          extraBuffers[0] ? recognizeAadhaarNumber(extraBuffers[0]) : Promise.resolve(''),
-        ]).then((rows) => rows.find((uid) => uid && isValidAadhaarChecksum(uid)) || '')
-      : Promise.resolve('');
+    idType === 'aadhaar' ? recognizeAadhaarNumber(uidBuffer) : Promise.resolve('');
 
   const [paddle, earlyDigitUid] = await Promise.all([
     skipPaddle
@@ -684,11 +700,8 @@ async function runOcrPipeline({
     (!result.governmentIdNumber || !isValidAadhaarChecksum(result.governmentIdNumber))
   ) {
     const digitUid =
-      earlyDigitUid ||
-      (await recognizeAadhaarNumber(uidBuffer)) ||
-      (await recognizeAadhaarNumber(frontBuffer)) ||
-      (await recognizeAadhaarNumber(backBuffer)) ||
-      (extraBuffers[0] ? await recognizeAadhaarNumber(extraBuffers[0]) : '');
+      (earlyDigitUid && isValidAadhaarChecksum(earlyDigitUid) ? earlyDigitUid : '') ||
+      (await recognizeAadhaarNumber(uidBuffer));
     if (digitUid && isValidAadhaarChecksum(digitUid)) {
       result.governmentIdNumber = digitUid;
       result.aadhaarNumber = digitUid;

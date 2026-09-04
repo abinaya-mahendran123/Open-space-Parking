@@ -5,6 +5,10 @@ const {
   verifiedListingById,
   isPublicParkingListing,
 } = require('./parking_listings');
+const {
+  slotsFromLandArea,
+  resolveCapacity: resolveParkingCapacity,
+} = require('./parking_slots');
 
 const ACTIVE_SLOT_STATUSES = ['confirmed', 'active'];
 const listingLocks = new Map();
@@ -97,7 +101,17 @@ function listingCapacity(listing) {
   const prefs = listing?.parkingPreferences || {};
   const land = listing?.landDetails || {};
   const requestType = String(listing?.requestType || '').toLowerCase();
-  if (requestType === 'build_parking') return 100;
+  if (requestType === 'build_parking') {
+    return resolveParkingCapacity({
+      requestType: 'build_parking',
+      storedNumberOfCars:
+        Number(prefs.numberOfCars) ||
+        Number(prefs.numberOfSlots) ||
+        Number(listing?.capacity) ||
+        Number(listing?.numberOfCars) ||
+        0,
+    });
+  }
 
   const stored =
     Number(prefs.numberOfCars) ||
@@ -109,8 +123,7 @@ function listingCapacity(listing) {
 
   const areaSqFt = Number(land.areaSqFt) || 0;
   if (areaSqFt > 0) {
-    const fromArea = Math.floor(areaSqFt / 150);
-    return fromArea > 0 ? fromArea : 1;
+    return slotsFromLandArea(areaSqFt);
   }
   return 10;
 }

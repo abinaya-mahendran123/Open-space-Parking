@@ -86,7 +86,7 @@ class _ParkingDetailPageState extends ConsumerState<ParkingDetailPage> {
         parkingName: listing.compactDisplayName,
       );
       if (!mounted) return;
-      context.go(RoutePaths.vehicleOwnerParkingTicket(booking.id));
+      context.push(RoutePaths.vehicleOwnerParkingTicket(booking.id));
     } on AppException catch (e) {
       ref.read(snackbarServiceProvider).showError(e.message);
     } catch (_) {
@@ -116,14 +116,6 @@ class _ParkingDetailPageState extends ConsumerState<ParkingDetailPage> {
       freeSlots: listing.freeSlots,
       totalSlots: listing.capacity,
     );
-  }
-
-  @override
-  void initState() {
-    super.initState();
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      ref.invalidate(parkingListingProvider(widget.listingId));
-    });
   }
 
   @override
@@ -214,7 +206,7 @@ class _ParkingDetailPageState extends ConsumerState<ParkingDetailPage> {
                     Row(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Icon(
+                        const Icon(
                           Icons.location_on_outlined,
                           size: 18,
                           color: AppColors.primary,

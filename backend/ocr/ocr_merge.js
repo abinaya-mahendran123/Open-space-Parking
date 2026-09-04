@@ -7,6 +7,7 @@ const {
   isAadhaarBackSide,
   pickBetterAddress,
   mergeAddresses,
+  appendMissingPin,
 } = require('./field_extraction');
 const { paddleResultToText, averageConfidence } = require('./paddleocr_text');
 
@@ -39,12 +40,16 @@ function mergeEngineResults(primary, fallback, idType) {
   const primaryFields = primary.fields || primary;
   const fallbackFields = fallback.fields || fallback.bestFields || fallback;
 
+  const primaryNameScore = scoreNameCandidate(primaryFields.fullName);
+  const fallbackNameScore = scoreNameCandidate(fallbackFields.fullName);
+  const primaryName = primaryNameScore >= 12 ? primaryFields.fullName : '';
+  const fallbackName = fallbackNameScore >= 12 ? fallbackFields.fullName : '';
+
   return {
     fullName:
-      scoreNameCandidate(primaryFields.fullName) >=
-      scoreNameCandidate(fallbackFields.fullName)
-        ? primaryFields.fullName || fallbackFields.fullName || ''
-        : fallbackFields.fullName || primaryFields.fullName || '',
+      primaryNameScore >= fallbackNameScore
+        ? primaryName || fallbackName || ''
+        : fallbackName || primaryName || '',
     address:
       mergeAddresses(primaryFields.address, fallbackFields.address) ||
       primaryFields.address ||
@@ -77,6 +82,18 @@ function mergeFrontBackFieldBundles(frontBundle, backBundle) {
   };
 }
 
+function enrollmentAddressReady(fields) {
+  const rawText = fields.rawText || '';
+  const address = appendMissingPin(fields.address || '', rawText);
+  if (!address || address.length < 20) return false;
+  if (/\b\d{6}\b/.test(address)) return true;
+  return (
+    address.length >= 40 &&
+    /\b(street|nagar|puram|madurai|tamil)\b/i.test(address) &&
+    /\b\d{6}\b/.test(rawText)
+  );
+}
+
 function needsTesseractFallback(fields, idType, options = {}) {
   const uploadLayout = String(options.uploadLayout || fields.uploadLayout || '');
   if (uploadLayout === 'enrollment_sheet') {
@@ -84,17 +101,19 @@ function needsTesseractFallback(fields, idType, options = {}) {
       /\D/g,
       '',
     );
+    const nameOk = Boolean(fields.fullName) && scoreNameCandidate(fields.fullName) >= 12;
     const missing = {
       uid: uid.length !== 12 || !isValidAadhaarChecksum(uid),
       phone: !fields.phone,
-      address: !fields.address || fields.address.length < 20 || !/\b\d{6}\b/.test(fields.address),
+      address: !enrollmentAddressReady(fields),
+      name: !nameOk,
     };
-    if (missing.uid || missing.phone || missing.address) {
+    if (missing.uid || missing.phone || missing.address || missing.name) {
       return {
         needed: true,
         reason: 'enrollment_missing_fields',
         missing: {
-          name: false,
+          name: missing.name,
           address: missing.address,
           id: missing.uid,
           phone: missing.phone,
