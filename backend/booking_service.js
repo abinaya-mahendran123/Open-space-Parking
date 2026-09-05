@@ -11,7 +11,27 @@ const {
 } = require('./parking_slots');
 
 const ACTIVE_SLOT_STATUSES = ['confirmed', 'active'];
+/** Entry QR must be scanned within this window or the booking is cancelled. */
+const QR_ENTRY_VALIDITY_MS = Number(
+  process.env.QR_ENTRY_VALIDITY_MS || 2 * 60 * 60 * 1000,
+);
 const listingLocks = new Map();
+
+function qrExpiresAtFrom(createdAt) {
+  const startMs = new Date(createdAt || Date.now()).getTime();
+  return new Date(startMs + QR_ENTRY_VALIDITY_MS).toISOString();
+}
+
+function isEntryQrExpired(booking, now = new Date()) {
+  if (!booking) return false;
+  if (booking.checkedInAt) return false;
+  const status = String(booking.status || '');
+  if (status !== 'confirmed') return false;
+  const expires =
+    booking.qrExpiresAt ||
+    qrExpiresAtFrom(booking.createdAt || booking.startDateTime);
+  return now.getTime() > new Date(expires).getTime();
+}
 
 function generateBookingRef() {
   const now = new Date();
@@ -349,6 +369,19 @@ async function startParkingSession(db, { vehicleOwnerId, parkingListingId, vehic
     throw error;
   }
 
+  // Cancel any entry QRs that already timed out before assigning a new slot.
+  await expireUnscannedEntryQrBookings(db);
+
+  const existingLive = await findLiveEntryQrBooking(db, vehicleOwnerId);
+  if (existingLive) {
+    const error = new Error(
+      'You already have an active parking QR. Show it at the gate or wait until it expires (2 hours).',
+    );
+    error.statusCode = 409;
+    error.existingBookingId = String(existingLive._id?.$oid || existingLive._id || '');
+    throw error;
+  }
+
   const listing = await getListing(db, parkingListingId);
   if (!listing) {
     const error = new Error('Parking space is no longer available.');
@@ -369,7 +402,8 @@ async function startParkingSession(db, { vehicleOwnerId, parkingListingId, vehic
     const slot = await allocateNextSlot(db, parkingListingId, capacity);
     const bookingRef = generateBookingRef();
     const now = new Date().toISOString();
-    const placeholderEnd = new Date(Date.now() + 12 * 60 * 60 * 1000).toISOString();
+    const qrExpiresAt = qrExpiresAtFrom(now);
+    const placeholderEnd = qrExpiresAt;
     const hourlyRate = resolveHourlyRate(null, listing);
     const parkingName = listingDisplayName(listing);
 
@@ -384,7 +418,7 @@ async function startParkingSession(db, { vehicleOwnerId, parkingListingId, vehic
       vehicleModel: vehicleModel ? String(vehicleModel).trim() : null,
       startDateTime: now,
       endDateTime: placeholderEnd,
-      durationHours: 12,
+      durationHours: QR_ENTRY_VALIDITY_MS / (60 * 60 * 1000),
       hourlyRate,
       totalPrice: 0,
       status: 'confirmed',
@@ -392,6 +426,7 @@ async function startParkingSession(db, { vehicleOwnerId, parkingListingId, vehic
       parkingName,
       assignedSlot: slot,
       qrPayload: bookingRef,
+      qrExpiresAt,
       createdAt: now,
       updatedAt: now,
       isDeleted: false,
@@ -403,14 +438,83 @@ async function startParkingSession(db, { vehicleOwnerId, parkingListingId, vehic
       recipientId: vehicleOwnerId,
       recipientType: 'vehicle_owner',
       title: 'Slot Assigned',
-      message: `Slot ${slot} assigned (FCFS). Show QR (${bookingRef}) to security to start parking.`,
+      message: `Slot ${slot} assigned (FCFS). Show QR (${bookingRef}) to security within 2 hours to start parking.`,
     });
 
     return ensureAssignedSlot(db, document);
   });
 }
 
+async function findLiveEntryQrBooking(db, vehicleOwnerId) {
+  const ownerId = String(vehicleOwnerId || '').trim();
+  if (!ownerId) return null;
+  const bookings = await db
+    .collection('bookings')
+    .find({
+      vehicleOwnerId: ownerId,
+      status: 'confirmed',
+      isDeleted: { $ne: true },
+    })
+    .toArray();
+
+  const now = new Date();
+  for (const doc of bookings) {
+    if (doc.checkedInAt) continue;
+    if (isEntryQrExpired(doc, now)) continue;
+    return doc;
+  }
+  return null;
+}
+
+/**
+ * Cancel confirmed bookings whose entry QR was never scanned within 2 hours.
+ * Releases the slot for others.
+ */
+async function expireUnscannedEntryQrBookings(db) {
+  const bookings = await db
+    .collection('bookings')
+    .find({
+      status: 'confirmed',
+      isDeleted: { $ne: true },
+    })
+    .toArray();
+
+  const now = new Date();
+  const nowIso = now.toISOString();
+  let expired = 0;
+
+  for (const booking of bookings) {
+    if (booking.checkedInAt) continue;
+    if (!isEntryQrExpired(booking, now)) continue;
+
+    const expires =
+      booking.qrExpiresAt ||
+      qrExpiresAtFrom(booking.createdAt || booking.startDateTime);
+
+    await updateBookingDoc(db, booking, booking.qrPayload || booking.bookingRef, {
+      status: 'cancelled',
+      cancelledAt: nowIso,
+      cancelReason: 'entry_qr_expired',
+      qrExpiredAt: expires,
+      updatedAt: nowIso,
+    });
+
+    await insertNotification(db, {
+      recipientId: booking.vehicleOwnerId,
+      recipientType: 'vehicle_owner',
+      title: 'Booking Cancelled',
+      message: `QR for ${booking.bookingRef} expired after 2 hours without gate scan. Slot ${booking.assignedSlot ?? '-'} was released.`,
+    });
+
+    expired += 1;
+  }
+
+  return { expired };
+}
+
 async function scanParkingQr(db, qrPayload) {
+  await expireUnscannedEntryQrBookings(db);
+
   const booking = await findBookingByQr(db, qrPayload);
   if (!booking) {
     const error = new Error('QR / booking not found.');
@@ -425,7 +529,12 @@ async function scanParkingQr(db, qrPayload) {
     throw error;
   }
   if (status === 'cancelled') {
-    const error = new Error('This booking was cancelled.');
+    const reason = String(booking.cancelReason || '');
+    const error = new Error(
+      reason === 'entry_qr_expired'
+        ? 'This QR expired (valid 2 hours). Book a new slot.'
+        : 'This booking was cancelled.',
+    );
     error.statusCode = 400;
     throw error;
   }
@@ -446,6 +555,15 @@ async function scanParkingQr(db, qrPayload) {
   const nowIso = now.toISOString();
 
   if (!booking.checkedInAt) {
+    if (isEntryQrExpired(booking, now)) {
+      await expireUnscannedEntryQrBookings(db);
+      const error = new Error(
+        'This QR expired (valid 2 hours from booking). Ask the driver to book again.',
+      );
+      error.statusCode = 400;
+      throw error;
+    }
+
     if (!ACTIVE_SLOT_STATUSES.includes(status) && status !== 'confirmed') {
       const error = new Error(`Booking is ${status} and cannot start.`);
       error.statusCode = 400;
@@ -545,6 +663,8 @@ module.exports = {
   startParkingSession,
   scanParkingQr,
   findBookingByQr,
+  findLiveEntryQrBooking,
+  expireUnscannedEntryQrBookings,
   ensureAssignedSlot,
   ensureBillForCheckout,
   allocateNextSlot,
@@ -552,4 +672,5 @@ module.exports = {
   listingHourlyRate,
   resolveHourlyRate,
   computeBill,
+  QR_ENTRY_VALIDITY_MS,
 };

@@ -88,6 +88,22 @@ final vehicleOwnerBookingsProvider =
   return ref.read(vehicleOwnerRepositoryProvider).getBookings(vehicleOwnerId);
 });
 
+/// Confirmed booking with a still-valid entry QR (must scan within 2 hours).
+final liveEntryQrBookingProvider =
+    Provider.family<Booking?, String>((ref, vehicleOwnerId) {
+  if (vehicleOwnerId.trim().isEmpty) return null;
+  final bookings = ref.watch(vehicleOwnerBookingsProvider(vehicleOwnerId));
+  return bookings.maybeWhen(
+    data: (list) {
+      for (final booking in list) {
+        if (booking.isAwaitingEntry && booking.isQrLive) return booking;
+      }
+      return null;
+    },
+    orElse: () => null,
+  );
+});
+
 final bookingDetailProvider =
     FutureProvider.family<Booking?, String>((ref, bookingId) async {
   ref.keepAlive();

@@ -41,6 +41,18 @@ class _ParkingTicketPageState extends ConsumerState<ParkingTicketPage> {
               booking.status == BookingStatus.cancelled)) {
         return;
       }
+      // When entry QR times out client-side, refresh so UI / server cancel sync.
+      if (booking != null &&
+          booking.status == BookingStatus.confirmed &&
+          booking.checkedInAt == null &&
+          booking.isEntryQrExpired) {
+        ref.invalidate(bookingDetailProvider(widget.bookingId));
+        final ownerId = booking.vehicleOwnerId;
+        if (ownerId.isNotEmpty) {
+          ref.invalidate(vehicleOwnerBookingsProvider(ownerId));
+        }
+        return;
+      }
       ref.invalidate(bookingDetailProvider(widget.bookingId));
     });
     _tickTimer = Timer.periodic(const Duration(seconds: 1), (_) {
@@ -60,14 +72,31 @@ class _ParkingTicketPageState extends ConsumerState<ParkingTicketPage> {
   String _statusHint(Booking booking) {
     if (booking.isAwaitingPayment) return 'Pay to release your slot';
     if (booking.isParked) return 'Show this QR when you leave';
-    if (booking.isAwaitingEntry) return 'Show this QR at the gate';
+    if (booking.status == BookingStatus.confirmed &&
+        booking.checkedInAt == null &&
+        booking.isEntryQrExpired) {
+      return 'Entry QR expired. Book a new slot.';
+    }
+    if (booking.isAwaitingEntry) {
+      return 'Show this QR at the gate within 2 hours';
+    }
     if (booking.status == BookingStatus.completed) return 'Payment complete';
+    if (booking.status == BookingStatus.cancelled) {
+      return booking.isEntryQrExpired
+          ? 'Cancelled — QR expired without scan'
+          : 'Booking cancelled';
+    }
     return 'Show this QR to security';
   }
 
   String _statusLabel(Booking booking) {
     if (booking.isAwaitingPayment) return 'Payment due';
     if (booking.isParked) return 'Active';
+    if (booking.status == BookingStatus.confirmed &&
+        booking.checkedInAt == null &&
+        booking.isEntryQrExpired) {
+      return 'QR expired';
+    }
     if (booking.isAwaitingEntry) return 'Awaiting entry';
     if (booking.status == BookingStatus.completed) return 'Completed';
     return booking.status.label;
@@ -187,6 +216,19 @@ class _ParkingTicketPageState extends ConsumerState<ParkingTicketPage> {
                         color: theme.colorScheme.onSurfaceVariant,
                       ),
                     ),
+                    if (booking.isAwaitingEntry) ...[
+                      const SizedBox(height: 8),
+                      ValueListenableBuilder<DateTime>(
+                        valueListenable: _now,
+                        builder: (_, now, __) => Text(
+                          'Valid for ${booking.entryQrCountdownLabel(now)}',
+                          style: theme.textTheme.titleMedium?.copyWith(
+                            fontWeight: FontWeight.w700,
+                            color: AppColors.brandAmber,
+                          ),
+                        ),
+                      ),
+                    ],
                     if (booking.isParked) ...[
                       const SizedBox(height: 8),
                       ValueListenableBuilder<DateTime>(
@@ -215,6 +257,22 @@ class _ParkingTicketPageState extends ConsumerState<ParkingTicketPage> {
                           size: 220,
                           backgroundColor: Colors.white,
                         ),
+                      ),
+                    ] else if (booking.status == BookingStatus.confirmed &&
+                        booking.checkedInAt == null) ...[
+                      const SizedBox(height: AppSpacing.lg),
+                      Text(
+                        'This QR is no longer valid. Please book a new slot.',
+                        textAlign: TextAlign.center,
+                        style: theme.textTheme.bodyMedium?.copyWith(
+                          color: theme.colorScheme.error,
+                        ),
+                      ),
+                      const SizedBox(height: AppSpacing.md),
+                      FilledButton.icon(
+                        onPressed: () => context.go(RoutePaths.vehicleOwnerSearch),
+                        icon: const Icon(Icons.local_parking),
+                        label: const Text('Book a new slot'),
                       ),
                     ],
                   ],

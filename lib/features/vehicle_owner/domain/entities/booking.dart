@@ -25,6 +25,7 @@ class Booking extends Equatable {
     this.parkingName,
     this.assignedSlot,
     this.qrPayload,
+    this.qrExpiresAt,
     this.sessionId,
     this.checkedInAt,
     this.checkedOutAt,
@@ -34,6 +35,9 @@ class Booking extends Equatable {
     this.paymentId,
     this.paidAt,
   });
+
+  /// Entry QR must be scanned within this window or the booking is cancelled.
+  static const Duration entryQrValidity = Duration(hours: 2);
 
   final String id;
   final String bookingRef;
@@ -54,6 +58,7 @@ class Booking extends Equatable {
   final String? parkingName;
   final int? assignedSlot;
   final String? qrPayload;
+  final DateTime? qrExpiresAt;
   final String? sessionId;
   final DateTime? checkedInAt;
   final DateTime? checkedOutAt;
@@ -65,9 +70,40 @@ class Booking extends Equatable {
 
   bool get hasQr => (qrPayload ?? bookingRef).isNotEmpty;
 
-  /// Slot booked, waiting for security entry scan.
+  /// Effective entry-QR deadline (defaults to createdAt + 2h).
+  DateTime get entryQrDeadline =>
+      qrExpiresAt ?? createdAt.add(entryQrValidity);
+
+  /// Slot booked, waiting for security entry scan (and QR still valid).
   bool get isAwaitingEntry =>
-      status == BookingStatus.confirmed && checkedInAt == null;
+      status == BookingStatus.confirmed &&
+      checkedInAt == null &&
+      !isEntryQrExpired;
+
+  bool get isEntryQrExpired {
+    if (checkedInAt != null) return false;
+    if (status != BookingStatus.confirmed) return false;
+    return DateTime.now().isAfter(entryQrDeadline);
+  }
+
+  Duration entryQrRemaining([DateTime? now]) {
+    final end = entryQrDeadline;
+    final remaining = end.difference(now ?? DateTime.now());
+    if (remaining.isNegative) return Duration.zero;
+    return remaining;
+  }
+
+  String entryQrCountdownLabel([DateTime? now]) {
+    final remaining = entryQrRemaining(now);
+    final totalSeconds = remaining.inSeconds;
+    final hours = totalSeconds ~/ 3600;
+    final minutes = (totalSeconds % 3600) ~/ 60;
+    final seconds = totalSeconds % 60;
+    if (hours > 0) {
+      return '${hours}h ${minutes.toString().padLeft(2, '0')}m';
+    }
+    return '${minutes.toString().padLeft(2, '0')}:${seconds.toString().padLeft(2, '0')}';
+  }
 
   /// Parking timer is running after first security scan.
   bool get isParked =>
@@ -82,12 +118,19 @@ class Booking extends Equatable {
       amountDue != null &&
       paidAt == null;
 
-  /// QR stays on the driver phone from slot assignment until payment completes.
-  bool get isQrLive =>
-      hasQr &&
-      paidAt == null &&
-      status != BookingStatus.completed &&
-      status != BookingStatus.cancelled;
+  /// QR shown on driver phone: valid entry QR, or after check-in until payment.
+  bool get isQrLive {
+    if (!hasQr) return false;
+    if (paidAt != null) return false;
+    if (status == BookingStatus.completed ||
+        status == BookingStatus.cancelled) {
+      return false;
+    }
+    if (status == BookingStatus.confirmed && checkedInAt == null) {
+      return !isEntryQrExpired;
+    }
+    return true;
+  }
 
   String get displayQr => qrPayload ?? bookingRef;
 
@@ -194,6 +237,7 @@ class Booking extends Equatable {
         parkingName,
         assignedSlot,
         qrPayload,
+        qrExpiresAt,
         sessionId,
         checkedInAt,
         checkedOutAt,

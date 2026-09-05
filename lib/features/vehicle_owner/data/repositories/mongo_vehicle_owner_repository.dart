@@ -451,6 +451,14 @@ class MongoVehicleOwnerRepository implements VehicleOwnerRepository {
       );
     }
 
+    await _expireUnscannedEntryQrBookings(vehicleOwnerId);
+    final existingLive = await _findLiveEntryQrBooking(vehicleOwnerId);
+    if (existingLive != null) {
+      throw const AppException(
+        'You already have an active parking QR. Show it at the gate or wait until it expires (2 hours).',
+      );
+    }
+
     final listing = await _getBaseListing(parkingListingId);
     if (listing == null) {
       throw const AppException('Parking space is no longer available.');
@@ -475,6 +483,7 @@ class MongoVehicleOwnerRepository implements VehicleOwnerRepository {
     final bookingId = ObjectId();
     final bookingRef = _generateBookingRef();
     final now = DateTime.now().toUtc();
+    final qrExpiresAt = now.add(Booking.entryQrValidity);
 
     final document = {
       '_id': bookingId,
@@ -487,8 +496,8 @@ class MongoVehicleOwnerRepository implements VehicleOwnerRepository {
       'vehicleModel': vehicleModel?.trim(),
       // Open session — duration/price are set only after security exit scan.
       'startDateTime': now.toIso8601String(),
-      'endDateTime': now.toIso8601String(),
-      'durationHours': 0.0,
+      'endDateTime': qrExpiresAt.toIso8601String(),
+      'durationHours': Booking.entryQrValidity.inHours.toDouble(),
       'hourlyRate': listing.hourlyRate!,
       'totalPrice': 0.0,
       'status': BookingStatus.confirmed.value,
@@ -496,6 +505,7 @@ class MongoVehicleOwnerRepository implements VehicleOwnerRepository {
       'parkingName': listing.displayName,
       'assignedSlot': slot,
       'qrPayload': bookingRef,
+      'qrExpiresAt': qrExpiresAt.toIso8601String(),
       'createdAt': now.toIso8601String(),
       'updatedAt': now.toIso8601String(),
     };
@@ -509,11 +519,31 @@ class MongoVehicleOwnerRepository implements VehicleOwnerRepository {
       vehicleOwnerId: vehicleOwnerId,
       title: 'Slot Assigned',
       message:
-          'Slot $slot assigned (FCFS). Show QR ($bookingRef) to security to start parking.',
+          'Slot $slot assigned (FCFS). Show QR ($bookingRef) to security within 2 hours to start parking.',
       bookingRef: bookingRef,
     );
 
     return _mapBookingToEntity(document);
+  }
+
+  Future<Booking?> _findLiveEntryQrBooking(String vehicleOwnerId) async {
+    final bookings = await getBookings(vehicleOwnerId);
+    for (final booking in bookings) {
+      if (booking.isAwaitingEntry && booking.isQrLive) return booking;
+    }
+    return null;
+  }
+
+  Future<void> _expireUnscannedEntryQrBookings(String vehicleOwnerId) async {
+    final bookings = await getBookings(vehicleOwnerId);
+    for (final booking in bookings) {
+      if (booking.status != BookingStatus.confirmed) continue;
+      if (booking.checkedInAt != null) continue;
+      if (!booking.isEntryQrExpired) continue;
+      try {
+        await cancelBooking(booking.id);
+      } catch (_) {}
+    }
   }
 
   @override
@@ -618,6 +648,12 @@ class MongoVehicleOwnerRepository implements VehicleOwnerRepository {
 
     // First scan: start the parking timer.
     if (booking.checkedInAt == null) {
+      if (booking.isEntryQrExpired) {
+        await _expireUnscannedEntryQrBookings(booking.vehicleOwnerId);
+        throw const AppException(
+          'This QR expired (valid 2 hours from booking). Ask the driver to book again.',
+        );
+      }
       if (booking.status != BookingStatus.confirmed &&
           booking.status != BookingStatus.active) {
         throw AppException(
@@ -1451,6 +1487,9 @@ class MongoVehicleOwnerRepository implements VehicleOwnerRepository {
       parkingName: map['parkingName'] as String?,
       assignedSlot: MongoJson.asInt(map['assignedSlot']),
       qrPayload: map['qrPayload'] as String?,
+      qrExpiresAt: map['qrExpiresAt'] != null
+          ? DateTime.tryParse('${map['qrExpiresAt']}')
+          : null,
       sessionId: map['sessionId'] as String?,
       checkedInAt: map['checkedInAt'] != null
           ? DateTime.parse(map['checkedInAt'] as String)

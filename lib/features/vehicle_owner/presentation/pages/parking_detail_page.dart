@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import 'package:open_space_parking/core/common/exceptions/app_exception.dart';
+import 'package:open_space_parking/core/common/exceptions/network_exception.dart';
 import 'package:open_space_parking/core/providers/core_providers.dart';
 import 'package:open_space_parking/core/routes/route_paths.dart';
 import 'package:open_space_parking/core/utils/validators.dart';
@@ -59,6 +60,13 @@ class _ParkingDetailPageState extends ConsumerState<ParkingDetailPage> {
       return;
     }
 
+    final liveQr = ref.read(liveEntryQrBookingProvider(ownerId));
+    if (liveQr != null) {
+      if (!mounted) return;
+      context.push(RoutePaths.vehicleOwnerParkingTicket(liveQr.id));
+      return;
+    }
+
     final profile =
         await ref.read(vehicleOwnerProfileProvider(ownerId).future);
     final plate = profile?.vehicleNumber?.trim() ?? '';
@@ -89,8 +97,17 @@ class _ParkingDetailPageState extends ConsumerState<ParkingDetailPage> {
       context.push(RoutePaths.vehicleOwnerParkingTicket(booking.id));
     } on AppException catch (e) {
       ref.read(snackbarServiceProvider).showError(e.message);
-    } catch (_) {
-      ref.read(snackbarServiceProvider).showError('Could not book a slot.');
+      final live = ref.read(liveEntryQrBookingProvider(ownerId));
+      if (live != null && mounted) {
+        context.push(RoutePaths.vehicleOwnerParkingTicket(live.id));
+      }
+    } catch (e) {
+      final message = e is NetworkException ? e.message : 'Could not book a slot.';
+      ref.read(snackbarServiceProvider).showError(message);
+      final live = ref.read(liveEntryQrBookingProvider(ownerId));
+      if (live != null && mounted) {
+        context.push(RoutePaths.vehicleOwnerParkingTicket(live.id));
+      }
     } finally {
       if (mounted) setState(() => _bookingSlot = false);
     }
@@ -125,6 +142,7 @@ class _ParkingDetailPageState extends ConsumerState<ParkingDetailPage> {
     final favoriteAsync = ref.watch(isFavoriteProvider(
       (ownerId: vehicleOwnerId, listingId: widget.listingId),
     ));
+    final liveEntryQr = ref.watch(liveEntryQrBookingProvider(vehicleOwnerId));
 
     return Scaffold(
       backgroundColor: Theme.of(context).colorScheme.surface,
@@ -256,12 +274,22 @@ class _ParkingDetailPageState extends ConsumerState<ParkingDetailPage> {
                     PrimaryButton(
                       label: _bookingSlot
                           ? 'Booking...'
-                          : listing.isAvailableNow
-                              ? 'Book Slot'
-                              : 'Unavailable',
-                      onPressed: listing.isAvailableNow && !_bookingSlot
-                          ? () => _onBookSlot(listing)
-                          : null,
+                          : liveEntryQr != null
+                              ? 'Show parking QR'
+                              : listing.isAvailableNow
+                                  ? 'Book Slot'
+                                  : 'Unavailable',
+                      onPressed: _bookingSlot
+                          ? null
+                          : liveEntryQr != null
+                              ? () => context.push(
+                                    RoutePaths.vehicleOwnerParkingTicket(
+                                      liveEntryQr.id,
+                                    ),
+                                  )
+                              : listing.isAvailableNow
+                                  ? () => _onBookSlot(listing)
+                                  : null,
                     ),
                     const SizedBox(height: 32),
                     Text(

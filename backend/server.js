@@ -17,6 +17,8 @@ const {
   startParkingSession,
   scanParkingQr,
   findBookingByQr,
+  findLiveEntryQrBooking,
+  expireUnscannedEntryQrBookings,
   ensureBillForCheckout,
 } = require('./booking_service');
 const {
@@ -1872,6 +1874,25 @@ app.post(
       });
       res.json({ document: serialize(document) });
     } catch (error) {
+      const payload = { error: error.message };
+      if (error.existingBookingId) {
+        payload.existingBookingId = error.existingBookingId;
+      }
+      res.status(error.statusCode || 500).json(payload);
+    }
+  },
+);
+
+app.get(
+  '/api/bookings/live-entry-qr',
+  requireAuth,
+  requireRole('vehicle_owner'),
+  async (req, res) => {
+    try {
+      await expireUnscannedEntryQrBookings(db);
+      const document = await findLiveEntryQrBooking(db, req.auth.userId);
+      res.json({ document: document ? serialize(document) : null });
+    } catch (error) {
       res.status(error.statusCode || 500).json({ error: error.message });
     }
   },
@@ -1883,6 +1904,7 @@ app.get(
   requireRole('security'),
   async (req, res) => {
     try {
+      await expireUnscannedEntryQrBookings(db);
       const qr = String(req.query?.qr || req.query?.code || '').trim();
       if (!qr) {
         res.status(400).json({ error: 'qr is required.' });
@@ -2891,6 +2913,21 @@ async function start() {
         );
       }
     } catch (_) {}
+
+    // Cancel unscanned entry QRs after 2 hours (releases slots).
+    const runQrExpiry = () => {
+      expireUnscannedEntryQrBookings(db)
+        .then((result) => {
+          if (result?.expired) {
+            console.log(`[bookings] Expired ${result.expired} unscanned entry QR(s).`);
+          }
+        })
+        .catch((error) => {
+          console.error('[bookings] QR expiry sweep failed:', error.message);
+        });
+    };
+    runQrExpiry();
+    setInterval(runQrExpiry, 60 * 1000);
   });
 }
 

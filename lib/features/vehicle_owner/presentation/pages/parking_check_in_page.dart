@@ -32,7 +32,18 @@ class _ParkingCheckInPageState extends ConsumerState<ParkingCheckInPage> {
   @override
   void initState() {
     super.initState();
-    WidgetsBinding.instance.addPostFrameCallback((_) => _prefillPlate());
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _redirectIfLiveQr();
+      _prefillPlate();
+    });
+  }
+
+  void _redirectIfLiveQr() {
+    final ownerId = ref.read(authStateProvider).session?.userId;
+    if (ownerId == null) return;
+    final live = ref.read(liveEntryQrBookingProvider(ownerId));
+    if (live == null || !mounted) return;
+    context.go(RoutePaths.vehicleOwnerParkingTicket(live.id));
   }
 
   @override
@@ -58,6 +69,14 @@ class _ParkingCheckInPageState extends ConsumerState<ParkingCheckInPage> {
       ref.read(snackbarServiceProvider).showError('Please sign in again.');
       return;
     }
+
+    final liveQr = ref.read(liveEntryQrBookingProvider(ownerId));
+    if (liveQr != null) {
+      if (!mounted) return;
+      context.go(RoutePaths.vehicleOwnerParkingTicket(liveQr.id));
+      return;
+    }
+
     if (!(_formKey.currentState?.validate() ?? false)) return;
 
     setState(() => _submitting = true);
@@ -84,6 +103,10 @@ class _ParkingCheckInPageState extends ConsumerState<ParkingCheckInPage> {
       context.push(RoutePaths.vehicleOwnerParkingTicket(booking.id));
     } on AppException catch (e) {
       ref.read(snackbarServiceProvider).showError(e.message);
+      final live = ref.read(liveEntryQrBookingProvider(ownerId));
+      if (live != null && mounted) {
+        context.go(RoutePaths.vehicleOwnerParkingTicket(live.id));
+      }
     } catch (_) {
       ref.read(snackbarServiceProvider).showError('Could not book a slot.');
     } finally {
