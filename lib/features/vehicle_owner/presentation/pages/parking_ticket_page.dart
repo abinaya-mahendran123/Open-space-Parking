@@ -72,19 +72,15 @@ class _ParkingTicketPageState extends ConsumerState<ParkingTicketPage> {
   String _statusHint(Booking booking) {
     if (booking.isAwaitingPayment) return 'Pay to release your slot';
     if (booking.isParked) return 'Show this QR when you leave';
-    if (booking.status == BookingStatus.confirmed &&
-        booking.checkedInAt == null &&
-        booking.isEntryQrExpired) {
+    if (booking.showEntryQrCountdown && booking.isEntryQrExpired) {
       return 'Entry QR expired. Book a new slot.';
     }
-    if (booking.isAwaitingEntry) {
-      return 'Show this QR at the gate within 2 hours';
+    if (booking.showEntryQrCountdown) {
+      return 'Show this QR at the gate · valid 2 hours from booking';
     }
     if (booking.status == BookingStatus.completed) return 'Payment complete';
     if (booking.status == BookingStatus.cancelled) {
-      return booking.isEntryQrExpired
-          ? 'Cancelled — QR expired without scan'
-          : 'Booking cancelled';
+      return 'Booking cancelled';
     }
     return 'Show this QR to security';
   }
@@ -92,19 +88,26 @@ class _ParkingTicketPageState extends ConsumerState<ParkingTicketPage> {
   String _statusLabel(Booking booking) {
     if (booking.isAwaitingPayment) return 'Payment due';
     if (booking.isParked) return 'Active';
-    if (booking.status == BookingStatus.confirmed &&
-        booking.checkedInAt == null &&
-        booking.isEntryQrExpired) {
+    if (booking.showEntryQrCountdown && booking.isEntryQrExpired) {
       return 'QR expired';
     }
-    if (booking.isAwaitingEntry) return 'Awaiting entry';
+    if (booking.showEntryQrCountdown || booking.isAwaitingEntry) {
+      return 'Awaiting entry';
+    }
     if (booking.status == BookingStatus.completed) return 'Completed';
     return booking.status.label;
   }
 
   Color _statusColor(Booking booking) {
     if (booking.isAwaitingPayment) return AppColors.brandAmber;
-    if (booking.isParked || booking.isAwaitingEntry) return AppColors.brandMint;
+    if (booking.showEntryQrCountdown && booking.isEntryQrExpired) {
+      return Theme.of(context).colorScheme.error;
+    }
+    if (booking.isParked ||
+        booking.isAwaitingEntry ||
+        booking.showEntryQrCountdown) {
+      return AppColors.brandMint;
+    }
     if (booking.status == BookingStatus.completed) {
       return AppColors.brandBlue;
     }
@@ -216,32 +219,45 @@ class _ParkingTicketPageState extends ConsumerState<ParkingTicketPage> {
                         color: theme.colorScheme.onSurfaceVariant,
                       ),
                     ),
-                    if (booking.isAwaitingEntry) ...[
-                      const SizedBox(height: AppSpacing.sm),
+                    if (booking.showEntryQrCountdown) ...[
+                      const SizedBox(height: AppSpacing.md),
                       ValueListenableBuilder<DateTime>(
                         valueListenable: _now,
-                        builder: (_, now, __) => Container(
-                          width: double.infinity,
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 12,
-                            vertical: 10,
-                          ),
-                          decoration: BoxDecoration(
-                            color: AppColors.brandAmber.withValues(alpha: 0.15),
-                            borderRadius: BorderRadius.circular(12),
-                            border: Border.all(
-                              color: AppColors.brandAmber.withValues(alpha: 0.5),
+                        builder: (_, now, __) {
+                          final expired = booking.isEntryQrExpired;
+                          final label = expired
+                              ? 'Entry QR expired — book a new slot'
+                              : '⏱ Entry QR valid for ${booking.entryQrCountdownLabel(now)} (2 hrs max)';
+                          final bg = expired
+                              ? theme.colorScheme.errorContainer
+                              : const Color(0xFFFFF7ED);
+                          final fg = expired
+                              ? theme.colorScheme.onErrorContainer
+                              : const Color(0xFFC2410C);
+                          final border = expired
+                              ? theme.colorScheme.error
+                              : const Color(0xFFFB923C);
+                          return Container(
+                            width: double.infinity,
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 14,
+                              vertical: 12,
                             ),
-                          ),
-                          child: Text(
-                            'Entry QR valid for ${booking.entryQrCountdownLabel(now)} (2 hrs max)',
-                            textAlign: TextAlign.center,
-                            style: theme.textTheme.titleSmall?.copyWith(
-                              fontWeight: FontWeight.w700,
-                              color: AppColors.brandAmber,
+                            decoration: BoxDecoration(
+                              color: bg,
+                              borderRadius: BorderRadius.circular(12),
+                              border: Border.all(color: border, width: 1.5),
                             ),
-                          ),
-                        ),
+                            child: Text(
+                              label,
+                              textAlign: TextAlign.center,
+                              style: theme.textTheme.titleSmall?.copyWith(
+                                fontWeight: FontWeight.w800,
+                                color: fg,
+                              ),
+                            ),
+                          );
+                        },
                       ),
                     ],
                     if (booking.isParked) ...[

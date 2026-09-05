@@ -1459,6 +1459,18 @@ class MongoVehicleOwnerRepository implements VehicleOwnerRepository {
     );
   }
 
+  DateTime _parseBookingDate(String value) {
+    final parsed = DateTime.tryParse(value.trim());
+    if (parsed == null) return DateTime.now();
+    return parsed.toLocal();
+  }
+
+  DateTime? _parseBookingDateNullable(String? value) {
+    if (value == null || value.trim().isEmpty) return null;
+    final parsed = DateTime.tryParse(value.trim());
+    return parsed?.toLocal();
+  }
+
   Booking _mapBookingToEntity(Map<String, dynamic> map) {
     final id = MongoJson.objectIdHex(map['_id']);
     if (id.isEmpty) {
@@ -1490,7 +1502,7 @@ class MongoVehicleOwnerRepository implements VehicleOwnerRepository {
       hourlyRate: (map['hourlyRate'] as num?)?.toDouble() ?? 0,
       totalPrice: (map['totalPrice'] as num?)?.toDouble() ?? 0,
       status: BookingStatusX.fromValue(map['status'] as String? ?? ''),
-      createdAt: DateTime.parse(
+      createdAt: _parseBookingDate(
         map['createdAt'] as String? ?? DateTime.now().toUtc().toIso8601String(),
       ),
       parkingAddress: map['parkingAddress'] as String?,
@@ -1498,7 +1510,7 @@ class MongoVehicleOwnerRepository implements VehicleOwnerRepository {
       assignedSlot: MongoJson.asInt(map['assignedSlot']),
       qrPayload: map['qrPayload'] as String?,
       qrExpiresAt: map['qrExpiresAt'] != null
-          ? DateTime.tryParse('${map['qrExpiresAt']}')
+          ? _parseBookingDateNullable('${map['qrExpiresAt']}')
           : null,
       sessionId: map['sessionId'] as String?,
       checkedInAt: map['checkedInAt'] != null

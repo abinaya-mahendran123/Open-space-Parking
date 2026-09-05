@@ -71,8 +71,10 @@ class Booking extends Equatable {
   bool get hasQr => (qrPayload ?? bookingRef).isNotEmpty;
 
   /// Effective entry-QR deadline (defaults to createdAt + 2h).
-  DateTime get entryQrDeadline =>
-      qrExpiresAt ?? createdAt.add(entryQrValidity);
+  DateTime get entryQrDeadline {
+    final raw = qrExpiresAt ?? createdAt.add(entryQrValidity);
+    return raw.toLocal();
+  }
 
   /// Slot booked, waiting for security entry scan (and QR still valid).
   bool get isAwaitingEntry =>
@@ -80,9 +82,15 @@ class Booking extends Equatable {
       checkedInAt == null &&
       !isEntryQrExpired;
 
+  /// Show the 2h timer UI whenever entry has not happened yet.
+  bool get showEntryQrCountdown =>
+      status == BookingStatus.confirmed && checkedInAt == null;
+
   bool get isEntryQrExpired {
     if (checkedInAt != null) return false;
-    if (status != BookingStatus.confirmed) return false;
+    if (status != BookingStatus.confirmed && status != BookingStatus.pending) {
+      return false;
+    }
     return DateTime.now().isAfter(entryQrDeadline);
   }
 
