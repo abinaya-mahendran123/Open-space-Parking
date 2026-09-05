@@ -452,10 +452,10 @@ class MongoVehicleOwnerRepository implements VehicleOwnerRepository {
     }
 
     await _expireUnscannedEntryQrBookings(vehicleOwnerId);
-    final existingLive = await _findLiveEntryQrBooking(vehicleOwnerId);
+    final existingLive = await _findActiveSlotBooking(vehicleOwnerId);
     if (existingLive != null) {
       throw const AppException(
-        'You already have an active parking QR. Show it at the gate or wait until it expires (2 hours).',
+        'You already have an active parking slot. Show your QR until the slot is released.',
       );
     }
 
@@ -530,6 +530,16 @@ class MongoVehicleOwnerRepository implements VehicleOwnerRepository {
     final bookings = await getBookings(vehicleOwnerId);
     for (final booking in bookings) {
       if (booking.isAwaitingEntry && booking.isQrLive) return booking;
+    }
+    return null;
+  }
+
+  Future<Booking?> _findActiveSlotBooking(String vehicleOwnerId) async {
+    final entry = await _findLiveEntryQrBooking(vehicleOwnerId);
+    if (entry != null) return entry;
+    final bookings = await getBookings(vehicleOwnerId);
+    for (final booking in bookings) {
+      if (booking.isQrLive) return booking;
     }
     return null;
   }

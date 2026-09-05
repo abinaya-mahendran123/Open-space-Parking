@@ -217,14 +217,29 @@ class _ParkingTicketPageState extends ConsumerState<ParkingTicketPage> {
                       ),
                     ),
                     if (booking.isAwaitingEntry) ...[
-                      const SizedBox(height: 8),
+                      const SizedBox(height: AppSpacing.sm),
                       ValueListenableBuilder<DateTime>(
                         valueListenable: _now,
-                        builder: (_, now, __) => Text(
-                          'Valid for ${booking.entryQrCountdownLabel(now)}',
-                          style: theme.textTheme.titleMedium?.copyWith(
-                            fontWeight: FontWeight.w700,
-                            color: AppColors.brandAmber,
+                        builder: (_, now, __) => Container(
+                          width: double.infinity,
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 12,
+                            vertical: 10,
+                          ),
+                          decoration: BoxDecoration(
+                            color: AppColors.brandAmber.withValues(alpha: 0.15),
+                            borderRadius: BorderRadius.circular(12),
+                            border: Border.all(
+                              color: AppColors.brandAmber.withValues(alpha: 0.5),
+                            ),
+                          ),
+                          child: Text(
+                            'Entry QR valid for ${booking.entryQrCountdownLabel(now)} (2 hrs max)',
+                            textAlign: TextAlign.center,
+                            style: theme.textTheme.titleSmall?.copyWith(
+                              fontWeight: FontWeight.w700,
+                              color: AppColors.brandAmber,
+                            ),
                           ),
                         ),
                       ),

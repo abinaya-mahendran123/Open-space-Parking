@@ -372,10 +372,10 @@ async function startParkingSession(db, { vehicleOwnerId, parkingListingId, vehic
   // Cancel any entry QRs that already timed out before assigning a new slot.
   await expireUnscannedEntryQrBookings(db);
 
-  const existingLive = await findLiveEntryQrBooking(db, vehicleOwnerId);
+  const existingLive = await findActiveSlotBooking(db, vehicleOwnerId);
   if (existingLive) {
     const error = new Error(
-      'You already have an active parking QR. Show it at the gate or wait until it expires (2 hours).',
+      'You already have an active parking slot. Show your QR until the slot is released.',
     );
     error.statusCode = 409;
     error.existingBookingId = String(existingLive._id?.$oid || existingLive._id || '');
@@ -464,6 +464,21 @@ async function findLiveEntryQrBooking(db, vehicleOwnerId) {
     return doc;
   }
   return null;
+}
+
+/** Any booking that still holds a slot (awaiting entry, parked, or payment due). */
+async function findActiveSlotBooking(db, vehicleOwnerId) {
+  const entry = await findLiveEntryQrBooking(db, vehicleOwnerId);
+  if (entry) return entry;
+
+  const ownerId = String(vehicleOwnerId || '').trim();
+  if (!ownerId) return null;
+  const active = await db.collection('bookings').findOne({
+    vehicleOwnerId: ownerId,
+    status: 'active',
+    isDeleted: { $ne: true },
+  });
+  return active || null;
 }
 
 /**
@@ -664,6 +679,7 @@ module.exports = {
   scanParkingQr,
   findBookingByQr,
   findLiveEntryQrBooking,
+  findActiveSlotBooking,
   expireUnscannedEntryQrBookings,
   ensureAssignedSlot,
   ensureBillForCheckout,

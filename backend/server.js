@@ -18,6 +18,7 @@ const {
   scanParkingQr,
   findBookingByQr,
   findLiveEntryQrBooking,
+  findActiveSlotBooking,
   expireUnscannedEntryQrBookings,
   ensureBillForCheckout,
 } = require('./booking_service');
@@ -1890,7 +1891,9 @@ app.get(
   async (req, res) => {
     try {
       await expireUnscannedEntryQrBookings(db);
-      const document = await findLiveEntryQrBooking(db, req.auth.userId);
+      const document =
+        (await findActiveSlotBooking(db, req.auth.userId)) ||
+        (await findLiveEntryQrBooking(db, req.auth.userId));
       res.json({ document: document ? serialize(document) : null });
     } catch (error) {
       res.status(error.statusCode || 500).json({ error: error.message });

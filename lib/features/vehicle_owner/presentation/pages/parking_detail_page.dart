@@ -34,6 +34,7 @@ class ParkingDetailPage extends ConsumerStatefulWidget {
 
 class _ParkingDetailPageState extends ConsumerState<ParkingDetailPage> {
   bool _bookingSlot = false;
+  bool _redirectedToQr = false;
 
   Future<void> _openDirections(ParkingListing listing) async {
     final origin = ref.read(mapSelectionProvider).currentLocation;
@@ -60,10 +61,14 @@ class _ParkingDetailPageState extends ConsumerState<ParkingDetailPage> {
       return;
     }
 
-    final liveQr = ref.read(liveEntryQrBookingProvider(ownerId));
+    final liveForListing = ref.read(
+      liveQrForListingProvider((ownerId: ownerId, listingId: listing.id)),
+    );
+    final liveQr =
+        liveForListing ?? ref.read(liveQrBookingProvider(ownerId));
     if (liveQr != null) {
       if (!mounted) return;
-      context.push(RoutePaths.vehicleOwnerParkingTicket(liveQr.id));
+      context.go(RoutePaths.vehicleOwnerParkingTicket(liveQr.id));
       return;
     }
 
@@ -94,19 +99,20 @@ class _ParkingDetailPageState extends ConsumerState<ParkingDetailPage> {
         parkingName: listing.compactDisplayName,
       );
       if (!mounted) return;
-      context.push(RoutePaths.vehicleOwnerParkingTicket(booking.id));
+      context.go(RoutePaths.vehicleOwnerParkingTicket(booking.id));
     } on AppException catch (e) {
       ref.read(snackbarServiceProvider).showError(e.message);
-      final live = ref.read(liveEntryQrBookingProvider(ownerId));
+      ref.invalidate(vehicleOwnerBookingsProvider(ownerId));
+      final live = ref.read(liveQrBookingProvider(ownerId));
       if (live != null && mounted) {
-        context.push(RoutePaths.vehicleOwnerParkingTicket(live.id));
+        context.go(RoutePaths.vehicleOwnerParkingTicket(live.id));
       }
     } catch (e) {
       final message = e is NetworkException ? e.message : 'Could not book a slot.';
       ref.read(snackbarServiceProvider).showError(message);
-      final live = ref.read(liveEntryQrBookingProvider(ownerId));
+      final live = ref.read(liveQrBookingProvider(ownerId));
       if (live != null && mounted) {
-        context.push(RoutePaths.vehicleOwnerParkingTicket(live.id));
+        context.go(RoutePaths.vehicleOwnerParkingTicket(live.id));
       }
     } finally {
       if (mounted) setState(() => _bookingSlot = false);
@@ -142,7 +148,22 @@ class _ParkingDetailPageState extends ConsumerState<ParkingDetailPage> {
     final favoriteAsync = ref.watch(isFavoriteProvider(
       (ownerId: vehicleOwnerId, listingId: widget.listingId),
     ));
-    final liveEntryQr = ref.watch(liveEntryQrBookingProvider(vehicleOwnerId));
+    final liveForListing = ref.watch(
+      liveQrForListingProvider(
+        (ownerId: vehicleOwnerId, listingId: widget.listingId),
+      ),
+    );
+    final liveAny = ref.watch(liveQrBookingProvider(vehicleOwnerId));
+    final liveQr = liveForListing ?? liveAny;
+
+    // If this parking already has their live slot, jump straight to QR.
+    if (liveForListing != null && !_redirectedToQr) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted || _redirectedToQr) return;
+        _redirectedToQr = true;
+        context.go(RoutePaths.vehicleOwnerParkingTicket(liveForListing.id));
+      });
+    }
 
     return Scaffold(
       backgroundColor: Theme.of(context).colorScheme.surface,
@@ -274,17 +295,17 @@ class _ParkingDetailPageState extends ConsumerState<ParkingDetailPage> {
                     PrimaryButton(
                       label: _bookingSlot
                           ? 'Booking...'
-                          : liveEntryQr != null
+                          : liveQr != null
                               ? 'Show parking QR'
                               : listing.isAvailableNow
                                   ? 'Book Slot'
                                   : 'Unavailable',
                       onPressed: _bookingSlot
                           ? null
-                          : liveEntryQr != null
-                              ? () => context.push(
+                          : liveQr != null
+                              ? () => context.go(
                                     RoutePaths.vehicleOwnerParkingTicket(
-                                      liveEntryQr.id,
+                                      liveQr.id,
                                     ),
                                   )
                               : listing.isAvailableNow

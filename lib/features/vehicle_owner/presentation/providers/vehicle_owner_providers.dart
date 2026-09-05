@@ -104,6 +104,42 @@ final liveEntryQrBookingProvider =
   );
 });
 
+/// Any live parking QR until the slot is released (entry / parked / pay due).
+final liveQrBookingProvider =
+    Provider.family<Booking?, String>((ref, vehicleOwnerId) {
+  if (vehicleOwnerId.trim().isEmpty) return null;
+  final bookings = ref.watch(vehicleOwnerBookingsProvider(vehicleOwnerId));
+  return bookings.maybeWhen(
+    data: (list) {
+      for (final booking in list) {
+        if (booking.isQrLive) return booking;
+      }
+      return null;
+    },
+    orElse: () => null,
+  );
+});
+
+/// Live QR for a specific parking listing (same owner, slot not released yet).
+final liveQrForListingProvider = Provider.family<Booking?, ({String ownerId, String listingId})>(
+  (ref, args) {
+    if (args.ownerId.trim().isEmpty || args.listingId.trim().isEmpty) {
+      return null;
+    }
+    final bookings = ref.watch(vehicleOwnerBookingsProvider(args.ownerId));
+    return bookings.maybeWhen(
+      data: (list) {
+        for (final booking in list) {
+          if (!booking.isQrLive) continue;
+          if (booking.parkingListingId == args.listingId) return booking;
+        }
+        return null;
+      },
+      orElse: () => null,
+    );
+  },
+);
+
 final bookingDetailProvider =
     FutureProvider.family<Booking?, String>((ref, bookingId) async {
   ref.keepAlive();

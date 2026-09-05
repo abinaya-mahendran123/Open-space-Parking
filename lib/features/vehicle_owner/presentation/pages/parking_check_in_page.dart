@@ -41,7 +41,10 @@ class _ParkingCheckInPageState extends ConsumerState<ParkingCheckInPage> {
   void _redirectIfLiveQr() {
     final ownerId = ref.read(authStateProvider).session?.userId;
     if (ownerId == null) return;
-    final live = ref.read(liveEntryQrBookingProvider(ownerId));
+    final forListing = ref.read(
+      liveQrForListingProvider((ownerId: ownerId, listingId: widget.listingId)),
+    );
+    final live = forListing ?? ref.read(liveQrBookingProvider(ownerId));
     if (live == null || !mounted) return;
     context.go(RoutePaths.vehicleOwnerParkingTicket(live.id));
   }
@@ -70,7 +73,11 @@ class _ParkingCheckInPageState extends ConsumerState<ParkingCheckInPage> {
       return;
     }
 
-    final liveQr = ref.read(liveEntryQrBookingProvider(ownerId));
+    final liveForListing = ref.read(
+      liveQrForListingProvider((ownerId: ownerId, listingId: widget.listingId)),
+    );
+    final liveQr =
+        liveForListing ?? ref.read(liveQrBookingProvider(ownerId));
     if (liveQr != null) {
       if (!mounted) return;
       context.go(RoutePaths.vehicleOwnerParkingTicket(liveQr.id));
@@ -103,7 +110,7 @@ class _ParkingCheckInPageState extends ConsumerState<ParkingCheckInPage> {
       context.push(RoutePaths.vehicleOwnerParkingTicket(booking.id));
     } on AppException catch (e) {
       ref.read(snackbarServiceProvider).showError(e.message);
-      final live = ref.read(liveEntryQrBookingProvider(ownerId));
+      final live = ref.read(liveQrBookingProvider(ownerId));
       if (live != null && mounted) {
         context.go(RoutePaths.vehicleOwnerParkingTicket(live.id));
       }
