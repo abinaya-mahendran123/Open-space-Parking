@@ -386,26 +386,6 @@ async function extractGovernmentIdDetails({
     throw error;
   }
 
-  if (idType === 'aadhaar' && !qrExtracted) {
-    // One buffer only — multi-variant QR on free Render often ate 2+ minutes.
-    const qrBuffer = fullRawBuffer || frontBuffer;
-    try {
-      qrExtracted = await extractAadhaarFromQr(qrBuffer);
-    } catch (error) {
-      logOcr('qr_failed', { reason: error?.message || String(error) });
-    }
-    if (isCompleteAadhaarQr(qrExtracted)) {
-      logOcr('qrResult=complete', { totalTimeMs: Date.now() - started });
-      return {
-        ...qrExtracted,
-        aadhaarNumber:
-          qrExtracted.aadhaarNumber || qrExtracted.governmentIdNumber || '',
-        extractionSource: 'aadhaar_qr',
-      };
-    }
-    logOcr('qrResult=partial_or_none');
-  }
-
   const sameBufferFinal = frontBuffer === backBuffer;
   let ocrFrontBuffer = frontBuffer;
   let ocrBackBuffer = backBuffer;
@@ -416,7 +396,8 @@ async function extractGovernmentIdDetails({
     ocrBackBuffer = addressCropBuffer;
     supplementaryBuffers = cardBackBuffer ? [cardBackBuffer] : [];
   }
-  let extracted = await runOcrPipeline({
+
+  const pipelineArgs = {
     frontBuffer: ocrFrontBuffer,
     backBuffer: ocrBackBuffer,
     extraBackBuffer: supplementaryBuffers[0] || null,
@@ -425,7 +406,33 @@ async function extractGovernmentIdDetails({
     uploadLayout,
     idType,
     uidScanBuffer: fullRawBuffer || frontBuffer,
-  });
+  };
+
+  let extracted;
+  if (idType === 'aadhaar' && !qrExtracted) {
+    const qrBuffer = fullRawBuffer || frontBuffer;
+    const [qrSecond, pipelineResult] = await Promise.all([
+      extractAadhaarFromQr(qrBuffer).catch((error) => {
+        logOcr('qr_failed', { reason: error?.message || String(error) });
+        return null;
+      }),
+      runOcrPipeline(pipelineArgs),
+    ]);
+    qrExtracted = qrSecond;
+    extracted = pipelineResult;
+    if (isCompleteAadhaarQr(qrExtracted)) {
+      logOcr('qrResult=complete', { totalTimeMs: Date.now() - started });
+      return {
+        ...qrExtracted,
+        aadhaarNumber:
+          qrExtracted.aadhaarNumber || qrExtracted.governmentIdNumber || '',
+        extractionSource: 'aadhaar_qr',
+      };
+    }
+    logOcr('qrResult=partial_or_none');
+  } else {
+    extracted = await runOcrPipeline(pipelineArgs);
+  }
 
   if (qrExtracted) {
     extracted = mergeWithPreference(qrExtracted, extracted, {
@@ -470,6 +477,8 @@ module.exports = {
   cloudinaryPdfRenderCandidates,
   cloudinaryPdfPageImageUrl,
   bufferToOcrImage,
+  fetchBuffer,
+  isPdfBuffer,
   mergeExtracted,
   mergeWithPreference,
 };

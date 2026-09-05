@@ -178,7 +178,7 @@ class _BookingFlowPageState extends ConsumerState<BookingFlowPage> {
       ref.read(bookingFormProvider.notifier).reset();
       ref.read(snackbarServiceProvider).showSuccess('Booking confirmed!');
       if (mounted) {
-        context.go(RoutePaths.vehicleOwnerBookingDetail(booking.id));
+        context.push(RoutePaths.vehicleOwnerBookingDetail(booking.id));
       }
     } on AppException catch (e) {
       ref.read(snackbarServiceProvider).showError(e.message);

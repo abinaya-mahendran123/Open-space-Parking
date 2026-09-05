@@ -5,7 +5,6 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:mocktail/mocktail.dart';
 import 'package:open_space_parking/core/cloudinary/domain/entities/cloudinary_file_category.dart';
 import 'package:open_space_parking/core/cloudinary/data/services/cloudinary_validation_service.dart';
-import 'package:open_space_parking/core/services/secure_storage_service.dart';
 import 'package:open_space_parking/core/services/session_service.dart';
 import 'package:open_space_parking/features/authentication/domain/entities/user_role.dart';
 

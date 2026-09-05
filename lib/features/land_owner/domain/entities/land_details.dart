@@ -35,6 +35,30 @@ class LandDetails extends Equatable {
         'landAddress': landAddress,
       };
 
+  LandDetails copyWith({
+    double? gpsLatitude,
+    double? gpsLongitude,
+    double? areaSqFt,
+    bool? roadAccess,
+    bool? drainage,
+    bool? flood,
+    bool? boundary,
+    bool? cctv,
+    String? landAddress,
+  }) {
+    return LandDetails(
+      gpsLatitude: gpsLatitude ?? this.gpsLatitude,
+      gpsLongitude: gpsLongitude ?? this.gpsLongitude,
+      areaSqFt: areaSqFt ?? this.areaSqFt,
+      roadAccess: roadAccess ?? this.roadAccess,
+      drainage: drainage ?? this.drainage,
+      flood: flood ?? this.flood,
+      boundary: boundary ?? this.boundary,
+      cctv: cctv ?? this.cctv,
+      landAddress: landAddress ?? this.landAddress,
+    );
+  }
+
   factory LandDetails.fromJson(Map<String, dynamic> json) {
     double parseCoord(dynamic value) {
       if (value is num) return value.toDouble();

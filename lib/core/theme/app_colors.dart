@@ -293,4 +293,20 @@ class AppColors {
 
   static Color info(Brightness brightness) =>
       brightness == Brightness.dark ? darkPrimary : primary;
+
+  /// Theme-aware foreground / surface tokens (prefer over light-only constants).
+  static Color onSurfaceOf(BuildContext context) =>
+      Theme.of(context).colorScheme.onSurface;
+
+  static Color onSurfaceVariantOf(BuildContext context) =>
+      Theme.of(context).colorScheme.onSurfaceVariant;
+
+  static Color surfaceOf(BuildContext context) =>
+      Theme.of(context).colorScheme.surfaceContainerHigh;
+
+  static Color borderOf(BuildContext context) =>
+      Theme.of(context).colorScheme.outlineVariant;
+
+  static Color primaryOf(BuildContext context) =>
+      Theme.of(context).colorScheme.primary;
 }

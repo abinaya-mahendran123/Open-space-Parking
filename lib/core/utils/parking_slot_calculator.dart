@@ -1,6 +1,6 @@
 /// Resolves how many parking slots a land/parking listing should expose.
 ///
-/// - Build / construction requests → fixed high capacity (mechanical systems).
+/// - Build / construction requests → owner-entered capacity (fallback 100).
 /// - Existing / open land → estimate from plot area using a basic car stall size.
 class ParkingSlotCalculator {
   ParkingSlotCalculator._();
@@ -28,6 +28,9 @@ class ParkingSlotCalculator {
   }) {
     final type = requestType?.trim().toLowerCase() ?? '';
     if (type == 'build_parking') {
+      if (storedNumberOfCars != null && storedNumberOfCars > 0) {
+        return storedNumberOfCars;
+      }
       return constructedParkingSlots;
     }
 

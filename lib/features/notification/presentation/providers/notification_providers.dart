@@ -16,9 +16,10 @@ final notificationServiceProvider = Provider<NotificationService>(
   (ref) => GetIt.I<NotificationService>(),
 );
 
-final notificationHistoryProvider = FutureProvider.autoDispose
-    .family<List<AppNotification>, NotificationHistoryQuery>(
+final notificationHistoryProvider =
+    FutureProvider.family<List<AppNotification>, NotificationHistoryQuery>(
   (ref, query) async {
+    ref.keepAlive();
     return ref.read(notificationRepositoryProvider).getHistory(
           recipientId: query.recipientId,
           recipientType: query.recipientType,
@@ -26,9 +27,10 @@ final notificationHistoryProvider = FutureProvider.autoDispose
   },
 );
 
-final unifiedUnreadCountProvider = FutureProvider.autoDispose
-    .family<int, NotificationHistoryQuery>(
+final unifiedUnreadCountProvider =
+    FutureProvider.family<int, NotificationHistoryQuery>(
   (ref, query) async {
+    ref.keepAlive();
     return ref.read(notificationRepositoryProvider).getUnreadCount(
           recipientId: query.recipientId,
           recipientType: query.recipientType,

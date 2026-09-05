@@ -15,6 +15,7 @@ class RoutePaths {
   static const String adminTickets = '/admin/tickets';
   static const String adminEmployees = '/admin/employees';
   static const String adminStatistics = '/admin/statistics';
+  static const String adminOperations = '/admin/operations';
   static const String adminProfile = '/admin/profile';
 
   static String adminTicketDetail(String ticketId) => '/admin/tickets/$ticketId';
@@ -106,6 +107,7 @@ class RoutePaths {
         location == adminTickets ||
         location == adminEmployees ||
         location == adminStatistics ||
+        location == adminOperations ||
         location == adminProfile ||
         location.startsWith('/admin/tickets/') ||
         location.startsWith('/admin/employees/');

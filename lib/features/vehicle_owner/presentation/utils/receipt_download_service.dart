@@ -1,5 +1,4 @@
 import 'dart:io';
-import 'dart:typed_data';
 
 import 'package:flutter/services.dart';
 import 'package:intl/intl.dart';
@@ -33,7 +32,7 @@ class ReceiptDownloadService {
               width: 130,
               child: pw.Text(
                 label,
-                style: pw.TextStyle(
+                style: const pw.TextStyle(
                   fontSize: 11,
                   color: PdfColors.grey700,
                 ),
@@ -72,7 +71,7 @@ class ReceiptDownloadService {
                   children: [
                     pw.Text(
                       'OPEN SPACE PARKING',
-                      style: pw.TextStyle(
+                      style: const pw.TextStyle(
                         color: PdfColors.white,
                         fontSize: 18,
                         fontWeight: pw.FontWeight.bold,
@@ -93,7 +92,7 @@ class ReceiptDownloadService {
               pw.SizedBox(height: 24),
               pw.Text(
                 'Booking details',
-                style: pw.TextStyle(
+                style: const pw.TextStyle(
                   fontSize: 14,
                   fontWeight: pw.FontWeight.bold,
                 ),
@@ -128,7 +127,7 @@ class ReceiptDownloadService {
               pw.SizedBox(height: 16),
               pw.Text(
                 'Payment',
-                style: pw.TextStyle(
+                style: const pw.TextStyle(
                   fontSize: 14,
                   fontWeight: pw.FontWeight.bold,
                 ),

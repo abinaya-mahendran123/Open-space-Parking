@@ -27,9 +27,17 @@ const {
   isPublicParkingListing,
 } = require('./parking_listings');
 const { recommendNearbyParking } = require('./parking_recommendations');
+const { slotsFromLandArea } = require('./parking_slots');
+const {
+  buildOperationsAnalytics,
+  loadPlaces,
+  buildOccupancyReport,
+  buildPaymentsReport,
+} = require('./admin_analytics');
 const { extractGovernmentIdDetails } = require('./government_id_ocr');
 const { runQueuedOcr, getOcrQueueStats } = require('./ocr/ocr_request_queue');
 const { handleAuthUrl, handleExchange, handleFetchDocument } = require('./digilocker');
+const { verifyTicketDocuments, verifyPropertyDocumentUpload } = require('./property_doc_verification');
 const { handleSendOtp, handleVerifyOtp, verifyOtpToken } = require('./otp_service');
 const {
   onboardLandOwnerLinkedAccount,
@@ -899,6 +907,153 @@ app.post('/api/ocr/government-id', async (req, res) => {
   }
 });
 
+app.post('/api/ocr/property-document', async (req, res) => {
+  try {
+    const { documentUrl, expectedType, imageBase64 } = req.body || {};
+    const result = await runQueuedOcr(() =>
+      verifyPropertyDocumentUpload({
+        url: documentUrl,
+        expectedType,
+        imageBase64,
+      }),
+    );
+    res.json(result);
+  } catch (error) {
+    const message = error?.message || 'Could not verify this document.';
+    if (error?.code === 'OCR_OVERLOADED' || error?.code === 'OCR_QUEUE_TIMEOUT') {
+      const retryAfter = Number(error.retryAfterSeconds || 15);
+      res.set('Retry-After', String(retryAfter));
+      return res.status(503).json({
+        error: message,
+        retryAfterSeconds: retryAfter,
+        queue: getOcrQueueStats(),
+      });
+    }
+    const status =
+      error?.code === 'WRONG_DOCUMENT' ||
+      error?.code === 'UNSUPPORTED_DOC_TYPE' ||
+      error?.code === 'MISSING_DOC' ||
+      message.includes('does not look like') ||
+      message.includes('Please upload') ||
+      message.includes('looks like a') ||
+      message.includes('required')
+        ? 400
+        : 500;
+    res.status(status).json({
+      error: message,
+      accepted: false,
+      details: error?.details || undefined,
+    });
+  }
+});
+
+app.post('/api/admin/document-verification', async (req, res) => {
+  try {
+    const { ownerDetails, documents, landDetails } = req.body || {};
+    if (!ownerDetails || !documents || !landDetails) {
+      return res.status(400).json({
+        error: 'ownerDetails, documents, and landDetails are required.',
+      });
+    }
+    const report = await runQueuedOcr(() =>
+      verifyTicketDocuments({ ownerDetails, documents, landDetails }),
+    );
+    res.json(report);
+  } catch (error) {
+    const message = error?.message || 'Document verification failed.';
+    if (error?.code === 'OCR_OVERLOADED' || error?.code === 'OCR_QUEUE_TIMEOUT') {
+      const retryAfter = Number(error.retryAfterSeconds || 15);
+      res.set('Retry-After', String(retryAfter));
+      return res.status(503).json({
+        error: message,
+        retryAfterSeconds: retryAfter,
+        queue: getOcrQueueStats(),
+      });
+    }
+    res.status(500).json({ error: message });
+  }
+});
+
+app.get(
+  '/api/admin/operations',
+  requireAuth,
+  requireRole('admin'),
+  async (req, res) => {
+    try {
+      if (!db) {
+        res.status(503).json({ error: 'Database not ready.' });
+        return;
+      }
+      const report = await buildOperationsAnalytics(db, req.query || {});
+      res.json(report);
+    } catch (error) {
+      res.status(500).json({
+        error: error?.message || 'Could not load operations analytics.',
+      });
+    }
+  },
+);
+
+app.get(
+  '/api/admin/operations/places',
+  requireAuth,
+  requireRole('admin'),
+  async (req, res) => {
+    try {
+      if (!db) {
+        res.status(503).json({ error: 'Database not ready.' });
+        return;
+      }
+      const places = await loadPlaces(db);
+      res.json({ places });
+    } catch (error) {
+      res.status(500).json({
+        error: error?.message || 'Could not load parking places.',
+      });
+    }
+  },
+);
+
+app.get(
+  '/api/admin/operations/occupancy',
+  requireAuth,
+  requireRole('admin'),
+  async (req, res) => {
+    try {
+      if (!db) {
+        res.status(503).json({ error: 'Database not ready.' });
+        return;
+      }
+      const occupancy = await buildOccupancyReport(db, req.query || {});
+      res.json(occupancy);
+    } catch (error) {
+      res.status(500).json({
+        error: error?.message || 'Could not load occupancy report.',
+      });
+    }
+  },
+);
+
+app.get(
+  '/api/admin/operations/payments',
+  requireAuth,
+  requireRole('admin'),
+  async (req, res) => {
+    try {
+      if (!db) {
+        res.status(503).json({ error: 'Database not ready.' });
+        return;
+      }
+      const payments = await buildPaymentsReport(db, req.query || {});
+      res.json(payments);
+    } catch (error) {
+      res.status(500).json({
+        error: error?.message || 'Could not load payments report.',
+      });
+    }
+  },
+);
+
 async function handleParkingNearby(req, res) {
   try {
     const query = { ...(req.query || {}), ...(req.body || {}) };
@@ -948,6 +1103,19 @@ async function handleParkingNearby(req, res) {
 
 app.get('/api/parking/nearby', handleParkingNearby);
 app.post('/api/parking/nearby', handleParkingNearby);
+
+app.post('/api/parking/estimate-slots', (req, res) => {
+  try {
+    const areaSqFt = Number(req.body?.areaSqFt ?? req.query?.areaSqFt ?? 0);
+    const estimatedSlots = slotsFromLandArea(areaSqFt);
+    res.json({
+      estimatedSlots,
+      areaSqFt: Number.isFinite(areaSqFt) && areaSqFt > 0 ? areaSqFt : 0,
+    });
+  } catch (error) {
+    res.status(500).json({ error: error.message || 'Could not estimate slots.' });
+  }
+});
 
 app.post('/api/parking/listing', async (req, res) => {
   try {

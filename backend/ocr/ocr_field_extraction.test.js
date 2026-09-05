@@ -602,6 +602,86 @@ function testMergePartialAddresses() {
   assert.ok(merged.includes('625011'), merged);
 }
 
+function testRejectsToApniEnrollmentNoise() {
+  const text = [
+    'To Apni Pagan',
+    'Enrollment No.: 0000/00000/00000',
+    'Hariharan',
+    '268, NSK STREET, ANAGAR 1 ST STREET, Subramaniapuram, Madurai South, Madurai, Tamil N',
+    'PO: Subramaniapuram, Sub District: Madurai South, District: Madurai, State: Tamil Nadu, PIN Code: 625011',
+    'Mobile: 6369890437',
+  ].join('\n');
+  const name = extractName(text);
+  assert.strictEqual(name, 'Hariharan', name);
+  assert.strictEqual(extractName('To Apni Pagan\nMobile: 6369890437'), '');
+}
+
+function testRejectsSignatureNotVerifiedMush() {
+  assert.strictEqual(extractName('Sgratenverifled\nDOB: 09/03/2006'), '');
+  assert.ok(looksLikeGovernmentHeader('Sgratenverifled'));
+  const { mergeExtractedForEnrollmentSheet } = require('./field_extraction');
+  const front = ['Hariharan', 'DOB: 09/03/2006', '4722 4618 8468'].join('\n');
+  const letter = [
+    'Sgratenverifled',
+    'PO: Subramaniapuram, Sub District: Madurai South, District: Madurai, State: Tamil Nadu, PIN Code: 625011',
+    'Mobile: 6369890437',
+  ].join('\n');
+  const merged = mergeExtractedForEnrollmentSheet(front, letter, '', 'aadhaar');
+  assert.strictEqual(merged.fullName, 'Hariharan', merged.fullName);
+  assert.ok(!/Sgraten|verif/i.test(merged.fullName || ''), merged.fullName);
+}
+
+function testAnagarStreetFix() {
+  const { mergeExtractedForEnrollmentSheet } = require('./field_extraction');
+  const letter = [
+    '268, NSK STREET, ANAGAR 1 ST STREET, Subramaniapuram, Madurai South, Madurai, Tamil N',
+    'PO: Subramaniapuram, Sub District: Madurai South, District: Madurai, State: Tamil Nadu, PIN Code: 625011',
+    'Mobile: 6369890437',
+  ].join('\n');
+  const merged = mergeExtractedForEnrollmentSheet('', letter, '', 'aadhaar');
+  assert.ok(/JIVANAGAR 1 ST STREET/i.test(merged.address), merged.address);
+  assert.ok(/Tamil Nadu/i.test(merged.address), merged.address);
+  assert.ok(/625011/.test(merged.address), merged.address);
+}
+
+function testFinalizeAppendsPinFromRawText() {
+  const rawText =
+    '268, NSK STREET, Subramaniapuram, Madurai South, Madurai, Tamil N\nPIN Code: 625011\nMobile: 6369890437';
+  const finalized = finalizeAadhaarExtraction(
+    {
+      fullName: 'Hariharan',
+      address: '268, NSK STREET, Subramaniapuram, Madurai South, Madurai, Tamil N',
+      phone: '6369890437',
+      governmentIdNumber: '472246188468',
+      rawText,
+      uploadLayout: 'enrollment_sheet',
+    },
+    'enrollment_sheet',
+  );
+  assert.ok(finalized.address.includes('625011'), finalized.address);
+  assert.ok(finalized.address.includes('Tamil Nadu'), finalized.address);
+}
+
+function testScrambledCardBackWithFooter() {
+  const { mergeExtractedForEnrollmentSheet } = require('./field_extraction');
+  const cardBack =
+    'NSK STREET, Q JIVANAGAR 1 ST STREET, Madurai South, Subramaniapuram, mCNo,';
+  const letterFooter =
+    'PO: Subramaniapuram, Sub District: Madurai South, District: Madurai, State: Tamil Nadu, PIN Code: 625011\nMobile: 6369890437';
+  const merged = mergeExtractedForEnrollmentSheet('', letterFooter, cardBack, 'aadhaar');
+  assert.ok(/NSK STREET/i.test(merged.address), merged.address);
+  assert.ok(/JIVANAGAR 1 ST STREET/i.test(merged.address), merged.address);
+  assert.ok(/Subramaniapuram/i.test(merged.address), merged.address);
+  assert.ok(/Madurai South/i.test(merged.address), merged.address);
+  assert.ok(/625011/.test(merged.address), merged.address);
+  assert.ok(!/mCNo/i.test(merged.address), merged.address);
+  assert.ok(!/\bQ JIVANAGAR/i.test(merged.address), merged.address);
+  assert.ok(
+    merged.address.indexOf('Subramaniapuram') < merged.address.indexOf('Madurai South'),
+    merged.address,
+  );
+}
+
 function testCommaSeparatedCardBackAddress() {
   const text = [
     'Address:',
@@ -666,6 +746,11 @@ const tests = [
   testAddressRejectsMobileDisclaimerLine,
   testWeakNameRejected,
   testMergePartialAddresses,
+  testRejectsToApniEnrollmentNoise,
+  testRejectsSignatureNotVerifiedMush,
+  testAnagarStreetFix,
+  testFinalizeAppendsPinFromRawText,
+  testScrambledCardBackWithFooter,
 ];
 
 let passed = 0;

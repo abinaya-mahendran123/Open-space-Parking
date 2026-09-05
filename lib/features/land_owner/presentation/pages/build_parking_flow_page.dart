@@ -5,7 +5,6 @@ import 'package:go_router/go_router.dart';
 import 'package:open_space_parking/core/common/exceptions/app_exception.dart';
 import 'package:open_space_parking/core/providers/core_providers.dart';
 import 'package:open_space_parking/core/routes/route_paths.dart';
-import 'package:open_space_parking/core/utils/parking_slot_calculator.dart';
 import 'package:open_space_parking/core/widgets/buttons/primary_button.dart';
 import 'package:open_space_parking/features/authentication/presentation/providers/auth_state_provider.dart';
 import 'package:open_space_parking/core/utils/profile_prefill.dart';
@@ -21,6 +20,7 @@ import 'package:open_space_parking/features/land_owner/presentation/widgets/land
 import 'package:open_space_parking/features/land_owner/presentation/widgets/government_id_owner_details_form.dart';
 import 'package:open_space_parking/features/land_owner/presentation/widgets/land_owner_step_scaffold.dart';
 import 'package:open_space_parking/features/land_owner/presentation/widgets/parking_type_carousel.dart';
+import 'package:open_space_parking/features/land_owner/presentation/widgets/review_ticket_form.dart';
 import 'package:open_space_parking/features/land_owner/presentation/widgets/upload_documents_form.dart';
 
 class BuildParkingFlowPage extends ConsumerStatefulWidget {
@@ -34,24 +34,26 @@ class _BuildParkingFlowPageState extends ConsumerState<BuildParkingFlowPage> {
   final _ownerFormKey = GlobalKey<GovernmentIdOwnerDetailsFormState>();
   final _landFormKey = GlobalKey<LandDetailsFormState>();
   final _docsFormKey = GlobalKey<UploadDocumentsFormState>();
-  final _rateController = TextEditingController();
+  final _carsController = TextEditingController();
+  final _reviewFormKey = GlobalKey<ReviewTicketFormState>();
 
   static const _stepLabels = [
     'Aadhaar Upload',
     'Land & Area',
     'Document Verification',
     'Parking Preferences',
-    'Generate Ticket',
+    'Review Ticket',
   ];
 
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      ref.read(buildParkingFormProvider.notifier).setNumberOfCars(
-            ParkingSlotCalculator.constructedParkingSlots,
-          );
       _seedOwnerDetails();
+      final cars = ref.read(buildParkingFormProvider).numberOfCars;
+      if (cars > 1) {
+        _carsController.text = '$cars';
+      }
     });
   }
 
@@ -83,7 +85,7 @@ class _BuildParkingFlowPageState extends ConsumerState<BuildParkingFlowPage> {
 
   @override
   void dispose() {
-    _rateController.dispose();
+    _carsController.dispose();
     super.dispose();
   }
 
@@ -98,7 +100,21 @@ class _BuildParkingFlowPageState extends ConsumerState<BuildParkingFlowPage> {
     }
   }
 
+  int? _parsedCarCount() {
+    final raw = _carsController.text.trim();
+    if (raw.isEmpty) return null;
+    return int.tryParse(raw);
+  }
+
   Future<void> _submit() async {
+    final reviewOk = _reviewFormKey.currentState?.validateAndSave() ?? false;
+    if (!reviewOk) {
+      ref.read(snackbarServiceProvider).showError(
+            'Fix the highlighted review fields before submitting.',
+          );
+      return;
+    }
+
     final form = ref.read(buildParkingFormProvider);
     final ownerId = ref.read(authStateProvider).session?.userId;
     if (ownerId == null ||
@@ -106,6 +122,12 @@ class _BuildParkingFlowPageState extends ConsumerState<BuildParkingFlowPage> {
         form.landDetails == null ||
         !form.documents.isComplete) {
       ref.read(snackbarServiceProvider).showError('Please complete all steps.');
+      return;
+    }
+
+    final cars = form.numberOfCars > 0 ? form.numberOfCars : _parsedCarCount();
+    if (cars == null || cars <= 0) {
+      ref.read(snackbarServiceProvider).showError('Enter a valid number of cars.');
       return;
     }
 
@@ -121,8 +143,7 @@ class _BuildParkingFlowPageState extends ConsumerState<BuildParkingFlowPage> {
             parkingPreferences: ParkingPreferences(
               priority: form.priority,
               parkingType: form.parkingType,
-              numberOfCars: ParkingSlotCalculator.constructedParkingSlots,
-              hourlyRate: form.hourlyRate,
+              numberOfCars: cars,
             ),
           );
 
@@ -160,18 +181,21 @@ class _BuildParkingFlowPageState extends ConsumerState<BuildParkingFlowPage> {
       return;
     }
     if (step == 2 && !(_docsFormKey.currentState?.isComplete ?? false)) {
-      ref.read(snackbarServiceProvider).showError('Please upload all documents.');
+      ref.read(snackbarServiceProvider).showError(
+            _docsFormKey.currentState?.blockingMessage ??
+                'Please upload and verify all required documents.',
+          );
       return;
     }
     if (step == 3) {
-      notifier.setNumberOfCars(ParkingSlotCalculator.constructedParkingSlots);
-      final rate = ref.read(buildParkingFormProvider).hourlyRate;
-      if (rate == null || rate <= 0) {
+      final cars = _parsedCarCount();
+      if (cars == null || cars <= 0) {
         ref.read(snackbarServiceProvider).showError(
-              'Enter a valid hourly amount.',
+              'Enter the number of cars / slots.',
             );
         return;
       }
+      notifier.setNumberOfCars(cars);
     }
 
     notifier.nextStep();
@@ -210,23 +234,10 @@ class _BuildParkingFlowPageState extends ConsumerState<BuildParkingFlowPage> {
       },
       bottomBar: step < 4
           ? PrimaryButton(label: 'Continue', onPressed: _nextStep)
-          : Column(
-              children: [
-                if (form.generatedTicketId != null)
-                  Card(
-                    child: ListTile(
-                      leading: const Icon(Icons.confirmation_number),
-                      title: const Text('Ticket Generated'),
-                      subtitle: Text(form.generatedTicketId!),
-                    ),
-                  ),
-                const SizedBox(height: 12),
-                PrimaryButton(
-                  label: 'Submit to Admin',
-                  isLoading: isLoading,
-                  onPressed: _submit,
-                ),
-              ],
+          : PrimaryButton(
+              label: 'Submit to Admin',
+              isLoading: isLoading,
+              onPressed: _submit,
             ),
       child: _buildStepContent(form),
     );
@@ -291,96 +302,45 @@ class _BuildParkingFlowPageState extends ConsumerState<BuildParkingFlowPage> {
               },
             ),
             const SizedBox(height: 16),
-            InputDecorator(
+            TextFormField(
+              controller: _carsController,
               decoration: const InputDecoration(
                 labelText: 'No of Cars / Slots',
+                hintText: 'e.g. 100 cars',
                 border: OutlineInputBorder(),
               ),
-              child: Text(
-                '${ParkingSlotCalculator.constructedParkingSlots} '
-                '(fixed for construction parking)',
-                style: Theme.of(context).textTheme.bodyLarge,
-              ),
-            ),
-            const SizedBox(height: 16),
-            TextFormField(
-              controller: _rateController,
-              decoration: const InputDecoration(
-                labelText: 'Hourly Amount (₹)',
-                hintText: 'Enter parking fee per hour',
-              ),
-              keyboardType: const TextInputType.numberWithOptions(decimal: true),
+              keyboardType: TextInputType.number,
               onChanged: (v) {
-                final rate = double.tryParse(v.trim());
-                ref.read(buildParkingFormProvider.notifier).setHourlyRate(rate);
+                final cars = int.tryParse(v.trim());
+                if (cars != null && cars > 0) {
+                  ref.read(buildParkingFormProvider.notifier).setNumberOfCars(cars);
+                }
               },
             ),
           ],
         );
       case 4:
-        return Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            const Text('Review your request before submitting to admin.'),
-            const SizedBox(height: 16),
-            _ReviewTile('Owner', form.ownerDetails?.fullName ?? '-'),
-            _ReviewTile('Phone', form.ownerDetails?.phone ?? '-'),
-            _ReviewTile(
-              'Government ID',
-              form.ownerDetails?.governmentIdType?.label ??
-                  form.ownerDetails?.governmentIdNumber ??
-                  '-',
-            ),
-            _ReviewTile('Area', '${form.landDetails?.areaSqFt ?? 0} sq ft'),
-            _ReviewTile('Priority', form.priority.label),
-            _ReviewTile('Parking Type', form.parkingType.label),
-            _ReviewTile(
-              'No of Cars / Slots',
-              '${ParkingSlotCalculator.constructedParkingSlots}',
-            ),
-            _ReviewTile(
-              'Hourly Amount',
-              form.hourlyRate != null
-                  ? '₹${form.hourlyRate!.toStringAsFixed(0)}/hr'
-                  : 'Not set',
-            ),
-            const SizedBox(height: 16),
-            FilledButton.tonalIcon(
-              onPressed: () {
-                final now = DateTime.now();
-                final ticket =
-                    'OSP-${now.year}${now.month.toString().padLeft(2, '0')}${now.day.toString().padLeft(2, '0')}-${DateTime.now().millisecondsSinceEpoch % 10000}';
-                ref.read(buildParkingFormProvider.notifier).setGeneratedTicketId(ticket);
-              },
-              icon: const Icon(Icons.confirmation_number),
-              label: const Text('Generate Ticket'),
-            ),
-          ],
+        if (form.ownerDetails == null || form.landDetails == null) {
+          return const Text('Complete earlier steps to review your ticket.');
+        }
+        return ReviewTicketForm(
+          key: _reviewFormKey,
+          mode: ReviewTicketMode.buildParking,
+          ownerDetails: form.ownerDetails!,
+          landDetails: form.landDetails!,
+          priority: form.priority,
+          parkingType: form.parkingType,
+          numberOfCars: form.numberOfCars,
+          onOwnerChanged: ref.read(buildParkingFormProvider.notifier).setOwnerDetails,
+          onLandChanged: ref.read(buildParkingFormProvider.notifier).setLandDetails,
+          onPriorityChanged: ref.read(buildParkingFormProvider.notifier).setPriority,
+          onParkingTypeChanged:
+              ref.read(buildParkingFormProvider.notifier).setParkingType,
+          onNumberOfCarsChanged:
+              ref.read(buildParkingFormProvider.notifier).setNumberOfCars,
         );
       default:
         return const SizedBox.shrink();
     }
-  }
-}
-
-class _ReviewTile extends StatelessWidget {
-  const _ReviewTile(this.label, this.value);
-  final String label;
-  final String value;
-
-  @override
-  Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 8),
-      child: Row(
-        children: [
-          SizedBox(
-            width: 120,
-            child: Text(label, style: const TextStyle(fontWeight: FontWeight.w600)),
-          ),
-          Expanded(child: Text(value)),
-        ],
-      ),
-    );
   }
 }

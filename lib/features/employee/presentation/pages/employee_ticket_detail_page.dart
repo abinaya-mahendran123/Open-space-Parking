@@ -16,7 +16,6 @@ import 'package:open_space_parking/features/authentication/presentation/provider
 import 'package:open_space_parking/features/employee/presentation/providers/employee_providers.dart';
 import 'package:open_space_parking/features/land_owner/domain/entities/land_details.dart';
 import 'package:open_space_parking/features/land_owner/domain/entities/land_owner_request.dart';
-import 'package:open_space_parking/features/land_owner/domain/entities/request_status.dart';
 
 class EmployeeTicketDetailPage extends ConsumerStatefulWidget {
   const EmployeeTicketDetailPage({super.key, required this.ticketId});

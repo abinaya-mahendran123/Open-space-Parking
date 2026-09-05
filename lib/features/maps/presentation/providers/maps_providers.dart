@@ -11,8 +11,6 @@ import 'package:open_space_parking/features/maps/domain/entities/saved_coordinat
 import 'package:open_space_parking/features/maps/domain/repositories/maps_repository.dart';
 import 'package:open_space_parking/core/theme/app_colors.dart';
 import 'package:open_space_parking/features/vehicle_owner/domain/entities/parking_listing.dart';
-import 'package:open_space_parking/features/authentication/presentation/providers/auth_state_provider.dart';
-import 'package:open_space_parking/features/vehicle_owner/domain/entities/search_filters.dart';
 import 'package:open_space_parking/features/vehicle_owner/presentation/providers/vehicle_owner_providers.dart';
 
 final mapsRepositoryProvider = Provider<MapsRepository>(
@@ -21,10 +19,12 @@ final mapsRepositoryProvider = Provider<MapsRepository>(
 
 final locationPermissionProvider =
     FutureProvider<LocationPermissionStatus>((ref) async {
+  ref.keepAlive();
   return ref.read(mapsRepositoryProvider).checkLocationPermission();
 });
 
 final currentLocationProvider = FutureProvider<MapCoordinate?>((ref) async {
+  ref.keepAlive();
   final permission = await ref.read(locationPermissionProvider.future);
   if (!permission.isGranted) return null;
 
@@ -36,6 +36,7 @@ final currentLocationProvider = FutureProvider<MapCoordinate?>((ref) async {
 });
 
 final savedCoordinatesProvider = FutureProvider<List<SavedCoordinate>>((ref) async {
+  ref.keepAlive();
   return ref.read(mapsRepositoryProvider).getSavedCoordinates();
 });
 
@@ -158,19 +159,10 @@ final mapSelectionProvider =
 
 final nearbyParkingMarkersProvider =
     FutureProvider<List<MapMarkerData>>((ref) async {
+  ref.keepAlive();
   final location = await ref.watch(currentLocationProvider.future);
-  final ownerId = ref.watch(
-    authStateProvider.select((state) => state.session?.userId ?? ''),
-  );
-  final filters = SearchFilters(
-    userLatitude: location?.latitude,
-    userLongitude: location?.longitude,
-    vehicleOwnerId: ownerId.isEmpty ? null : ownerId,
-  );
-
-  final listings = await ref
-      .read(vehicleOwnerRepositoryProvider)
-      .searchParkingListings(filters);
+  // Reuse cached search results when available instead of a second network call.
+  final listings = await ref.watch(parkingListingsProvider.future);
   final mapsRepo = ref.read(mapsRepositoryProvider);
 
   final markers = listings.map(_listingToMarker).toList();

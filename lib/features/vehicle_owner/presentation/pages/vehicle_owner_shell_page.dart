@@ -21,47 +21,74 @@ class VehicleOwnerShellPage extends ConsumerStatefulWidget {
 
 class _VehicleOwnerShellPageState extends ConsumerState<VehicleOwnerShellPage> {
   late int _currentIndex;
+  late final Set<int> _builtTabs;
+
+  static const _tabPaths = [
+    RoutePaths.vehicleOwnerSearch,
+    RoutePaths.vehicleOwnerFavorites,
+    RoutePaths.vehicleOwnerBookings,
+    RoutePaths.vehicleOwnerProfile,
+  ];
 
   @override
   void initState() {
     super.initState();
-    _currentIndex = widget.initialIndex;
+    _currentIndex = widget.initialIndex.clamp(0, _tabPaths.length - 1);
+    _builtTabs = {_currentIndex};
   }
 
   @override
   void didUpdateWidget(covariant VehicleOwnerShellPage oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.initialIndex != widget.initialIndex) {
-      _currentIndex = widget.initialIndex;
+      final next = widget.initialIndex.clamp(0, _tabPaths.length - 1);
+      setState(() {
+        _currentIndex = next;
+        _builtTabs.add(next);
+      });
     }
   }
 
   void _selectTab(int index) {
     if (_currentIndex == index) return;
-    setState(() => _currentIndex = index);
-    switch (index) {
-      case 0:
-        context.go(RoutePaths.vehicleOwnerSearch);
-      case 1:
-        context.go(RoutePaths.vehicleOwnerFavorites);
-      case 2:
-        context.go(RoutePaths.vehicleOwnerBookings);
-      case 3:
-        context.go(RoutePaths.vehicleOwnerProfile);
+    setState(() {
+      _currentIndex = index;
+      _builtTabs.add(index);
+    });
+    final target = _tabPaths[index.clamp(0, _tabPaths.length - 1)];
+    if (GoRouterState.of(context).uri.path != target) {
+      context.go(target);
     }
+  }
+
+  Widget _pageAt(int index) {
+    return switch (index) {
+      0 => const ParkingSearchPage(),
+      1 => const FavoritesPage(),
+      2 => const MyBookingsPage(),
+      _ => const VehicleOwnerProfilePage(),
+    };
   }
 
   @override
   Widget build(BuildContext context) {
+    // Offstage (not IndexedStack) keeps tab state without remounting the map,
+    // and fully hides inactive tabs so map overlays cannot bleed through.
     return AppShellScaffold(
-      // Avoid IndexedStack for Nearby: its map location FAB / platform view
-      // can bleed onto Favorites, History, and Profile while kept alive.
-      body: switch (_currentIndex) {
-        0 => const ParkingSearchPage(),
-        1 => const FavoritesPage(),
-        2 => const MyBookingsPage(),
-        _ => const VehicleOwnerProfilePage(),
-      },
+      body: Stack(
+        fit: StackFit.expand,
+        children: [
+          for (var i = 0; i < _tabPaths.length; i++)
+            if (_builtTabs.contains(i))
+              Offstage(
+                offstage: _currentIndex != i,
+                child: TickerMode(
+                  enabled: _currentIndex == i,
+                  child: _pageAt(i),
+                ),
+              ),
+        ],
+      ),
       selectedIndex: _currentIndex,
       onDestinationSelected: _selectTab,
       destinations: const [

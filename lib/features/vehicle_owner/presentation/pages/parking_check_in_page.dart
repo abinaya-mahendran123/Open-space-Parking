@@ -81,7 +81,7 @@ class _ParkingCheckInPageState extends ConsumerState<ParkingCheckInPage> {
         parkingName: listing?.compactDisplayName ?? 'this parking',
       );
       if (!mounted) return;
-      context.go(RoutePaths.vehicleOwnerParkingTicket(booking.id));
+      context.push(RoutePaths.vehicleOwnerParkingTicket(booking.id));
     } on AppException catch (e) {
       ref.read(snackbarServiceProvider).showError(e.message);
     } catch (_) {

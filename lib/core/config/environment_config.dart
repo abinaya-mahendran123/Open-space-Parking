@@ -33,15 +33,20 @@ class EnvironmentConfig {
     _configuredApiUrl = configuredApiUrl;
     _hostLanIp = hostLanIp;
 
-    // Web release builds keep the configured URL (usually Render).
-    // Debug / non-web: discover a reachable host, preferring localhost so
-    // local backend changes (e.g. login error messages) are actually used.
-    baseApiUrl = (kIsWeb && kReleaseMode)
-        ? configuredApiUrl
-        : await resolveReachableApiUrl(
-            configured: configuredApiUrl,
-            lanIp: hostLanIp,
-          );
+    // Prefer configured URL immediately so startup is never blocked on health
+    // probes. Resolve a reachable host in the background and hot-swap.
+    baseApiUrl = configuredApiUrl;
+    if (!(kIsWeb && kReleaseMode)) {
+      unawaited(() async {
+        final resolved = await resolveReachableApiUrl(
+          configured: configuredApiUrl,
+          lanIp: hostLanIp,
+        );
+        if (resolved != baseApiUrl) {
+          baseApiUrl = resolved;
+        }
+      }());
+    }
 
     // Unused for Supabase-only production (Flutter → Node API → Postgres).
     // Only needed with --dart-define=USE_DIRECT_MONGO=true for local debugging.

@@ -54,7 +54,7 @@ function testMergeKeepsPhoneFromTesseract() {
 function testEnrollmentSkipsTesseractFallbackWhenComplete() {
   const plan = needsTesseractFallback(
     {
-      fullName: '',
+      fullName: 'Hariharan',
       address: '268, NSK STREET, Subramaniapuram, Madurai South, Madurai, Tamil Nadu - 625011',
       governmentIdNumber: '472246188468',
       phone: '6369890437',
@@ -67,10 +67,26 @@ function testEnrollmentSkipsTesseractFallbackWhenComplete() {
   assert.strictEqual(plan.reason, 'enrollment_structured');
 }
 
+function testEnrollmentTriggersFallbackWhenNameMissing() {
+  const plan = needsTesseractFallback(
+    {
+      fullName: 'Sgratenverifled',
+      address: '268, NSK STREET, Subramaniapuram, Madurai South, Madurai, Tamil Nadu - 625011',
+      governmentIdNumber: '472246188468',
+      phone: '6369890437',
+      uploadLayout: 'enrollment_sheet',
+    },
+    'aadhaar',
+    { uploadLayout: 'enrollment_sheet' },
+  );
+  assert.strictEqual(plan.needed, true);
+  assert.strictEqual(plan.missing?.name, true);
+}
+
 function testEnrollmentTriggersFallbackWhenPhoneMissing() {
   const plan = needsTesseractFallback(
     {
-      fullName: '',
+      fullName: 'Hariharan',
       address: '268, NSK STREET, Subramaniapuram, Madurai South, Madurai, Tamil Nadu - 625011',
       governmentIdNumber: '472246188468',
       phone: '',
@@ -88,6 +104,7 @@ const tests = [
   testMissingPhoneTriggersFallback,
   testMergeKeepsPhoneFromTesseract,
   testEnrollmentSkipsTesseractFallbackWhenComplete,
+  testEnrollmentTriggersFallbackWhenNameMissing,
   testEnrollmentTriggersFallbackWhenPhoneMissing,
 ];
 for (const fn of tests) {

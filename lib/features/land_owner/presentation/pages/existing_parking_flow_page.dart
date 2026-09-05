@@ -5,7 +5,6 @@ import 'package:go_router/go_router.dart';
 import 'package:open_space_parking/core/common/exceptions/app_exception.dart';
 import 'package:open_space_parking/core/providers/core_providers.dart';
 import 'package:open_space_parking/core/routes/route_paths.dart';
-import 'package:open_space_parking/core/utils/parking_slot_calculator.dart';
 import 'package:open_space_parking/core/widgets/buttons/primary_button.dart';
 import 'package:open_space_parking/core/utils/profile_prefill.dart';
 import 'package:open_space_parking/features/authentication/presentation/providers/auth_state_provider.dart';
@@ -17,6 +16,7 @@ import 'package:open_space_parking/features/land_owner/presentation/widgets/land
 import 'package:open_space_parking/features/land_owner/domain/entities/owner_details.dart';
 import 'package:open_space_parking/features/land_owner/presentation/widgets/government_id_owner_details_form.dart';
 import 'package:open_space_parking/features/land_owner/presentation/widgets/land_owner_step_scaffold.dart';
+import 'package:open_space_parking/features/land_owner/presentation/widgets/review_ticket_form.dart';
 import 'package:open_space_parking/features/land_owner/presentation/widgets/upload_documents_form.dart';
 
 class ExistingParkingFlowPage extends ConsumerStatefulWidget {
@@ -31,17 +31,26 @@ class _ExistingParkingFlowPageState extends ConsumerState<ExistingParkingFlowPag
   final _ownerFormKey = GlobalKey<GovernmentIdOwnerDetailsFormState>();
   final _landFormKey = GlobalKey<LandDetailsFormState>();
   final _docsFormKey = GlobalKey<UploadDocumentsFormState>();
+  final _rateController = TextEditingController();
+  final _reviewFormKey = GlobalKey<ReviewTicketFormState>();
 
   static const _stepLabels = [
     'Aadhaar Upload',
     'Land & Area',
     'Document Verification',
+    'Review Ticket',
   ];
 
   @override
   void initState() {
     super.initState();
-    WidgetsBinding.instance.addPostFrameCallback((_) => _seedOwnerDetails());
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _seedOwnerDetails();
+      final rate = ref.read(existingParkingFormProvider).hourlyRate;
+      if (rate != null && rate > 0) {
+        _rateController.text = rate.toStringAsFixed(0);
+      }
+    });
   }
 
   Future<void> _seedOwnerDetails() async {
@@ -70,6 +79,12 @@ class _ExistingParkingFlowPageState extends ConsumerState<ExistingParkingFlowPag
     }
   }
 
+  @override
+  void dispose() {
+    _rateController.dispose();
+    super.dispose();
+  }
+
   void _saveOwnerDetails(OwnerDetails details) {
     final notifier = ref.read(existingParkingFormProvider.notifier);
     notifier.setOwnerDetails(details);
@@ -82,6 +97,14 @@ class _ExistingParkingFlowPageState extends ConsumerState<ExistingParkingFlowPag
   }
 
   Future<void> _submit() async {
+    final reviewOk = _reviewFormKey.currentState?.validateAndSave() ?? false;
+    if (!reviewOk) {
+      ref.read(snackbarServiceProvider).showError(
+            'Fix the highlighted review fields before submitting.',
+          );
+      return;
+    }
+
     final form = ref.read(existingParkingFormProvider);
     final ownerId = ref.read(authStateProvider).session?.userId;
     if (ownerId == null ||
@@ -89,6 +112,12 @@ class _ExistingParkingFlowPageState extends ConsumerState<ExistingParkingFlowPag
         form.landDetails == null ||
         !form.documents.isComplete) {
       ref.read(snackbarServiceProvider).showError('Please complete all steps.');
+      return;
+    }
+
+    final rate = form.hourlyRate;
+    if (rate == null || rate <= 0) {
+      ref.read(snackbarServiceProvider).showError('Enter a valid hourly amount.');
       return;
     }
 
@@ -101,6 +130,7 @@ class _ExistingParkingFlowPageState extends ConsumerState<ExistingParkingFlowPag
             ownerDetails: form.ownerDetails!,
             documents: form.documents,
             landDetails: form.landDetails!,
+            hourlyRate: rate,
           );
 
       ref.invalidate(requestHistoryProvider(ownerId));
@@ -131,12 +161,24 @@ class _ExistingParkingFlowPageState extends ConsumerState<ExistingParkingFlowPag
     if (step == 0 && !(_ownerFormKey.currentState?.validateAndSave() ?? false)) {
       return;
     }
-    if (step == 1 &&
-        !await (_landFormKey.currentState?.validateAndSave() ?? Future.value(false))) {
-      return;
+    if (step == 1) {
+      if (!await (_landFormKey.currentState?.validateAndSave() ?? Future.value(false))) {
+        return;
+      }
+      final rate = double.tryParse(_rateController.text.trim());
+      if (rate == null || rate <= 0) {
+        ref.read(snackbarServiceProvider).showError(
+              'Enter a valid hourly amount.',
+            );
+        return;
+      }
+      notifier.setHourlyRate(rate);
     }
     if (step == 2 && !(_docsFormKey.currentState?.isComplete ?? false)) {
-      ref.read(snackbarServiceProvider).showError('Please upload all documents.');
+      ref.read(snackbarServiceProvider).showError(
+            _docsFormKey.currentState?.blockingMessage ??
+                'Please upload and verify all required documents.',
+          );
       return;
     }
 
@@ -192,24 +234,24 @@ class _ExistingParkingFlowPageState extends ConsumerState<ExistingParkingFlowPag
               LandDetailsForm(
                 key: _landFormKey,
                 initial: form.landDetails,
+                showSlotEstimate: true,
                 onSave:
                     ref.read(existingParkingFormProvider.notifier).setLandDetails,
               ),
-              const SizedBox(height: 16),
-              Text(
-                'Slots are calculated from land area: '
-                '${ParkingSlotCalculator.sqFtPerCar.toStringAsFixed(0)} sq ft per car '
-                '(basic stall + aisle).',
-                style: Theme.of(context).textTheme.bodySmall,
-              ),
-              if (form.landDetails != null && form.landDetails!.areaSqFt > 0) ...[
-                const SizedBox(height: 8),
-                Text(
-                  'Estimated slots: '
-                  '${ParkingSlotCalculator.slotsFromLandArea(form.landDetails!.areaSqFt)}',
-                  style: Theme.of(context).textTheme.titleSmall,
+              const SizedBox(height: 20),
+              TextFormField(
+                controller: _rateController,
+                decoration: const InputDecoration(
+                  labelText: 'Hourly Amount (₹)',
+                  hintText: 'Enter parking fee per hour',
+                  border: OutlineInputBorder(),
                 ),
-              ],
+                keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                onChanged: (v) {
+                  final rate = double.tryParse(v.trim());
+                  ref.read(existingParkingFormProvider.notifier).setHourlyRate(rate);
+                },
+              ),
             ],
           ),
         2 => UploadDocumentsForm(
@@ -218,6 +260,21 @@ class _ExistingParkingFlowPageState extends ConsumerState<ExistingParkingFlowPag
             ownerId: ref.watch(authStateProvider).session?.userId ?? '',
             onChanged: ref.read(existingParkingFormProvider.notifier).setDocuments,
           ),
+        3 => (form.ownerDetails == null || form.landDetails == null)
+            ? const Text('Complete earlier steps to review your ticket.')
+            : ReviewTicketForm(
+                key: _reviewFormKey,
+                mode: ReviewTicketMode.existingParking,
+                ownerDetails: form.ownerDetails!,
+                landDetails: form.landDetails!,
+                hourlyRate: form.hourlyRate,
+                onOwnerChanged:
+                    ref.read(existingParkingFormProvider.notifier).setOwnerDetails,
+                onLandChanged:
+                    ref.read(existingParkingFormProvider.notifier).setLandDetails,
+                onHourlyRateChanged:
+                    ref.read(existingParkingFormProvider.notifier).setHourlyRate,
+              ),
         _ => const SizedBox.shrink(),
       },
     );

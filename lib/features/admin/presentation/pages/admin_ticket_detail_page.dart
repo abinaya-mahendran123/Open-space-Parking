@@ -12,10 +12,13 @@ import 'package:open_space_parking/core/widgets/buttons/primary_button.dart';
 import 'package:open_space_parking/core/widgets/dialogs/app_dialogs.dart';
 import 'package:open_space_parking/core/widgets/errors/app_error_widget.dart';
 import 'package:open_space_parking/core/widgets/loading/app_loading_widget.dart';
+import 'package:open_space_parking/features/admin/domain/entities/document_verification_report.dart';
 import 'package:open_space_parking/features/admin/domain/entities/employee.dart';
 import 'package:open_space_parking/features/admin/presentation/providers/admin_providers.dart';
+import 'package:open_space_parking/features/admin/presentation/widgets/document_verification_checklist.dart';
 import 'package:open_space_parking/features/authentication/presentation/providers/auth_state_provider.dart';
 import 'package:open_space_parking/features/land_owner/domain/entities/land_details.dart';
+import 'package:open_space_parking/features/land_owner/domain/entities/land_owner_documents.dart';
 import 'package:open_space_parking/features/land_owner/domain/entities/land_owner_request.dart';
 
 class AdminTicketDetailPage extends ConsumerWidget {
@@ -121,27 +124,43 @@ class AdminTicketDetailPage extends ConsumerWidget {
                   _SectionCard(
                     title: 'Verify Documents',
                     children: [
+                      _DocumentVerificationSection(
+                        ticketId: ticketId,
+                        documents: ticket.documents,
+                      ),
+                      const SizedBox(height: 12),
                       // DigiLocker verified banner
                       if (ticket.documents.digilockerVerified) ...[
                         Container(
                           margin: const EdgeInsets.only(bottom: 12),
                           padding: const EdgeInsets.all(12),
                           decoration: BoxDecoration(
-                            color: Colors.green.shade50,
+                            color: Theme.of(context).colorScheme.secondaryContainer,
                             borderRadius: BorderRadius.circular(10),
-                            border: Border.all(color: Colors.green.shade200),
+                            border: Border.all(
+                              color: Theme.of(context)
+                                  .colorScheme
+                                  .secondary
+                                  .withValues(alpha: 0.4),
+                            ),
                           ),
                           child: Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
                               Row(
                                 children: [
-                                  const Icon(Icons.verified, color: Colors.green, size: 20),
+                                  Icon(
+                                    Icons.verified,
+                                    color: Theme.of(context).colorScheme.secondary,
+                                    size: 20,
+                                  ),
                                   const SizedBox(width: 8),
                                   Text(
                                     'DigiLocker Verified',
                                     style: Theme.of(context).textTheme.titleSmall?.copyWith(
-                                          color: Colors.green.shade800,
+                                          color: Theme.of(context)
+                                              .colorScheme
+                                              .onSecondaryContainer,
                                           fontWeight: FontWeight.bold,
                                         ),
                                   ),
@@ -149,13 +168,18 @@ class AdminTicketDetailPage extends ConsumerWidget {
                                   Container(
                                     padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
                                     decoration: BoxDecoration(
-                                      color: Colors.green.shade100,
+                                      color: Theme.of(context)
+                                          .colorScheme
+                                          .secondary
+                                          .withValues(alpha: 0.2),
                                       borderRadius: BorderRadius.circular(4),
                                     ),
                                     child: Text(
                                       'Government Certified',
                                       style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                                            color: Colors.green.shade800,
+                                            color: Theme.of(context)
+                                                .colorScheme
+                                                .onSecondaryContainer,
                                           ),
                                     ),
                                   ),
@@ -193,18 +217,10 @@ class AdminTicketDetailPage extends ConsumerWidget {
                           ),
                         ),
                       ] else ...[
-                        // Manual documents
-                        _DocRow('Government ID', ticket.documents.governmentIdPath),
-                        _DocRow('Property Document', ticket.documents.propertyDocumentPath),
-                        _DocRow('Patta', ticket.documents.pattaPath),
-                        _DocRow('Property Tax', ticket.documents.propertyTaxPath),
-                        _DocRow(
-                          'Local municipality verified Document',
-                          ticket.documents.municipalityCertificatePath,
-                        ),
                         const SizedBox(height: 4),
                         Text(
-                          'Employee site visit required to verify manually uploaded documents.',
+                          'Review flagged items above before approving. '
+                          'Site visit only if checks fail or documents look suspicious.',
                           style: Theme.of(context).textTheme.bodySmall?.copyWith(
                                 color: Theme.of(context).colorScheme.onSurfaceVariant,
                               ),
@@ -426,16 +442,10 @@ class AdminTicketDetailPage extends ConsumerWidget {
               e is AppException ? e.message : 'Could not load employees.',
             );
       }
-      loading.state = false;
       return;
     } finally {
-      if (!context.mounted) {
-        loading.state = false;
-        return;
-      }
+      loading.state = false;
     }
-
-    loading.state = false;
 
     if (!context.mounted) return;
 
@@ -720,10 +730,15 @@ class _LandLocationCard extends StatelessWidget {
 }
 
 class _DocRow extends StatelessWidget {
-  const _DocRow(this.label, this.url);
+  const _DocRow(
+    this.label,
+    this.url, {
+    this.result,
+  });
 
   final String label;
   final String? url;
+  final DocumentVerificationItem? result;
 
   bool get _hasUrl =>
       url != null &&
@@ -732,15 +747,60 @@ class _DocRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
+    Widget? badge;
+    if (result != null) {
+      final pass = result!.pass;
+      final missing = !result!.present;
+      final color = missing
+          ? colorScheme.error
+          : pass
+              ? Colors.green.shade700
+              : Colors.orange.shade800;
+      final text = missing
+          ? 'Missing · 0%'
+          : '${pass ? 'Verified' : 'Mismatch'} · ${result!.matchPercent}%';
+      badge = Container(
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+        decoration: BoxDecoration(
+          color: color.withValues(alpha: 0.12),
+          borderRadius: BorderRadius.circular(999),
+        ),
+        child: Text(
+          text,
+          style: Theme.of(context).textTheme.labelMedium?.copyWith(
+                color: color,
+                fontWeight: FontWeight.w700,
+              ),
+        ),
+      );
+    }
+
     if (_hasUrl) {
       return Padding(
         padding: const EdgeInsets.only(bottom: 12),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text(label, style: Theme.of(context).textTheme.titleSmall),
+            Row(
+              children: [
+                Expanded(
+                  child: Text(label, style: Theme.of(context).textTheme.titleSmall),
+                ),
+                if (badge != null) badge,
+              ],
+            ),
             const SizedBox(height: 8),
             CloudinaryAssetPreview(url: url!, height: 100),
+            if ((result?.message ?? '').isNotEmpty) ...[
+              const SizedBox(height: 6),
+              Text(
+                result!.message!,
+                style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                      color: colorScheme.onSurfaceVariant,
+                    ),
+              ),
+            ],
           ],
         ),
       );
@@ -751,11 +811,131 @@ class _DocRow extends StatelessWidget {
       dense: true,
       contentPadding: EdgeInsets.zero,
       leading: Icon(
-        url != null ? Icons.check_circle : Icons.cancel,
-        color: url != null ? Colors.green : Colors.red,
+        result != null
+            ? (!result!.present
+                ? Icons.cancel
+                : result!.pass
+                    ? Icons.verified
+                    : Icons.warning_amber_rounded)
+            : (url != null ? Icons.check_circle : Icons.cancel),
+        color: result != null
+            ? (!result!.present
+                ? colorScheme.error
+                : result!.pass
+                    ? Colors.green.shade700
+                    : Colors.orange.shade800)
+            : (url != null ? Colors.green : Colors.red),
       ),
       title: Text(label),
-      subtitle: Text(fileName ?? 'Missing'),
+      subtitle: Text(
+        result?.message?.isNotEmpty == true
+            ? result!.message!
+            : (fileName ?? 'Missing'),
+      ),
+      trailing: badge,
+    );
+  }
+}
+
+/// Runs the heavy OCR cross-check only after the admin opts in.
+class _DocumentVerificationSection extends ConsumerStatefulWidget {
+  const _DocumentVerificationSection({
+    required this.ticketId,
+    required this.documents,
+  });
+
+  final String ticketId;
+  final LandOwnerDocuments documents;
+
+  @override
+  ConsumerState<_DocumentVerificationSection> createState() =>
+      _DocumentVerificationSectionState();
+}
+
+class _DocumentVerificationSectionState
+    extends ConsumerState<_DocumentVerificationSection> {
+  bool _started = false;
+
+  DocumentVerificationItem? _resultFor(
+    List<DocumentVerificationItem> items,
+    String id,
+  ) {
+    for (final doc in items) {
+      if (doc.id == id) return doc;
+    }
+    return null;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final docs = widget.documents;
+    final verificationAsync = _started
+        ? ref.watch(documentVerificationProvider(widget.ticketId))
+        : null;
+    final report = verificationAsync?.valueOrNull;
+    final results = report?.documents ?? const <DocumentVerificationItem>[];
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        if (!_started)
+          Align(
+            alignment: Alignment.centerLeft,
+            child: OutlinedButton.icon(
+              onPressed: () => setState(() => _started = true),
+              icon: const Icon(Icons.document_scanner_outlined, size: 18),
+              label: const Text('Run document cross-check'),
+            ),
+          )
+        else ...[
+          DocumentVerificationChecklist(
+            report: report,
+            isLoading: verificationAsync?.isLoading ?? false,
+            error: verificationAsync?.maybeWhen(
+              error: (e, _) {
+                if (e is AppException) return e.message;
+                final text = e.toString();
+                if (text.contains('TimeoutException')) {
+                  return 'Document cross-check timed out. OCR can take a few minutes — tap Retry.';
+                }
+                return text;
+              },
+              orElse: () => null,
+            ),
+            onRetry: () => ref.invalidate(
+              documentVerificationProvider(widget.ticketId),
+            ),
+          ),
+          const SizedBox(height: 12),
+        ],
+        if (!docs.digilockerVerified) ...[
+          _DocRow(
+            'Government ID',
+            docs.governmentIdPath,
+            result: _resultFor(results, 'government_id'),
+          ),
+          _DocRow(
+            'Property Document',
+            docs.propertyDocumentPath,
+            result: _resultFor(results, 'property_document'),
+          ),
+          _DocRow(
+            'Patta',
+            docs.pattaPath,
+            result: _resultFor(results, 'patta'),
+          ),
+          _DocRow(
+            'Property Tax',
+            docs.propertyTaxPath,
+            result: _resultFor(results, 'property_tax'),
+          ),
+          _DocRow(
+            'Local municipality verified Document',
+            docs.municipalityCertificatePath,
+            result: _resultFor(results, 'municipality_certificate'),
+          ),
+        ],
+      ],
     );
   }
 }

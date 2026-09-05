@@ -139,24 +139,6 @@ class _OsmMapViewState extends ConsumerState<OsmMapView> {
 
   void _zoomOut() => _zoomBy(-1);
 
-  bool get _canZoomIn {
-    if (!_mapReady) return false;
-    try {
-      return _mapController.camera.zoom < _maxZoom;
-    } catch (_) {
-      return false;
-    }
-  }
-
-  bool get _canZoomOut {
-    if (!_mapReady) return false;
-    try {
-      return _mapController.camera.zoom > _minZoom;
-    } catch (_) {
-      return false;
-    }
-  }
-
   Widget _buildMapControlsColumn({
     required MapSelectionState mapState,
   }) {
@@ -187,8 +169,8 @@ class _OsmMapViewState extends ConsumerState<OsmMapView> {
           ),
         if (widget.showCurrentLocation) const SizedBox(height: 8),
         MapZoomControls(
-          onZoomIn: _canZoomIn ? _zoomIn : null,
-          onZoomOut: _canZoomOut ? _zoomOut : null,
+          onZoomIn: _zoomIn,
+          onZoomOut: _zoomOut,
         ),
       ],
     );
@@ -274,9 +256,6 @@ class _OsmMapViewState extends ConsumerState<OsmMapView> {
         ),
         onMapReady: () {
           if (mounted) setState(() => _mapReady = true);
-        },
-        onPositionChanged: (position, hasGesture) {
-          if (mounted) setState(() {});
         },
         onTap: widget.enableSelection
             ? (event, point) {

@@ -64,7 +64,7 @@ class _ParkingPaymentPageState extends ConsumerState<ParkingPaymentPage> {
         }
         ref.invalidate(parkingListingsProvider);
         if (!mounted) return;
-        context.go(RoutePaths.vehicleOwnerBookingReceipt(widget.bookingId));
+        context.push(RoutePaths.vehicleOwnerBookingReceipt(widget.bookingId));
         return;
       }
 
@@ -115,7 +115,7 @@ class _ParkingPaymentPageState extends ConsumerState<ParkingPaymentPage> {
       ref.invalidate(bookingDetailProvider(widget.bookingId));
       ref.invalidate(parkingListingsProvider);
       if (!mounted) return;
-      context.go(RoutePaths.vehicleOwnerBookingReceipt(widget.bookingId));
+      context.push(RoutePaths.vehicleOwnerBookingReceipt(widget.bookingId));
     } on AppException catch (e) {
       ref.read(snackbarServiceProvider).showError(e.message);
     } catch (_) {
@@ -151,7 +151,7 @@ class _ParkingPaymentPageState extends ConsumerState<ParkingPaymentPage> {
       ref.invalidate(bookingDetailProvider(widget.bookingId));
       ref.invalidate(parkingListingsProvider);
       if (!mounted) return;
-      context.go(RoutePaths.vehicleOwnerBookingReceipt(widget.bookingId));
+      context.push(RoutePaths.vehicleOwnerBookingReceipt(widget.bookingId));
     } on AppException catch (e) {
       ref.read(snackbarServiceProvider).showError(e.message);
     } catch (_) {
@@ -196,7 +196,7 @@ class _ParkingPaymentPageState extends ConsumerState<ParkingPaymentPage> {
                     const Text('Payment already completed.'),
                     const SizedBox(height: 16),
                     FilledButton(
-                      onPressed: () => context.go(
+                      onPressed: () => context.push(
                         RoutePaths.vehicleOwnerBookingReceipt(booking.id),
                       ),
                       child: const Text('View receipt'),

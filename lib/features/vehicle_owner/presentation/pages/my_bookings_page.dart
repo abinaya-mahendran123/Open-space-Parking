@@ -60,47 +60,47 @@ class MyBookingsPage extends ConsumerWidget {
 
           final live = bookings.where((b) => b.isQrLive).toList();
           final past = bookings.where((b) => !b.isQrLive).toList();
+          final rows = <Object>[
+            if (live.isNotEmpty) ...['Active', ...live],
+            if (past.isNotEmpty) ...['Past', ...past],
+          ];
 
           return RefreshIndicator(
             onRefresh: () async =>
                 ref.invalidate(vehicleOwnerBookingsProvider(vehicleOwnerId)),
-            child: ListView(
+            child: ListView.builder(
               padding: const EdgeInsets.all(AppSpacing.md),
-              children: [
-                if (live.isNotEmpty) ...[
-                  Text(
-                    'Active',
-                    style: Theme.of(context).textTheme.titleSmall?.copyWith(
-                          fontWeight: FontWeight.w600,
-                          color: Theme.of(context).colorScheme.primary,
-                        ),
-                  ),
-                  const SizedBox(height: AppSpacing.sm),
-                  ...live.map(
-                    (booking) => BookingCard(
-                      booking: booking,
-                      onTap: () => _openTicket(context, booking),
-                      onShowQr: () => _openTicket(context, booking),
+              itemCount: rows.length,
+              itemBuilder: (context, index) {
+                final row = rows[index];
+                if (row is String) {
+                  return Padding(
+                    padding: EdgeInsets.only(
+                      top: index == 0 ? 0 : AppSpacing.md,
+                      bottom: AppSpacing.sm,
                     ),
-                  ),
-                  if (past.isNotEmpty) const SizedBox(height: AppSpacing.md),
-                ],
-                if (past.isNotEmpty) ...[
-                  Text(
-                    'Past',
-                    style: Theme.of(context).textTheme.titleSmall?.copyWith(
-                          fontWeight: FontWeight.w600,
-                        ),
-                  ),
-                  const SizedBox(height: AppSpacing.sm),
-                  ...past.map(
-                    (booking) => BookingCard(
-                      booking: booking,
-                      onTap: () => _openDetail(context, booking),
+                    child: Text(
+                      row,
+                      style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                            fontWeight: FontWeight.w600,
+                            color: row == 'Active'
+                                ? Theme.of(context).colorScheme.primary
+                                : null,
+                          ),
                     ),
-                  ),
-                ],
-              ],
+                  );
+                }
+                final booking = row as Booking;
+                final isLive = booking.isQrLive;
+                return BookingCard(
+                  booking: booking,
+                  onTap: () => isLive
+                      ? _openTicket(context, booking)
+                      : _openDetail(context, booking),
+                  onShowQr:
+                      isLive ? () => _openTicket(context, booking) : null,
+                );
+              },
             ),
           );
         },

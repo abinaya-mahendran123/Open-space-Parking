@@ -66,13 +66,21 @@ class MongoLandOwnerRepository implements LandOwnerRepository {
     required OwnerDetails ownerDetails,
     required LandOwnerDocuments documents,
     required LandDetails landDetails,
+    double? hourlyRate,
   }) {
+    final slotCount = ParkingSlotCalculator.slotsFromLandArea(landDetails.areaSqFt);
     return _submitRequest(
       ownerId: ownerId,
       requestType: LandOwnerRequestType.existingParking,
       ownerDetails: ownerDetails,
       documents: documents,
       landDetails: landDetails,
+      parkingPreferences: ParkingPreferences(
+        priority: RequestPriority.notImmediate,
+        parkingType: ParkingType.towerParking,
+        numberOfCars: slotCount,
+        hourlyRate: hourlyRate,
+      ),
     );
   }
 

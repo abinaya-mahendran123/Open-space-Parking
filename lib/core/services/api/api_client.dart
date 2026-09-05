@@ -57,7 +57,7 @@ class ApiClient {
     await EnvironmentConfig.refreshReachableApiUrl();
     if (await ping()) return;
 
-    throw NetworkException(EnvironmentConfig.phoneUnreachableMessage);
+    throw const NetworkException(EnvironmentConfig.phoneUnreachableMessage);
   }
 
   Future<Map<String, dynamic>> get(String path) async {
@@ -76,7 +76,7 @@ class ApiClient {
       try {
         response = await send();
       } catch (_) {
-        throw NetworkException(EnvironmentConfig.phoneUnreachableMessage);
+        throw const NetworkException(EnvironmentConfig.phoneUnreachableMessage);
       }
     }
 
@@ -112,7 +112,7 @@ class ApiClient {
         response = await send();
       } catch (retryError) {
         if (retryError is TimeoutException) rethrow;
-        throw NetworkException(EnvironmentConfig.phoneUnreachableMessage);
+        throw const NetworkException(EnvironmentConfig.phoneUnreachableMessage);
       }
     }
 
@@ -136,7 +136,7 @@ class ApiClient {
       final message = payload['error']?.toString() ??
           'API request failed (HTTP ${response.statusCode}).';
       if (authenticated && response.statusCode == 401) {
-        throw NetworkException('Session expired. Please sign in again.');
+        throw const NetworkException('Session expired. Please sign in again.');
       }
       throw NetworkException(message);
     }

@@ -1,6 +1,9 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:get_it/get_it.dart';
 
+import 'package:open_space_parking/core/services/api/parking_slot_estimate_service.dart';
 import 'package:open_space_parking/core/utils/validators.dart';
 import 'package:open_space_parking/core/widgets/textfields/app_text_field.dart';
 import 'package:open_space_parking/features/land_owner/domain/entities/land_details.dart';
@@ -16,10 +19,13 @@ class LandDetailsForm extends StatefulWidget {
     super.key,
     required this.initial,
     required this.onSave,
+    this.showSlotEstimate = false,
   });
 
   final LandDetails? initial;
   final ValueChanged<LandDetails> onSave;
+  /// When true, shows live estimated car slots under the area field.
+  final bool showSlotEstimate;
 
   @override
   State<LandDetailsForm> createState() => LandDetailsFormState();
@@ -29,6 +35,7 @@ class LandDetailsFormState extends State<LandDetailsForm> {
   final _formKey = GlobalKey<FormState>();
   late final TextEditingController _areaController;
   late final TextEditingController _locationNameController;
+  final _slotEstimateService = ParkingSlotEstimateService();
 
   bool _roadAccess = false;
   bool _drainage = false;
@@ -41,6 +48,11 @@ class LandDetailsFormState extends State<LandDetailsForm> {
   bool _isVerifyingName = false;
   // 0 = type name, 1 = pick on map
   int _locationTab = 0;
+
+  int? _estimatedSlots;
+  bool _estimatingSlots = false;
+  Timer? _slotEstimateDebounce;
+  int _slotEstimateRequestId = 0;
 
   @override
   void initState() {
@@ -68,6 +80,50 @@ class LandDetailsFormState extends State<LandDetailsForm> {
       );
     }
     _locationNameController.addListener(_onLocationNameChanged);
+    _areaController.addListener(_onAreaChanged);
+    if (widget.showSlotEstimate) {
+      WidgetsBinding.instance.addPostFrameCallback((_) => _scheduleSlotEstimate());
+    }
+  }
+
+  void _onAreaChanged() {
+    if (widget.showSlotEstimate) _scheduleSlotEstimate();
+  }
+
+  void _scheduleSlotEstimate() {
+    _slotEstimateDebounce?.cancel();
+    final area = double.tryParse(_areaController.text.trim()) ?? 0;
+    if (area <= 0) {
+      if (mounted) {
+        setState(() {
+          _estimatedSlots = null;
+          _estimatingSlots = false;
+        });
+      }
+      return;
+    }
+    if (mounted) setState(() => _estimatingSlots = true);
+    _slotEstimateDebounce = Timer(const Duration(milliseconds: 450), () {
+      _fetchSlotEstimate(area);
+    });
+  }
+
+  Future<void> _fetchSlotEstimate(double area) async {
+    final requestId = ++_slotEstimateRequestId;
+    try {
+      final slots = await _slotEstimateService.estimateSlots(area);
+      if (!mounted || requestId != _slotEstimateRequestId) return;
+      setState(() {
+        _estimatedSlots = slots > 0 ? slots : null;
+        _estimatingSlots = false;
+      });
+    } catch (_) {
+      if (!mounted || requestId != _slotEstimateRequestId) return;
+      setState(() {
+        _estimatedSlots = null;
+        _estimatingSlots = false;
+      });
+    }
   }
 
   void _onLocationNameChanged() {
@@ -79,7 +135,9 @@ class LandDetailsFormState extends State<LandDetailsForm> {
 
   @override
   void dispose() {
+    _slotEstimateDebounce?.cancel();
     _locationNameController.removeListener(_onLocationNameChanged);
+    _areaController.removeListener(_onAreaChanged);
     _areaController.dispose();
     _locationNameController.dispose();
     super.dispose();
@@ -355,6 +413,24 @@ class LandDetailsFormState extends State<LandDetailsForm> {
                   color: colorScheme.onSurfaceVariant,
                 ),
           ),
+          if (widget.showSlotEstimate) ...[
+            const SizedBox(height: 12),
+            if (_estimatingSlots)
+              Text(
+                'Estimating slots…',
+                style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                      color: colorScheme.onSurfaceVariant,
+                    ),
+              )
+            else if (_estimatedSlots != null)
+              Text(
+                'Estimated slots: $_estimatedSlots',
+                style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                      fontWeight: FontWeight.w700,
+                      color: colorScheme.onSurface,
+                    ),
+              ),
+          ],
           const SizedBox(height: 16),
           YesNoTile(
             label: 'Road Access',
