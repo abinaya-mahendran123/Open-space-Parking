@@ -7,13 +7,10 @@
  *     short-lived signed token that phone-login / phone-register accept
  *
  * SMS Provider: Fast2SMS (https://www.fast2sms.com)
- *   - Free tier: 50 free credits on signup
- *   - Cheapest bulk SMS in India (~₹0.15/SMS)
- *   - No DLT registration needed for transactional OTP (Quick SMS)
  *   - Set FAST2SMS_API_KEY in .env
  *
  * Fallback: If FAST2SMS_API_KEY is not set, OTP is logged to console
- *   (development mode — never send real SMS).
+ *   (development only — blocked when NODE_ENV=production).
  *
  * Token: HMAC-SHA256 signed, expires in 10 minutes.
  */
@@ -24,14 +21,51 @@ const https = require('https');
 // In-memory OTP store: phone → { otp, expiresAt, attempts }
 // For production with multiple server instances, replace with DB/Redis.
 const _otpStore = new Map();
+/** IP → { count, windowStart } for send-rate limiting */
+const _ipSendWindow = new Map();
 
 const OTP_TTL_MS = 5 * 60 * 1000;       // 5 minutes
 const TOKEN_TTL_MS = 10 * 60 * 1000;    // 10 minutes
 const MAX_ATTEMPTS = 5;
 const RESEND_COOLDOWN_MS = 30 * 1000;   // 30 seconds
+const IP_SEND_WINDOW_MS = 15 * 60 * 1000;
+const IP_SEND_MAX = 10;                 // max OTP sends per IP per window
+
+function _isProduction() {
+  return String(process.env.NODE_ENV || '').toLowerCase() === 'production';
+}
 
 function _tokenSecret() {
-  return process.env.OTP_TOKEN_SECRET || process.env.JWT_SECRET || 'otp-dev-secret-change-in-prod';
+  const secret = process.env.OTP_TOKEN_SECRET || process.env.JWT_SECRET;
+  if (!secret) {
+    if (_isProduction()) {
+      throw new Error('OTP_TOKEN_SECRET or JWT_SECRET must be set in production.');
+    }
+    return 'otp-dev-secret-change-in-prod';
+  }
+  return secret;
+}
+
+function _clientIp(req) {
+  const forwarded = String(req.headers['x-forwarded-for'] || '')
+    .split(',')[0]
+    .trim();
+  return forwarded || req.ip || req.socket?.remoteAddress || 'unknown';
+}
+
+function _checkIpSendLimit(ip) {
+  const now = Date.now();
+  let entry = _ipSendWindow.get(ip);
+  if (!entry || now - entry.windowStart > IP_SEND_WINDOW_MS) {
+    entry = { count: 0, windowStart: now };
+    _ipSendWindow.set(ip, entry);
+  }
+  if (entry.count >= IP_SEND_MAX) {
+    const retrySec = Math.ceil((entry.windowStart + IP_SEND_WINDOW_MS - now) / 1000);
+    return { ok: false, retrySec };
+  }
+  entry.count += 1;
+  return { ok: true };
 }
 
 function _generateOtp() {
@@ -68,7 +102,13 @@ async function sendSms(phone, otp) {
   const apiKey = (process.env.FAST2SMS_API_KEY || '').trim();
 
   if (!apiKey) {
-    // Development fallback — log to console
+    if (_isProduction()) {
+      return {
+        ok: false,
+        error: 'SMS is not configured (FAST2SMS_API_KEY missing).',
+      };
+    }
+    // Development fallback — log to console (never in production)
     console.log(`\n[OTP DEV] Phone: ${phone}  OTP: ${otp}  (Fast2SMS not configured)\n`);
     return { ok: true, dev: true };
   }
@@ -136,6 +176,13 @@ async function handleSendOtp(req, res) {
     return res.status(400).json({ error: 'Enter a valid 10-digit Indian mobile number.' });
   }
   const phone = `+91${last10}`;
+
+  const ipLimit = _checkIpSendLimit(_clientIp(req));
+  if (!ipLimit.ok) {
+    return res.status(429).json({
+      error: `Too many OTP requests from this network. Try again in ${ipLimit.retrySec} seconds.`,
+    });
+  }
 
   // Cooldown check
   const existing = _otpStore.get(phone);

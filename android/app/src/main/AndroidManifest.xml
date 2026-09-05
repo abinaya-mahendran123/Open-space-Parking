@@ -9,7 +9,7 @@
         android:maxSdkVersion="28"/>
     <uses-feature android:name="android.hardware.camera" android:required="false"/>
     <application
-        android:label="open_space_parking"
+        android:label="Open Space Parking"
         android:name="${applicationName}"
         android:icon="@mipmap/ic_launcher"
         android:usesCleartextTraffic="true">

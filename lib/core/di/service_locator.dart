@@ -33,6 +33,8 @@ import 'package:open_space_parking/core/cloudinary/data/repositories/cloudinary_
 import 'package:open_space_parking/core/cloudinary/data/services/cloudinary_api_service.dart';
 import 'package:open_space_parking/core/cloudinary/data/services/cloudinary_validation_service.dart';
 import 'package:open_space_parking/core/cloudinary/domain/repositories/cloudinary_repository.dart';
+import 'package:open_space_parking/core/services/api/backend_upload_service.dart';
+import 'package:open_space_parking/core/services/auth_token_provider.dart';
 import 'package:open_space_parking/core/mongodb/repositories/base_mongo_repository.dart';
 import 'package:open_space_parking/core/mongodb/repositories/mongo_repositories.dart';
 import 'package:open_space_parking/core/mongodb/services/mongo_data_service.dart';
@@ -210,6 +212,9 @@ Future<void> configureDependencies() async {
         apiService: sl<CloudinaryApiService>(),
         validationService: sl<CloudinaryValidationService>(),
         documentRepository: sl<DocumentMongoRepository>(),
+        backendUploadService: BackendUploadService(
+          authTokenProvider: sl<AuthTokenProvider>(),
+        ),
       ),
     );
   }

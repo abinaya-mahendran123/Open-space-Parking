@@ -72,6 +72,7 @@ lib/firebase_options.dart
 # Android / iOS signing and local SDK paths
 android/local.properties
 android/key.properties
+android/keystore-credentials.local.txt
 **/*.jks
 **/*.keystore
 

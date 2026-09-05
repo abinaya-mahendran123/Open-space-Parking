@@ -5,6 +5,9 @@ const TOKEN_TTL_MS = 7 * 24 * 60 * 60 * 1000;
 function jwtSecret() {
   const secret = process.env.JWT_SECRET || process.env.OTP_TOKEN_SECRET;
   if (!secret) {
+    if (String(process.env.NODE_ENV || '').toLowerCase() === 'production') {
+      throw new Error('JWT_SECRET must be set in production.');
+    }
     console.warn(
       'JWT_SECRET is not set — using dev fallback. Set JWT_SECRET in production.',
     );

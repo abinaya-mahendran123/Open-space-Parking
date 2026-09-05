@@ -1,6 +1,6 @@
 # Google Sign-In — Android fix checklist
 
-Your app package: `com.example.open_space_parking`  
+Your app package: `com.estar.openspaceparking`  
 Firebase project: `open-space-parking` (`794049298844`)
 
 ## Why it failed
@@ -12,7 +12,7 @@ shows up as ApiException **10** / developer error.
 ## Fix (do this in Firebase Console)
 
 1. Open https://console.firebase.google.com/project/open-space-parking/settings/general
-2. Select the Android app `com.example.open_space_parking`
+2. Select the Android app `com.estar.openspaceparking`
 3. Click **Add fingerprint** and paste this **debug SHA-1**:
 
    ```

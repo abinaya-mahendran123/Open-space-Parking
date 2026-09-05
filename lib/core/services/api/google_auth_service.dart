@@ -262,7 +262,7 @@ class GoogleAuthService {
       return 'Google sign-in is not set up for this app yet. '
           'In Firebase Console → Project settings → Your Android app, '
           'add SHA-1 fingerprint, enable Google Sign-In, then download a new '
-          'google-services.json. Package: com.example.open_space_parking';
+          'google-services.json. Package: com.estar.openspaceparking';
     }
     if (message.contains('sign_in_failed') || message.contains('12500')) {
       return 'Google sign-in failed. Please try again.';

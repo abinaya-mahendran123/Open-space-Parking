@@ -6,13 +6,18 @@ import 'package:open_space_parking/core/cloudinary/domain/entities/cloudinary_as
 import 'package:open_space_parking/core/cloudinary/domain/entities/cloudinary_file_category.dart';
 import 'package:open_space_parking/core/common/exceptions/app_exception.dart';
 import 'package:open_space_parking/core/config/environment_config.dart';
+import 'package:open_space_parking/core/services/auth_token_provider.dart';
 
 /// Local API file storage for dev/web when Cloudinary is unavailable.
 class BackendUploadService {
-  BackendUploadService({http.Client? httpClient})
-      : _httpClient = httpClient ?? http.Client();
+  BackendUploadService({
+    http.Client? httpClient,
+    AuthTokenProvider? authTokenProvider,
+  })  : _httpClient = httpClient ?? http.Client(),
+        _authTokenProvider = authTokenProvider ?? AuthTokenProvider();
 
   final http.Client _httpClient;
+  final AuthTokenProvider _authTokenProvider;
 
   /// Backend upload is the default for local/dev. Cloudinary is opt-in only.
   static bool get shouldUseBackendUpload {
@@ -35,6 +40,12 @@ class BackendUploadService {
     return Uri.decodeComponent(uri.pathSegments.last);
   }
 
+  Map<String, String> _authHeaders() {
+    final token = _authTokenProvider.token;
+    if (token == null || token.isEmpty) return const {};
+    return {'Authorization': 'Bearer $token'};
+  }
+
   Future<CloudinaryAsset> upload({
     required List<int> fileBytes,
     required String fileName,
@@ -42,6 +53,7 @@ class BackendUploadService {
   }) async {
     final uri = Uri.parse('${EnvironmentConfig.baseApiUrl}/api/uploads');
     final request = http.MultipartRequest('POST', uri)
+      ..headers.addAll(_authHeaders())
       ..files.add(
         http.MultipartFile.fromBytes(
           'file',
@@ -73,7 +85,10 @@ class BackendUploadService {
     if (publicId.isEmpty) return;
     final encoded = Uri.encodeComponent(publicId);
     final uri = Uri.parse('${EnvironmentConfig.baseApiUrl}/api/uploads/$encoded');
-    final response = await _httpClient.delete(uri);
+    final response = await _httpClient.delete(
+      uri,
+      headers: _authHeaders(),
+    );
     if (response.statusCode == 404) return;
     if (response.statusCode < 200 || response.statusCode >= 300) {
       throw AppException(_parseError(response.body) ?? 'File delete failed.');

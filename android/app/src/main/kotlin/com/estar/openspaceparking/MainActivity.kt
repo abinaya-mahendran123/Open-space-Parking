@@ -1,4 +1,4 @@
-package com.example.open_space_parking
+package com.estar.openspaceparking
 
 import android.content.ContentValues
 import android.os.Build

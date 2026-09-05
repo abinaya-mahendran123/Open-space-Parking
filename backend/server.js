@@ -1594,7 +1594,7 @@ async function verifyFirebasePhoneToken(idToken) {
   return normalizePhoneNumber(phone);
 }
 
-app.post('/api/uploads', upload.single('file'), (req, res) => {
+app.post('/api/uploads', requireAuth, upload.single('file'), (req, res) => {
   try {
     if (!req.file) {
       res.status(400).json({ error: 'No file uploaded.' });
@@ -1628,7 +1628,7 @@ app.post('/api/uploads', upload.single('file'), (req, res) => {
   }
 });
 
-app.delete('/api/uploads/:fileName', (req, res) => {
+app.delete('/api/uploads/:fileName', requireAuth, (req, res) => {
   try {
     const fileName = path.basename(req.params.fileName);
     const filePath = path.join(uploadDir, fileName);
@@ -2703,6 +2703,18 @@ async function start() {
   app.listen(PORT, '0.0.0.0', () => {
     console.log(`Open Space Parking API listening on http://0.0.0.0:${PORT}`);
     console.log(`Phone/emulator: use http://<this-pc-lan-ip>:${PORT}`);
+    const jwtSet = Boolean(String(process.env.JWT_SECRET || '').trim());
+    if (!jwtSet) {
+      console.warn('[SECURITY] JWT_SECRET is not set. Set a strong secret before production.');
+    }
+    if (DEFAULT_ADMIN_PASSWORD === 'Admin@1234') {
+      console.warn(
+        '[SECURITY] DEFAULT_ADMIN_PASSWORD is still Admin@1234. Change it on Render before public launch.',
+      );
+    }
+    if (!String(process.env.CORS_ORIGINS || '').trim()) {
+      console.warn('[SECURITY] CORS_ORIGINS is empty (all origins allowed for credentialed browsers). Set it in production.');
+    }
   });
 }
 
