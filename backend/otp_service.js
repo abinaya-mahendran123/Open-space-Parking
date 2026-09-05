@@ -9,8 +9,8 @@
  * SMS Provider: Fast2SMS (https://www.fast2sms.com)
  *   - Set FAST2SMS_API_KEY in .env
  *
- * Fallback: If FAST2SMS_API_KEY is not set, OTP is logged to console
- *   (development only — blocked when NODE_ENV=production).
+ * Fallback: If FAST2SMS_API_KEY is not set, OTP is logged to the server
+ *   console (check Render Logs). Set the key for real SMS to phones.
  *
  * Token: HMAC-SHA256 signed, expires in 10 minutes.
  */
@@ -102,14 +102,11 @@ async function sendSms(phone, otp) {
   const apiKey = (process.env.FAST2SMS_API_KEY || '').trim();
 
   if (!apiKey) {
-    if (_isProduction()) {
-      return {
-        ok: false,
-        error: 'SMS is not configured (FAST2SMS_API_KEY missing).',
-      };
-    }
-    // Development fallback — log to console (never in production)
-    console.log(`\n[OTP DEV] Phone: ${phone}  OTP: ${otp}  (Fast2SMS not configured)\n`);
+    // Prefer setting FAST2SMS_API_KEY on Render for real SMS.
+    // Without it, OTP is only in server logs (Render → Logs).
+    console.warn(
+      `\n[OTP DEV] Phone: ${phone}  OTP: ${otp}  (Set FAST2SMS_API_KEY for SMS)\n`,
+    );
     return { ok: true, dev: true };
   }
 
