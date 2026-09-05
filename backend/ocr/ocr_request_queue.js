@@ -1,13 +1,16 @@
 const { logOcr } = require('./ocr_logging');
+const { ocrMaxConcurrentDefault, isLowMemoryOcr } = require('./low_memory');
 
 /**
- * Limits concurrent full-document OCR jobs so bursts (e.g. 1000 users) queue
- * instead of overloading Paddle/Tesseract and degrading accuracy.
+ * Limits concurrent full-document OCR jobs so bursts queue
+ * instead of overloading Paddle/Tesseract and blowing RAM.
  */
 class OcrRequestQueue {
   constructor(options = {}) {
     this.maxConcurrent = Number(
-      options.maxConcurrent ?? process.env.OCR_MAX_CONCURRENT_REQUESTS ?? 24,
+      options.maxConcurrent ??
+        process.env.OCR_MAX_CONCURRENT_REQUESTS ??
+        ocrMaxConcurrentDefault(),
     );
     this.maxQueue = Number(options.maxQueue ?? process.env.OCR_MAX_QUEUE_SIZE ?? 1000);
     this.queueTimeoutMs = Number(
@@ -83,7 +86,21 @@ class OcrRequestQueue {
           entry.resolve(result);
         })
         .catch(entry.reject)
-        .finally(() => {
+        .finally(async () => {
+          // Free Tesseract WASM workers after each job on small hosts.
+          if (isLowMemoryOcr()) {
+            try {
+              const { terminateWorkers } = require('./tesseract_engine');
+              await terminateWorkers();
+            } catch (_) {
+              // ignore
+            }
+            if (typeof global.gc === 'function') {
+              try {
+                global.gc();
+              } catch (_) {}
+            }
+          }
           this.active = Math.max(0, this.active - 1);
           this._pump();
         });

@@ -97,7 +97,7 @@ app.use(
   ),
 );
 // Aadhaar OCR may send inline base64 when Cloudinary/local URL fetch would 404.
-app.use(express.json({ limit: '25mb' }));
+app.use(express.json({ limit: process.env.JSON_BODY_LIMIT || '10mb' }));
 app.use((error, _req, res, next) => {
   if (error instanceof SyntaxError && error.status === 400 && 'body' in error) {
     res.status(400).json({ error: 'Invalid JSON request body.' });
@@ -119,7 +119,7 @@ const uploadStorage = multer.diskStorage({
 
 const upload = multer({
   storage: uploadStorage,
-  limits: { fileSize: 20 * 1024 * 1024 },
+  limits: { fileSize: Number(process.env.UPLOAD_MAX_BYTES || 8 * 1024 * 1024) },
 });
 
 app.use('/uploads', express.static(uploadDir));
@@ -2883,6 +2883,14 @@ async function start() {
     if (!String(process.env.CORS_ORIGINS || '').trim()) {
       console.warn('[SECURITY] CORS_ORIGINS is empty (all origins allowed for credentialed browsers). Set it in production.');
     }
+    try {
+      const { isLowMemoryOcr } = require('./ocr/low_memory');
+      if (isLowMemoryOcr()) {
+        console.log(
+          '[OCR] Low-memory mode on (smaller images, 1 OCR job, free Tesseract after each). Set LOW_MEMORY_OCR=0 to disable.',
+        );
+      }
+    } catch (_) {}
   });
 }
 

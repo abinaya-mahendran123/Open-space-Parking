@@ -1,4 +1,13 @@
 const sharp = require('sharp');
+const { isLowMemoryOcr, preprocessLimits } = require('./ocr/low_memory');
+
+// Cap Sharp thread/cache use — big win on 512MB–2GB hosts.
+try {
+  sharp.cache(isLowMemoryOcr() ? false : { memory: 32, files: 20, items: 100 });
+  sharp.concurrency(isLowMemoryOcr() ? 1 : 2);
+} catch (_) {
+  // older sharp — ignore
+}
 
 // Keep fast path to 1 variant — Render free tier gateway times out (~60s) otherwise.
 const FAST_VARIANTS = ['standard'];
@@ -6,13 +15,14 @@ const DEEP_VARIANTS = ['standard', 'contrast'];
 const VARIANTS = FAST_VARIANTS;
 
 async function withAutoScale(image, options = {}) {
-  const maxWidth = Number(options.maxWidth || 1600);
-  const minUpscale = Number(options.minUpscale || 1200);
+  const limits = preprocessLimits();
+  const maxWidth = Number(options.maxWidth || limits.maxWidth);
+  const minUpscale = Number(options.minUpscale || limits.minUpscale);
   const meta = await image.metadata();
   const width = meta.width || 0;
   if (width <= 0) return image;
 
-  // Cap resolution for speed on hosted free tier (still sharp enough for OCR).
+  // Cap resolution for speed / RAM on hosted free tier.
   if (width < minUpscale) {
     return image.resize({
       width: Math.min(Math.max(width * 2, minUpscale), maxWidth),
@@ -26,6 +36,9 @@ async function withAutoScale(image, options = {}) {
 }
 
 async function preprocessVariant(buffer, variant, preprocessOptions = {}) {
+  const limits = preprocessLimits();
+  const jpegQuality =
+    Number(preprocessOptions.jpegQuality || limits.jpegQuality) || limits.jpegQuality;
   const rotated = sharp(buffer).rotate();
   const scaled = await withAutoScale(rotated, preprocessOptions);
 
@@ -36,14 +49,14 @@ async function preprocessVariant(buffer, variant, preprocessOptions = {}) {
         .normalize()
         .linear(1.45, -(128 * 0.35))
         .sharpen({ sigma: 1.2 })
-        .jpeg({ quality: preprocessOptions.jpegQuality || 85 })
+        .jpeg({ quality: jpegQuality })
         .toBuffer();
     case 'threshold':
       return scaled
         .greyscale()
         .normalize()
         .threshold(145)
-        .jpeg({ quality: preprocessOptions.jpegQuality || 85 })
+        .jpeg({ quality: jpegQuality })
         .toBuffer();
     case 'inverted':
       return scaled
@@ -51,7 +64,7 @@ async function preprocessVariant(buffer, variant, preprocessOptions = {}) {
         .negate()
         .normalize()
         .sharpen({ sigma: 1 })
-        .jpeg({ quality: preprocessOptions.jpegQuality || 85 })
+        .jpeg({ quality: jpegQuality })
         .toBuffer();
     case 'denoise':
       return scaled
@@ -59,7 +72,7 @@ async function preprocessVariant(buffer, variant, preprocessOptions = {}) {
         .normalize()
         .median(1)
         .sharpen({ sigma: 1.1 })
-        .jpeg({ quality: preprocessOptions.jpegQuality || 85 })
+        .jpeg({ quality: jpegQuality })
         .toBuffer();
     case 'bright':
       return scaled
@@ -67,7 +80,7 @@ async function preprocessVariant(buffer, variant, preprocessOptions = {}) {
         .modulate({ brightness: 1.25 })
         .normalize()
         .sharpen({ sigma: 1.3 })
-        .jpeg({ quality: preprocessOptions.jpegQuality || 85 })
+        .jpeg({ quality: jpegQuality })
         .toBuffer();
     case 'standard':
     default:
@@ -75,13 +88,24 @@ async function preprocessVariant(buffer, variant, preprocessOptions = {}) {
         .greyscale()
         .normalize()
         .sharpen({ sigma: 1.4 })
-        .jpeg({ quality: preprocessOptions.jpegQuality || 85 })
+        .jpeg({ quality: jpegQuality })
         .toBuffer();
   }
 }
 
 async function buildPreprocessedBuffers(buffer, { deep = false } = {}) {
   const variants = deep ? DEEP_VARIANTS : FAST_VARIANTS;
+  // Sequential on low RAM — parallel Sharp spikes memory.
+  if (isLowMemoryOcr()) {
+    const outputs = [];
+    for (const variant of variants) {
+      outputs.push({
+        variant,
+        buffer: await preprocessVariant(buffer, variant),
+      });
+    }
+    return outputs;
+  }
   const outputs = await Promise.all(
     variants.map(async (variant) => ({
       variant,
@@ -125,13 +149,14 @@ async function prepareAadhaarUpload(buffer) {
         sameBuffer: true,
       };
     }
-    const [leftBuffer, rightBuffer] = await Promise.all([
-      sharp(buffer).rotate().extract({ left: 0, top: 0, width: halfWidth, height }).toBuffer(),
-      sharp(buffer)
-        .rotate()
-        .extract({ left: halfWidth, top: 0, width: width - halfWidth, height })
-        .toBuffer(),
-    ]);
+    const leftBuffer = await sharp(buffer)
+      .rotate()
+      .extract({ left: 0, top: 0, width: halfWidth, height })
+      .toBuffer();
+    const rightBuffer = await sharp(buffer)
+      .rotate()
+      .extract({ left: halfWidth, top: 0, width: width - halfWidth, height })
+      .toBuffer();
     return {
       layout: 'dual_horizontal',
       frontBuffer: leftBuffer,
@@ -308,10 +333,13 @@ async function cropAadhaarNumberBands(buffer) {
         .normalize()
         .sharpen()
         .resize({
-          width: Math.min(Math.max(w * 2, 1000), 1600),
+          width: Math.min(
+            Math.max(w * 2, 1000),
+            preprocessLimits().bandMaxWidth,
+          ),
           withoutEnlargement: false,
         })
-        .jpeg({ quality: 90 })
+        .jpeg({ quality: preprocessLimits().bandJpegQuality })
         .toBuffer();
       const cropMeta = await sharp(cropped).metadata();
       if ((cropMeta.width || 0) < 80 || (cropMeta.height || 0) < 20) continue;

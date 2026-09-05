@@ -229,7 +229,12 @@ async function bufferToOcrImage(buffer, sourceUrl) {
 
   try {
     const sharp = require('sharp');
-    return await sharp(buffer, { density: 220, page: 0 }).png().toBuffer();
+    const { preprocessLimits } = require('./ocr/low_memory');
+    const density = preprocessLimits().pdfDensity;
+    // JPEG uses far less RAM than PNG for a full PDF page raster.
+    return await sharp(buffer, { density, page: 0 })
+      .jpeg({ quality: 75 })
+      .toBuffer();
   } catch (error) {
     logOcr('pdf_render_failed', { reason: error?.message || String(error) });
     return null;

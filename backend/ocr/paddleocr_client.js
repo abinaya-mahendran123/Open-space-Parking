@@ -6,11 +6,14 @@ const http = require('http');
 const https = require('https');
 
 const { logOcr } = require('./ocr_logging');
+const { isLowMemoryOcr } = require('./low_memory');
 
 const DEFAULT_SERVICE_URL =
   process.env.PADDLEOCR_SERVICE_URL || 'http://127.0.0.1:8765';
 const DEFAULT_TIMEOUT_MS = Number(process.env.PADDLEOCR_TIMEOUT_MS || 180000);
-const MAX_CONCURRENT = Number(process.env.PADDLEOCR_MAX_CONCURRENT || 8);
+const MAX_CONCURRENT = Number(
+  process.env.PADDLEOCR_MAX_CONCURRENT || (isLowMemoryOcr() ? 1 : 2),
+);
 const HEALTH_CACHE_MS = Number(process.env.PADDLEOCR_HEALTH_CACHE_MS || 60000);
 
 let activeCount = 0;
