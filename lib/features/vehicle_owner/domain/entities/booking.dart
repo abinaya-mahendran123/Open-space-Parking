@@ -84,11 +84,19 @@ class Booking extends Equatable {
 
   /// Show the 2h timer UI whenever entry has not happened yet.
   bool get showEntryQrCountdown =>
-      status == BookingStatus.confirmed && checkedInAt == null;
+      checkedInAt == null &&
+      (status == BookingStatus.confirmed ||
+          status == BookingStatus.pending ||
+          (status != BookingStatus.completed &&
+              status != BookingStatus.cancelled &&
+              status != BookingStatus.active &&
+              isQrLive));
 
   bool get isEntryQrExpired {
     if (checkedInAt != null) return false;
-    if (status != BookingStatus.confirmed && status != BookingStatus.pending) {
+    if (status == BookingStatus.active ||
+        status == BookingStatus.completed ||
+        status == BookingStatus.cancelled) {
       return false;
     }
     return DateTime.now().isAfter(entryQrDeadline);

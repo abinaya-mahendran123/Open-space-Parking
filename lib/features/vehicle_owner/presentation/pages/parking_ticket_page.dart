@@ -156,13 +156,57 @@ class _ParkingTicketPageState extends ConsumerState<ParkingTicketPage> {
                 child: Column(
                   children: [
                     Text(
-                      'PARKING PASS',
+                      'PARKING PASS  v1.0.1',
                       style: theme.textTheme.labelLarge?.copyWith(
                         color: colorScheme.onSurfaceVariant,
-                        letterSpacing: 2,
+                        letterSpacing: 1.2,
                         fontWeight: FontWeight.w700,
                       ),
                     ),
+                    // Always-on entry timer (top of card) so it cannot be missed.
+                    if (booking.checkedInAt == null &&
+                        booking.status != BookingStatus.completed &&
+                        booking.status != BookingStatus.cancelled &&
+                        booking.paidAt == null) ...[
+                      const SizedBox(height: 12),
+                      ValueListenableBuilder<DateTime>(
+                        valueListenable: _now,
+                        builder: (_, now, __) {
+                          final expired = booking.isEntryQrExpired;
+                          return Material(
+                            color: expired
+                                ? const Color(0xFFFEE2E2)
+                                : const Color(0xFFFFEDD5),
+                            borderRadius: BorderRadius.circular(12),
+                            child: Container(
+                              width: double.infinity,
+                              padding: const EdgeInsets.all(12),
+                              decoration: BoxDecoration(
+                                borderRadius: BorderRadius.circular(12),
+                                border: Border.all(
+                                  color: expired
+                                      ? const Color(0xFFDC2626)
+                                      : const Color(0xFFEA580C),
+                                  width: 2,
+                                ),
+                              ),
+                              child: Text(
+                                expired
+                                    ? 'QR EXPIRED - book a new slot'
+                                    : 'QR VALID FOR ${booking.entryQrCountdownLabel(now)} (max 2 hours)',
+                                textAlign: TextAlign.center,
+                                style: theme.textTheme.titleMedium?.copyWith(
+                                  fontWeight: FontWeight.w900,
+                                  color: expired
+                                      ? const Color(0xFFB91C1C)
+                                      : const Color(0xFF9A3412),
+                                ),
+                              ),
+                            ),
+                          );
+                        },
+                      ),
+                    ],
                     const SizedBox(height: AppSpacing.sm),
                     const AppBrandLogo(size: 40, showShadow: false),
                     const SizedBox(height: AppSpacing.md),
@@ -219,47 +263,6 @@ class _ParkingTicketPageState extends ConsumerState<ParkingTicketPage> {
                         color: theme.colorScheme.onSurfaceVariant,
                       ),
                     ),
-                    if (booking.showEntryQrCountdown) ...[
-                      const SizedBox(height: AppSpacing.md),
-                      ValueListenableBuilder<DateTime>(
-                        valueListenable: _now,
-                        builder: (_, now, __) {
-                          final expired = booking.isEntryQrExpired;
-                          final label = expired
-                              ? 'Entry QR expired — book a new slot'
-                              : '⏱ Entry QR valid for ${booking.entryQrCountdownLabel(now)} (2 hrs max)';
-                          final bg = expired
-                              ? theme.colorScheme.errorContainer
-                              : const Color(0xFFFFF7ED);
-                          final fg = expired
-                              ? theme.colorScheme.onErrorContainer
-                              : const Color(0xFFC2410C);
-                          final border = expired
-                              ? theme.colorScheme.error
-                              : const Color(0xFFFB923C);
-                          return Container(
-                            width: double.infinity,
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 14,
-                              vertical: 12,
-                            ),
-                            decoration: BoxDecoration(
-                              color: bg,
-                              borderRadius: BorderRadius.circular(12),
-                              border: Border.all(color: border, width: 1.5),
-                            ),
-                            child: Text(
-                              label,
-                              textAlign: TextAlign.center,
-                              style: theme.textTheme.titleSmall?.copyWith(
-                                fontWeight: FontWeight.w800,
-                                color: fg,
-                              ),
-                            ),
-                          );
-                        },
-                      ),
-                    ],
                     if (booking.isParked) ...[
                       const SizedBox(height: 8),
                       ValueListenableBuilder<DateTime>(
