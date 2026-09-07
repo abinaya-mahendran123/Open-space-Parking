@@ -54,6 +54,23 @@ class _AdminTicketsPageState extends ConsumerState<AdminTicketsPage> {
     }
   }
 
+  String _statusDropdownValue(TicketFilterState filter) {
+    if (filter.docsPendingOnly) return 'docs_pending';
+    return filter.status?.value ?? 'all';
+  }
+
+  String _typeDropdownValue(TicketFilterState filter) {
+    if (filter.assignmentFilter == TicketAssignmentFilter.unassigned) {
+      return 'unassigned';
+    }
+    if (filter.assignmentFilter == TicketAssignmentFilter.assigned) {
+      return 'assigned';
+    }
+    final type = filter.requestType;
+    if (type != null) return 'type:${type.value}';
+    return 'all';
+  }
+
   @override
   Widget build(BuildContext context) {
     final filter = ref.watch(ticketFilterProvider);
@@ -103,68 +120,114 @@ class _AdminTicketsPageState extends ConsumerState<AdminTicketsPage> {
                 },
               ),
               const SizedBox(height: 12),
-              SingleChildScrollView(
-                scrollDirection: Axis.horizontal,
-                child: Row(
-                  children: [
-                    FilterChip(
-                      label: const Text('All Status'),
-                      selected: filter.status == null,
-                      onSelected: (_) => ref
-                          .read(ticketFilterProvider.notifier)
-                          .setStatus(null),
-                    ),
-                    const SizedBox(width: 8),
-                    ...RequestStatus.values.map(
-                      (status) => Padding(
-                        padding: const EdgeInsets.only(right: 8),
-                        child: FilterChip(
-                          label: Text(status.label),
-                          selected: filter.status == status,
-                          onSelected: (_) => ref
-                              .read(ticketFilterProvider.notifier)
-                              .setStatus(status),
-                        ),
+              Row(
+                children: [
+                  Expanded(
+                    child: DropdownButtonFormField<String>(
+                      value: _statusDropdownValue(filter),
+                      isExpanded: true,
+                      decoration: const InputDecoration(
+                        labelText: 'Status',
+                        border: OutlineInputBorder(),
+                        isDense: true,
                       ),
-                    ),
-                  ],
-                ),
-              ),
-              const SizedBox(height: 8),
-              SingleChildScrollView(
-                scrollDirection: Axis.horizontal,
-                child: Row(
-                  children: [
-                    FilterChip(
-                      label: const Text('All Types'),
-                      selected: filter.requestType == null,
-                      onSelected: (_) => ref
-                          .read(ticketFilterProvider.notifier)
-                          .setType(null),
-                    ),
-                    const SizedBox(width: 8),
-                    ...LandOwnerRequestType.values.map(
-                      (type) => Padding(
-                        padding: const EdgeInsets.only(right: 8),
-                        child: FilterChip(
-                          label: Text(type.label),
-                          selected: filter.requestType == type,
-                          onSelected: (_) => ref
-                              .read(ticketFilterProvider.notifier)
-                              .setType(type),
+                      items: [
+                        const DropdownMenuItem(
+                          value: 'all',
+                          child: Text('All Status'),
                         ),
+                        ...RequestStatus.values.map(
+                          (status) => DropdownMenuItem(
+                            value: status.value,
+                            child: Text(status.label),
+                          ),
+                        ),
+                        const DropdownMenuItem(
+                          value: 'docs_pending',
+                          child: Text('Docs Pending'),
+                        ),
+                      ],
+                      onChanged: (value) {
+                        if (value == null) return;
+                        final notifier =
+                            ref.read(ticketFilterProvider.notifier);
+                        if (value == 'all') {
+                          notifier.setStatus(null);
+                          notifier.setDocsPendingOnly(false);
+                        } else if (value == 'docs_pending') {
+                          notifier.setStatus(null);
+                          notifier.setDocsPendingOnly(true);
+                        } else {
+                          notifier.setDocsPendingOnly(false);
+                          notifier.setStatus(
+                            RequestStatus.values.firstWhere(
+                              (s) => s.value == value,
+                            ),
+                          );
+                        }
+                      },
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: DropdownButtonFormField<String>(
+                      value: _typeDropdownValue(filter),
+                      isExpanded: true,
+                      decoration: const InputDecoration(
+                        labelText: 'Type / assignment',
+                        border: OutlineInputBorder(),
+                        isDense: true,
                       ),
+                      items: [
+                        const DropdownMenuItem(
+                          value: 'all',
+                          child: Text('All Types'),
+                        ),
+                        ...LandOwnerRequestType.values.map(
+                          (type) => DropdownMenuItem(
+                            value: 'type:${type.value}',
+                            child: Text(type.label),
+                          ),
+                        ),
+                        const DropdownMenuItem(
+                          value: 'unassigned',
+                          child: Text('Unassigned'),
+                        ),
+                        const DropdownMenuItem(
+                          value: 'assigned',
+                          child: Text('Assigned'),
+                        ),
+                      ],
+                      onChanged: (value) {
+                        if (value == null) return;
+                        final notifier =
+                            ref.read(ticketFilterProvider.notifier);
+                        if (value == 'all') {
+                          notifier.setType(null);
+                          notifier.setAssignmentFilter(
+                            TicketAssignmentFilter.all,
+                          );
+                        } else if (value == 'unassigned') {
+                          notifier.setType(null);
+                          notifier.setUnassignedOnly(true);
+                        } else if (value == 'assigned') {
+                          notifier.setType(null);
+                          notifier.setAssignedOnly(true);
+                        } else if (value.startsWith('type:')) {
+                          final typeValue = value.substring(5);
+                          notifier.setAssignmentFilter(
+                            TicketAssignmentFilter.all,
+                          );
+                          notifier.setType(
+                            LandOwnerRequestType.values.firstWhere(
+                              (t) => t.value == typeValue,
+                            ),
+                          );
+                        }
+                      },
                     ),
-                    const SizedBox(width: 8),
-                    FilterChip(
-                      label: const Text('Unassigned'),
-                      selected: filter.unassignedOnly,
-                      onSelected: (v) => ref
-                          .read(ticketFilterProvider.notifier)
-                          .setUnassignedOnly(v),
-                    ),
-                  ],
-                ),
+                  ),
+                ],
               ),
             ],
           ),

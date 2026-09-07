@@ -18,24 +18,34 @@ final adminRepositoryProvider = Provider<AdminRepository>(
 
 final adminLoadingProvider = StateProvider<bool>((ref) => false);
 
+enum TicketAssignmentFilter { all, unassigned, assigned }
+
 class TicketFilterState {
   const TicketFilterState({
     this.searchQuery = '',
     this.status,
     this.requestType,
-    this.unassignedOnly = false,
+    this.assignmentFilter = TicketAssignmentFilter.all,
+    this.docsPendingOnly = false,
   });
 
   final String searchQuery;
   final RequestStatus? status;
   final LandOwnerRequestType? requestType;
-  final bool unassignedOnly;
+  final TicketAssignmentFilter assignmentFilter;
+  final bool docsPendingOnly;
+
+  bool get unassignedOnly =>
+      assignmentFilter == TicketAssignmentFilter.unassigned;
+  bool get assignedOnly =>
+      assignmentFilter == TicketAssignmentFilter.assigned;
 
   TicketFilterState copyWith({
     String? searchQuery,
     RequestStatus? status,
     LandOwnerRequestType? requestType,
-    bool? unassignedOnly,
+    TicketAssignmentFilter? assignmentFilter,
+    bool? docsPendingOnly,
     bool clearStatus = false,
     bool clearType = false,
   }) {
@@ -43,7 +53,8 @@ class TicketFilterState {
       searchQuery: searchQuery ?? this.searchQuery,
       status: clearStatus ? null : (status ?? this.status),
       requestType: clearType ? null : (requestType ?? this.requestType),
-      unassignedOnly: unassignedOnly ?? this.unassignedOnly,
+      assignmentFilter: assignmentFilter ?? this.assignmentFilter,
+      docsPendingOnly: docsPendingOnly ?? this.docsPendingOnly,
     );
   }
 }
@@ -65,8 +76,49 @@ class TicketFilterNotifier extends StateNotifier<TicketFilterState> {
         : state.copyWith(requestType: type);
   }
 
+  void setAssignmentFilter(TicketAssignmentFilter filter) {
+    state = state.copyWith(assignmentFilter: filter);
+  }
+
   void setUnassignedOnly(bool value) {
-    state = state.copyWith(unassignedOnly: value);
+    setAssignmentFilter(
+      value ? TicketAssignmentFilter.unassigned : TicketAssignmentFilter.all,
+    );
+  }
+
+  void setAssignedOnly(bool value) {
+    setAssignmentFilter(
+      value ? TicketAssignmentFilter.assigned : TicketAssignmentFilter.all,
+    );
+  }
+
+  void setDocsPendingOnly(bool value) {
+    state = state.copyWith(docsPendingOnly: value);
+  }
+
+  void applyDeepLinkFilter(String statusParam) {
+    switch (statusParam) {
+      case 'unassigned':
+        state = const TicketFilterState(
+          assignmentFilter: TicketAssignmentFilter.unassigned,
+        );
+      case 'docs_pending':
+        state = const TicketFilterState(docsPendingOnly: true);
+      case 'submitted':
+        state = const TicketFilterState(status: RequestStatus.submitted);
+      case 'under_review':
+        state = const TicketFilterState(status: RequestStatus.underReview);
+      case 'approved':
+        state = const TicketFilterState(status: RequestStatus.approved);
+      case 'rejected':
+        state = const TicketFilterState(status: RequestStatus.rejected);
+      case 'in_progress':
+        state = const TicketFilterState(status: RequestStatus.inProgress);
+      case 'completed':
+        state = const TicketFilterState(status: RequestStatus.completed);
+      default:
+        state = const TicketFilterState();
+    }
   }
 
   void reset() => state = const TicketFilterState();
@@ -89,14 +141,20 @@ final adminTicketsProvider = FutureProvider<List<LandOwnerRequest>>((ref) async 
   final status = ref.watch(ticketFilterProvider.select((f) => f.status));
   final requestType =
       ref.watch(ticketFilterProvider.select((f) => f.requestType));
-  final unassignedOnly =
-      ref.watch(ticketFilterProvider.select((f) => f.unassignedOnly));
+  final assignmentFilter =
+      ref.watch(ticketFilterProvider.select((f) => f.assignmentFilter));
+  final docsPendingOnly =
+      ref.watch(ticketFilterProvider.select((f) => f.docsPendingOnly));
   final debounced = ref.watch(debouncedSearchProvider);
   return ref.read(adminRepositoryProvider).getAllTickets(
         searchQuery: debounced,
         statusFilter: status,
         typeFilter: requestType,
-        unassignedOnly: unassignedOnly ? true : null,
+        unassignedOnly:
+            assignmentFilter == TicketAssignmentFilter.unassigned ? true : null,
+        assignedOnly:
+            assignmentFilter == TicketAssignmentFilter.assigned ? true : null,
+        docsPendingOnly: docsPendingOnly ? true : null,
       );
 });
 

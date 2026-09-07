@@ -42,6 +42,8 @@ class MongoAdminRepository implements AdminRepository {
     RequestStatus? statusFilter,
     LandOwnerRequestType? typeFilter,
     bool? unassignedOnly,
+    bool? assignedOnly,
+    bool? docsPendingOnly,
   }) async {
     await _ensureConnected();
 
@@ -63,6 +65,18 @@ class MongoAdminRepository implements AdminRepository {
       tickets = tickets
           .where((t) => t.assignedEmployeeId == null || t.assignedEmployeeId!.isEmpty)
           .toList();
+    }
+    if (assignedOnly == true) {
+      tickets = tickets
+          .where(
+            (t) =>
+                t.assignedEmployeeId != null &&
+                t.assignedEmployeeId!.trim().isNotEmpty,
+          )
+          .toList();
+    }
+    if (docsPendingOnly == true) {
+      tickets = tickets.where((t) => !t.documentsVerified).toList();
     }
     if (searchQuery != null && searchQuery.trim().isNotEmpty) {
       final q = searchQuery.trim().toLowerCase();

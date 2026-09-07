@@ -12,7 +12,6 @@ import 'package:open_space_parking/features/admin/presentation/pages/admin_opera
 import 'package:open_space_parking/features/admin/presentation/pages/admin_statistics_page.dart';
 import 'package:open_space_parking/features/admin/presentation/pages/admin_tickets_page.dart';
 import 'package:open_space_parking/features/admin/presentation/providers/admin_providers.dart';
-import 'package:open_space_parking/features/land_owner/domain/entities/request_status.dart';
 
 class AdminShellPage extends ConsumerStatefulWidget {
   const AdminShellPage({
@@ -110,21 +109,7 @@ class _AdminShellPageState extends ConsumerState<AdminShellPage> {
   }
 
   void _applyStatusFilter(String statusParam) {
-    RequestStatus? status;
-    switch (statusParam) {
-      case 'submitted':
-        status = RequestStatus.submitted;
-      case 'under_review':
-        status = RequestStatus.underReview;
-      case 'approved':
-        status = RequestStatus.approved;
-      case 'rejected':
-        status = RequestStatus.rejected;
-      case 'unassigned':
-      case 'docs_pending':
-        status = null;
-    }
-    ref.read(ticketFilterProvider.notifier).setStatus(status);
+    ref.read(ticketFilterProvider.notifier).applyDeepLinkFilter(statusParam);
   }
 
   void _onSelect(int index) {

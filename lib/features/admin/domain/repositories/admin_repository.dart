@@ -11,6 +11,8 @@ abstract class AdminRepository {
     RequestStatus? statusFilter,
     LandOwnerRequestType? typeFilter,
     bool? unassignedOnly,
+    bool? assignedOnly,
+    bool? docsPendingOnly,
   });
 
   Future<LandOwnerRequest?> getTicketById(String ticketId);
