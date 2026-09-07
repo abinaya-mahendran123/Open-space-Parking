@@ -57,6 +57,13 @@ abstract class VehicleOwnerRepository {
 
   Future<void> cancelBooking(String bookingId);
 
+  /// Soft-hides bookings from the vehicle owner's History list (keeps data for
+  /// payments / admin). Only non-live bookings may be hidden.
+  Future<void> hideBookingsFromHistory({
+    required String vehicleOwnerId,
+    required List<String> bookingIds,
+  });
+
   Future<List<FavoriteParking>> getFavorites(String vehicleOwnerId);
 
   Future<bool> isFavorite({

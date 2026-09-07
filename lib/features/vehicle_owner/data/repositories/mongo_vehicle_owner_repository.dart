@@ -955,7 +955,10 @@ class MongoVehicleOwnerRepository implements VehicleOwnerRepository {
       (a, b) => (b['createdAt'] as String).compareTo(a['createdAt'] as String),
     );
 
-    return results.map(_mapBookingToEntity).toList();
+    return results
+        .where((doc) => doc['hiddenFromOwnerHistory'] != true)
+        .map(_mapBookingToEntity)
+        .toList();
   }
 
   @override
@@ -1043,6 +1046,46 @@ class MongoVehicleOwnerRepository implements VehicleOwnerRepository {
         'createdAt': DateTime.now().toUtc().toIso8601String(),
       },
     );
+  }
+
+  @override
+  Future<void> hideBookingsFromHistory({
+    required String vehicleOwnerId,
+    required List<String> bookingIds,
+  }) async {
+    await _ensureConnected();
+
+    final uniqueIds = bookingIds
+        .map((id) => MongoJson.objectIdHex(id))
+        .where((id) => id.length == 24)
+        .toSet();
+    if (uniqueIds.isEmpty) return;
+
+    final now = DateTime.now().toUtc().toIso8601String();
+    for (final id in uniqueIds) {
+      final doc = await _collectionService.findOne(
+        collectionName: AppConstants.bookingsCollection,
+        selector: where.eq('_id', ObjectId.parse(id)),
+      );
+      if (doc == null) continue;
+      if ('${doc['vehicleOwnerId'] ?? ''}' != vehicleOwnerId) continue;
+
+      final booking = _mapBookingToEntity(doc);
+      if (booking.isQrLive) {
+        throw const AppException(
+          'Active parking sessions cannot be removed from history.',
+        );
+      }
+
+      await _collectionService.updateOne(
+        collectionName: AppConstants.bookingsCollection,
+        selector: where.eq('_id', ObjectId.parse(id)),
+        modifier: modify
+            .set('hiddenFromOwnerHistory', true)
+            .set('hiddenFromOwnerHistoryAt', now)
+            .set('updatedAt', now),
+      );
+    }
   }
 
   @override

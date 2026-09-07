@@ -13,11 +13,17 @@ class BookingCard extends StatelessWidget {
     required this.booking,
     required this.onTap,
     this.onShowQr,
+    this.selecting = false,
+    this.selected = false,
+    this.onSelectedChanged,
   });
 
   final Booking booking;
   final VoidCallback onTap;
   final VoidCallback? onShowQr;
+  final bool selecting;
+  final bool selected;
+  final ValueChanged<bool>? onSelectedChanged;
 
   Color _statusColor(BookingStatus status, ColorScheme scheme) {
     switch (status) {
@@ -50,11 +56,22 @@ class BookingCard extends StatelessWidget {
     final statusColor = _statusColor(booking.status, scheme);
 
     return AppCard(
-      onTap: onTap,
+      onTap: selecting
+          ? () => onSelectedChanged?.call(!selected)
+          : onTap,
       margin: const EdgeInsets.only(bottom: AppSpacing.sm),
       padding: const EdgeInsets.all(12),
       child: Row(
         children: [
+          if (selecting) ...[
+            Checkbox(
+              value: selected,
+              onChanged: onSelectedChanged == null
+                  ? null
+                  : (value) => onSelectedChanged!(value ?? false),
+            ),
+            const SizedBox(width: 4),
+          ],
           Container(
             width: 44,
             height: 44,
@@ -100,13 +117,13 @@ class BookingCard extends StatelessWidget {
               ],
             ),
           ),
-          if (booking.isQrLive)
+          if (!selecting && booking.isQrLive)
             IconButton(
               tooltip: 'Show QR',
               onPressed: onShowQr ?? onTap,
               icon: const Icon(Icons.qr_code_2),
             )
-          else
+          else if (!selecting)
             Column(
               crossAxisAlignment: CrossAxisAlignment.end,
               children: [
