@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import 'package:open_space_parking/core/theme/app_colors.dart';
 import 'package:open_space_parking/core/theme/app_spacing.dart';
 import 'package:open_space_parking/core/widgets/cards/app_card.dart';
 import 'package:open_space_parking/core/widgets/parking/availability_badge.dart';
@@ -51,12 +52,12 @@ class _CompactCard extends StatelessWidget {
     return AppCard(
       onTap: onTap,
       margin: const EdgeInsets.only(bottom: AppSpacing.sm),
-      padding: const EdgeInsets.all(16),
+      padding: const EdgeInsets.all(AppSpacing.cardPadding),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           ClipRRect(
-            borderRadius: BorderRadius.circular(12),
+            borderRadius: BorderRadius.circular(AppRadius.md),
             child: SizedBox(
               width: 72,
               height: 72,
@@ -74,26 +75,31 @@ class _CompactCard extends StatelessWidget {
               children: [
                 Text(
                   listing.compactDisplayName,
-                  style: theme.textTheme.titleMedium,
+                  style: theme.textTheme.titleMedium?.copyWith(
+                    fontWeight: FontWeight.w700,
+                  ),
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                 ),
-                const SizedBox(height: 4),
-                if (listing.distanceLabel != null)
-                  Text(
-                    '📍 ${listing.distanceLabel}',
-                    style: theme.textTheme.bodySmall?.copyWith(
-                      color: colorScheme.onSurfaceVariant,
-                    ),
-                  ),
-                if (listing.amountLabel != null) ...[
+                if (listing.distanceLabel != null) ...[
                   const SizedBox(height: 4),
-                  Text(
-                    listing.amountLabel!,
-                    style: theme.textTheme.titleSmall?.copyWith(
-                      color: colorScheme.primary,
-                      fontWeight: FontWeight.w800,
-                    ),
+                  Row(
+                    children: [
+                      Icon(
+                        Icons.near_me_outlined,
+                        size: 14,
+                        color: colorScheme.onSurfaceVariant,
+                      ),
+                      const SizedBox(width: 4),
+                      Expanded(
+                        child: Text(
+                          listing.distanceLabel!,
+                          style: theme.textTheme.bodySmall?.copyWith(
+                            color: colorScheme.onSurfaceVariant,
+                          ),
+                        ),
+                      ),
+                    ],
                   ),
                 ],
                 const SizedBox(height: 8),
@@ -102,6 +108,16 @@ class _CompactCard extends StatelessWidget {
                   totalSlots: listing.capacity,
                   compact: true,
                 ),
+                if (listing.amountLabel != null) ...[
+                  const SizedBox(height: 8),
+                  Text(
+                    listing.amountLabel!,
+                    style: theme.textTheme.titleSmall?.copyWith(
+                      color: AppColors.navigationBlue,
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
+                ],
                 if (listing.verifiedByEmployee) ...[
                   const SizedBox(height: 6),
                   const VerifiedParkingChip(),
@@ -135,7 +151,7 @@ class _FullCard extends StatelessWidget {
     return AppCard(
       onTap: onTap,
       margin: const EdgeInsets.only(bottom: AppSpacing.md),
-      padding: const EdgeInsets.all(16),
+      padding: const EdgeInsets.all(AppSpacing.cardPadding),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -143,7 +159,7 @@ class _FullCard extends StatelessWidget {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               ClipRRect(
-                borderRadius: BorderRadius.circular(12),
+                borderRadius: BorderRadius.circular(AppRadius.md),
                 child: SizedBox(
                   width: 88,
                   height: 88,
@@ -161,24 +177,39 @@ class _FullCard extends StatelessWidget {
                   children: [
                     Text(
                       listing.compactDisplayName,
-                      style: theme.textTheme.titleMedium,
+                      style: theme.textTheme.titleMedium?.copyWith(
+                        fontWeight: FontWeight.w700,
+                      ),
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                     ),
-                    const SizedBox(height: 4),
-                    if (listing.distanceLabel != null)
-                      Text(
-                        '📍 ${listing.distanceLabel}',
-                        style: theme.textTheme.bodySmall?.copyWith(
-                          color: colorScheme.onSurfaceVariant,
-                        ),
+                    if (listing.distanceLabel != null) ...[
+                      const SizedBox(height: 4),
+                      Row(
+                        children: [
+                          Icon(
+                            Icons.near_me_outlined,
+                            size: 14,
+                            color: colorScheme.onSurfaceVariant,
+                          ),
+                          const SizedBox(width: 4),
+                          Expanded(
+                            child: Text(
+                              listing.distanceLabel!,
+                              style: theme.textTheme.bodySmall?.copyWith(
+                                color: colorScheme.onSurfaceVariant,
+                              ),
+                            ),
+                          ),
+                        ],
                       ),
+                    ],
                     if (listing.amountLabel != null) ...[
-                      const SizedBox(height: 6),
+                      const SizedBox(height: 8),
                       Text(
                         listing.amountLabel!,
                         style: theme.textTheme.titleMedium?.copyWith(
-                          color: colorScheme.primary,
+                          color: AppColors.navigationBlue,
                           fontWeight: FontWeight.w800,
                         ),
                       ),
@@ -188,7 +219,7 @@ class _FullCard extends StatelessWidget {
               ),
             ],
           ),
-          const SizedBox(height: 10),
+          const SizedBox(height: 12),
           AvailabilityBadge(
             freeSlots: listing.freeSlots,
             totalSlots: listing.capacity,
@@ -203,7 +234,7 @@ class _FullCard extends StatelessWidget {
               width: double.infinity,
               child: OutlinedButton.icon(
                 onPressed: onNavigate,
-                icon: const Icon(Icons.navigation_outlined, size: 18),
+                icon: const Icon(Icons.local_parking_outlined, size: 18),
                 label: const Text('View parking'),
               ),
             ),

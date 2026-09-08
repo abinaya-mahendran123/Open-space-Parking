@@ -26,6 +26,7 @@ class Booking extends Equatable {
     this.assignedSlot,
     this.qrPayload,
     this.qrExpiresAt,
+    this.cancelReason,
     this.sessionId,
     this.checkedInAt,
     this.checkedOutAt,
@@ -38,6 +39,7 @@ class Booking extends Equatable {
 
   /// Entry QR must be scanned within this window or the booking is cancelled.
   static const Duration entryQrValidity = Duration(hours: 2);
+  static const String cancelReasonEntryQrExpired = 'entry_qr_expired';
 
   final String id;
   final String bookingRef;
@@ -59,6 +61,8 @@ class Booking extends Equatable {
   final int? assignedSlot;
   final String? qrPayload;
   final DateTime? qrExpiresAt;
+  /// Server cancel reason, e.g. [cancelReasonEntryQrExpired].
+  final String? cancelReason;
   final String? sessionId;
   final DateTime? checkedInAt;
   final DateTime? checkedOutAt;
@@ -95,12 +99,22 @@ class Booking extends Equatable {
   bool get isEntryQrExpired {
     if (checkedInAt != null) return false;
     if (status == BookingStatus.active ||
-        status == BookingStatus.completed ||
-        status == BookingStatus.cancelled) {
+        status == BookingStatus.completed) {
       return false;
+    }
+    if (status == BookingStatus.cancelled) {
+      return cancelReason == cancelReasonEntryQrExpired;
     }
     return DateTime.now().isAfter(entryQrDeadline);
   }
+
+  /// Cancelled because entry QR was not scanned within 2 hours.
+  bool get wasCancelledForEntryQrExpiry =>
+      status == BookingStatus.cancelled &&
+      (cancelReason == cancelReasonEntryQrExpired ||
+          (cancelReason == null &&
+              checkedInAt == null &&
+              DateTime.now().isAfter(entryQrDeadline)));
 
   Duration entryQrRemaining([DateTime? now]) {
     final end = entryQrDeadline;
@@ -254,6 +268,7 @@ class Booking extends Equatable {
         assignedSlot,
         qrPayload,
         qrExpiresAt,
+        cancelReason,
         sessionId,
         checkedInAt,
         checkedOutAt,

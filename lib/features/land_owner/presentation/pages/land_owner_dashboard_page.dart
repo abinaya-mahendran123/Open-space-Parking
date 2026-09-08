@@ -48,8 +48,7 @@ class LandOwnerDashboardPage extends ConsumerWidget {
           children: [
             AppPageHeader(
               title: 'Hello, $name',
-              subtitle:
-                  'Choose an option to get started with your parking request.',
+              subtitle: 'Choose an option',
             ),
             const SizedBox(height: AppSpacing.sectionGap),
             AppStaggeredList(

@@ -148,11 +148,11 @@ class ReceiptDownloadService {
                     ),
                     row(
                       'Platform (10%)',
-                      'Rs ${ParkingPaymentSplit.platformAmount(paid).toStringAsFixed(0)}',
+                      'Rs ${ParkingPaymentSplit.platformWholeRupees(paid)}',
                     ),
                     row(
                       'Land owner (90%)',
-                      'Rs ${ParkingPaymentSplit.landOwnerAmount(paid).toStringAsFixed(0)}',
+                      'Rs ${ParkingPaymentSplit.landOwnerWholeRupees(paid)}',
                     ),
                     if (booking.paidAt != null)
                       row(

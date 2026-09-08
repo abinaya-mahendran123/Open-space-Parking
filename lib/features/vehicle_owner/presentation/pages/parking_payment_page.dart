@@ -10,12 +10,12 @@ import 'package:open_space_parking/core/common/exceptions/app_exception.dart';
 import 'package:open_space_parking/core/config/environment_config.dart';
 import 'package:open_space_parking/core/providers/core_providers.dart';
 import 'package:open_space_parking/core/routes/route_paths.dart';
+import 'package:open_space_parking/core/theme/app_spacing.dart';
 import 'package:open_space_parking/core/widgets/buttons/primary_button.dart';
 import 'package:open_space_parking/core/widgets/errors/app_error_widget.dart';
 import 'package:open_space_parking/core/widgets/loading/app_loading_widget.dart';
 import 'package:open_space_parking/features/authentication/presentation/providers/auth_state_provider.dart';
 import 'package:open_space_parking/features/vehicle_owner/domain/entities/booking_status.dart';
-import 'package:open_space_parking/features/vehicle_owner/domain/entities/parking_payment_split.dart';
 import 'package:open_space_parking/features/vehicle_owner/presentation/providers/vehicle_owner_providers.dart';
 
 class ParkingPaymentPage extends ConsumerStatefulWidget {
@@ -220,56 +220,60 @@ class _ParkingPaymentPageState extends ConsumerState<ParkingPaymentPage> {
           }
 
           final amount = booking.amountDue!;
+          final theme = Theme.of(context);
           return ListView(
-            padding: const EdgeInsets.all(16),
+            padding: const EdgeInsets.all(AppSpacing.pagePaddingWide),
             children: [
               Text(
-                '₹${amount.toStringAsFixed(0)}',
+                'Payment',
                 textAlign: TextAlign.center,
-                style: Theme.of(context).textTheme.displaySmall?.copyWith(
-                      fontWeight: FontWeight.bold,
-                    ),
+                style: theme.textTheme.titleLarge?.copyWith(
+                  fontWeight: FontWeight.w800,
+                ),
               ),
               const SizedBox(height: 8),
               Text(
-                '${booking.billedDurationLabel} × ₹${booking.hourlyRate.toStringAsFixed(0)}/hr',
+                'Review your parking charge, then pay securely.',
                 textAlign: TextAlign.center,
+                style: theme.textTheme.bodyMedium?.copyWith(
+                  color: theme.colorScheme.onSurfaceVariant,
+                ),
               ),
-              const SizedBox(height: 16),
-              Card(
-                child: Padding(
-                  padding: const EdgeInsets.all(16),
-                  child: Column(
-                    children: [
-                      _billRow('Parking', booking.displayParkingName),
-                      _billRow('Slot no', '${booking.assignedSlot ?? '-'}'),
-                      _billRow('Session ID', booking.displaySessionId),
-                      _billRow('Vehicle', booking.vehicleNumber),
-                      _billRow('Duration', booking.billedDurationLabel),
-                      _billRow('Amount', '₹${amount.toStringAsFixed(0)}'),
-                      _billRow(
-                        ParkingPaymentSplit.platformAccountName,
-                        '₹${ParkingPaymentSplit.platformAmount(amount).toStringAsFixed(0)} (10%)',
-                      ),
-                      _billRow(
-                        ParkingPaymentSplit.landOwnerShareLabel,
-                        '₹${ParkingPaymentSplit.landOwnerAmount(amount).toStringAsFixed(0)} (90%)',
-                      ),
-                    ],
-                  ),
+              const SizedBox(height: 20),
+              Text(
+                '₹${amount.toStringAsFixed(0)}',
+                textAlign: TextAlign.center,
+                style: theme.textTheme.displaySmall?.copyWith(
+                  fontWeight: FontWeight.w800,
+                ),
+              ),
+              const SizedBox(height: 4),
+              Text(
+                'Final amount',
+                textAlign: TextAlign.center,
+                style: theme.textTheme.labelLarge?.copyWith(
+                  color: theme.colorScheme.onSurfaceVariant,
                 ),
               ),
               const SizedBox(height: 16),
               Card(
                 child: Padding(
-                  padding: const EdgeInsets.all(16),
-                  child: Text(
-                    amount < 1
-                        ? 'No parking fee for this session. Complete checkout to release the slot.'
-                        : 'Pay the full amount with Razorpay (UPI / card / netbanking). '
-                            '10% is kept by the Open Space Parking media account and '
-                            '90% is settled to the land owner.',
-                    style: Theme.of(context).textTheme.bodyMedium,
+                  padding: const EdgeInsets.all(AppSpacing.cardPadding),
+                  child: Column(
+                    children: [
+                      _billRow('Parking', booking.displayParkingName),
+                      _billRow('Duration', booking.billedDurationLabel),
+                      _billRow(
+                        'Rate',
+                        '₹${booking.hourlyRate.toStringAsFixed(0)} / hour',
+                      ),
+                      _billRow('Subtotal', '₹${amount.toStringAsFixed(0)}'),
+                      _billRow('Status', 'Payment due'),
+                      const Divider(height: 20),
+                      _billRow('Slot', '${booking.assignedSlot ?? '-'}'),
+                      _billRow('Vehicle', booking.vehicleNumber),
+                      _billRow('Reference', booking.displaySessionId),
+                    ],
                   ),
                 ),
               ),
@@ -278,7 +282,7 @@ class _ParkingPaymentPageState extends ConsumerState<ParkingPaymentPage> {
                 label: _paying
                     ? 'Opening Razorpay...'
                     : amount < 1
-                        ? 'Calculate fee & pay with Razorpay'
+                        ? 'Complete checkout'
                         : 'Pay ₹${amount.toStringAsFixed(0)} with Razorpay',
                 onPressed: _paying ? null : _payWithRazorpay,
               ),

@@ -9,7 +9,6 @@ import 'package:open_space_parking/core/domain/domain_extensions.dart';
 import 'package:open_space_parking/core/routes/route_paths.dart';
 import 'package:open_space_parking/core/theme/app_colors.dart';
 import 'package:open_space_parking/core/theme/app_spacing.dart';
-import 'package:open_space_parking/core/widgets/brand/app_brand_logo.dart';
 import 'package:open_space_parking/core/widgets/errors/app_error_widget.dart';
 import 'package:open_space_parking/core/widgets/loading/app_loading_widget.dart';
 import 'package:open_space_parking/features/vehicle_owner/domain/entities/booking.dart';
@@ -72,6 +71,9 @@ class _ParkingTicketPageState extends ConsumerState<ParkingTicketPage> {
   String _statusHint(Booking booking) {
     if (booking.isAwaitingPayment) return 'Pay to release your slot';
     if (booking.isParked) return 'Show this QR when you leave';
+    if (booking.wasCancelledForEntryQrExpiry) {
+      return 'Not scanned at the gate within 2 hours. Slot released.';
+    }
     if (booking.showEntryQrCountdown && booking.isEntryQrExpired) {
       return 'Entry QR expired. Book a new slot.';
     }
@@ -88,6 +90,9 @@ class _ParkingTicketPageState extends ConsumerState<ParkingTicketPage> {
   String _statusLabel(Booking booking) {
     if (booking.isAwaitingPayment) return 'Payment due';
     if (booking.isParked) return 'Active';
+    if (booking.wasCancelledForEntryQrExpiry) {
+      return 'Expired (no scan)';
+    }
     if (booking.showEntryQrCountdown && booking.isEntryQrExpired) {
       return 'QR expired';
     }
@@ -100,7 +105,8 @@ class _ParkingTicketPageState extends ConsumerState<ParkingTicketPage> {
 
   Color _statusColor(Booking booking) {
     if (booking.isAwaitingPayment) return AppColors.brandAmber;
-    if (booking.showEntryQrCountdown && booking.isEntryQrExpired) {
+    if (booking.wasCancelledForEntryQrExpiry ||
+        (booking.showEntryQrCountdown && booking.isEntryQrExpired)) {
       return Theme.of(context).colorScheme.error;
     }
     if (booking.isParked ||
@@ -156,50 +162,60 @@ class _ParkingTicketPageState extends ConsumerState<ParkingTicketPage> {
                 child: Column(
                   children: [
                     Text(
-                      'PARKING PASS  v1.0.1',
+                      'PARKING PASS',
                       style: theme.textTheme.labelLarge?.copyWith(
                         color: colorScheme.onSurfaceVariant,
-                        letterSpacing: 1.2,
+                        letterSpacing: 1.6,
                         fontWeight: FontWeight.w700,
                       ),
                     ),
-                    // Always-on entry timer (top of card) so it cannot be missed.
-                    if (booking.checkedInAt == null &&
-                        booking.status != BookingStatus.completed &&
-                        booking.status != BookingStatus.cancelled &&
-                        booking.paidAt == null) ...[
+                    // Entry QR timer / cancel reason — always visible before check-in.
+                    if (booking.wasCancelledForEntryQrExpiry ||
+                        (booking.checkedInAt == null &&
+                            booking.status != BookingStatus.completed &&
+                            booking.paidAt == null &&
+                            (booking.status == BookingStatus.confirmed ||
+                                booking.status == BookingStatus.pending ||
+                                booking.showEntryQrCountdown ||
+                                booking.isEntryQrExpired))) ...[
                       const SizedBox(height: 12),
                       ValueListenableBuilder<DateTime>(
                         valueListenable: _now,
                         builder: (_, now, __) {
-                          final expired = booking.isEntryQrExpired;
+                          final cancelled =
+                              booking.wasCancelledForEntryQrExpiry;
+                          final expired =
+                              cancelled || booking.isEntryQrExpired;
                           return Material(
                             color: expired
-                                ? const Color(0xFFFEE2E2)
-                                : const Color(0xFFFFEDD5),
-                            borderRadius: BorderRadius.circular(12),
+                                ? AppColors.fullLight
+                                : AppColors.limitedLight,
+                            borderRadius: BorderRadius.circular(AppRadius.md),
                             child: Container(
                               width: double.infinity,
                               padding: const EdgeInsets.all(12),
                               decoration: BoxDecoration(
-                                borderRadius: BorderRadius.circular(12),
+                                borderRadius:
+                                    BorderRadius.circular(AppRadius.md),
                                 border: Border.all(
                                   color: expired
-                                      ? const Color(0xFFDC2626)
-                                      : const Color(0xFFEA580C),
-                                  width: 2,
+                                      ? AppColors.full
+                                      : AppColors.limited,
+                                  width: 1.5,
                                 ),
                               ),
                               child: Text(
-                                expired
-                                    ? 'QR EXPIRED - book a new slot'
-                                    : 'QR VALID FOR ${booking.entryQrCountdownLabel(now)} (max 2 hours)',
+                                cancelled
+                                    ? 'Cancelled: QR not scanned within 2 hours. Slot released.'
+                                    : expired
+                                        ? 'QR expired — book a new slot'
+                                        : 'QR valid for ${booking.entryQrCountdownLabel(now)} (max 2 hours)',
                                 textAlign: TextAlign.center,
-                                style: theme.textTheme.titleMedium?.copyWith(
-                                  fontWeight: FontWeight.w900,
+                                style: theme.textTheme.titleSmall?.copyWith(
+                                  fontWeight: FontWeight.w800,
                                   color: expired
-                                      ? const Color(0xFFB91C1C)
-                                      : const Color(0xFF9A3412),
+                                      ? const Color(0xFF991B1B)
+                                      : const Color(0xFF92400E),
                                 ),
                               ),
                             ),
@@ -207,52 +223,53 @@ class _ParkingTicketPageState extends ConsumerState<ParkingTicketPage> {
                         },
                       ),
                     ],
-                    const SizedBox(height: AppSpacing.sm),
-                    const AppBrandLogo(size: 40, showShadow: false),
                     const SizedBox(height: AppSpacing.md),
-                    Container(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 12,
-                        vertical: 4,
-                      ),
-                      decoration: BoxDecoration(
-                        color: statusColor.withValues(alpha: 0.12),
-                        borderRadius: BorderRadius.circular(20),
-                      ),
-                      child: Text(
-                        _statusLabel(booking),
-                        style: theme.textTheme.labelLarge?.copyWith(
-                          color: statusColor,
-                          fontWeight: FontWeight.w700,
-                        ),
-                      ),
-                    ),
-                    const SizedBox(height: AppSpacing.md),
-                    Text(
-                      booking.assignedSlot != null && booking.assignedSlot! > 0
-                          ? 'Slot ${booking.assignedSlot}'
-                          : 'Slot pending',
-                      style: theme.textTheme.headlineMedium?.copyWith(
-                        fontWeight: FontWeight.w800,
-                        color: theme.colorScheme.primary,
-                        letterSpacing: -0.5,
-                      ),
-                    ),
-                    const SizedBox(height: 4),
                     Text(
                       booking.shortDisplayParkingName,
                       textAlign: TextAlign.center,
-                      style: theme.textTheme.titleMedium?.copyWith(
-                        fontWeight: FontWeight.w600,
+                      style: theme.textTheme.titleLarge?.copyWith(
+                        fontWeight: FontWeight.w700,
                       ),
                       maxLines: 2,
                       overflow: TextOverflow.ellipsis,
                     ),
+                    const SizedBox(height: 8),
+                    Text(
+                      booking.assignedSlot != null && booking.assignedSlot! > 0
+                          ? 'Slot ${booking.assignedSlot}'
+                          : 'Slot pending',
+                      style: theme.textTheme.headlineSmall?.copyWith(
+                        fontWeight: FontWeight.w800,
+                        color: AppColors.navigationBlue,
+                        letterSpacing: -0.4,
+                      ),
+                    ),
                     const SizedBox(height: 4),
                     Text(
                       booking.vehicleNumber,
-                      style: theme.textTheme.bodyMedium?.copyWith(
+                      style: theme.textTheme.titleMedium?.copyWith(
                         color: theme.colorScheme.onSurfaceVariant,
+                        fontWeight: FontWeight.w600,
+                        letterSpacing: 0.6,
+                      ),
+                    ),
+                    const SizedBox(height: AppSpacing.md),
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 14,
+                        vertical: 6,
+                      ),
+                      decoration: BoxDecoration(
+                        color: statusColor.withValues(alpha: 0.12),
+                        borderRadius: BorderRadius.circular(AppRadius.full),
+                      ),
+                      child: Text(
+                        _statusLabel(booking).toUpperCase(),
+                        style: theme.textTheme.labelLarge?.copyWith(
+                          color: statusColor,
+                          fontWeight: FontWeight.w800,
+                          letterSpacing: 0.6,
+                        ),
                       ),
                     ),
                     const SizedBox(height: AppSpacing.sm),
@@ -281,7 +298,7 @@ class _ParkingTicketPageState extends ConsumerState<ParkingTicketPage> {
                         padding: const EdgeInsets.all(16),
                         decoration: BoxDecoration(
                           color: Colors.white,
-                          borderRadius: BorderRadius.circular(16),
+                          borderRadius: BorderRadius.circular(AppRadius.lg),
                           border: Border.all(
                             color: theme.colorScheme.outlineVariant,
                           ),
@@ -292,6 +309,23 @@ class _ParkingTicketPageState extends ConsumerState<ParkingTicketPage> {
                           backgroundColor: Colors.white,
                         ),
                       ),
+                      const SizedBox(height: AppSpacing.md),
+                      Text(
+                        'Reference',
+                        style: theme.textTheme.labelMedium?.copyWith(
+                          color: colorScheme.onSurfaceVariant,
+                        ),
+                      ),
+                      const SizedBox(height: 2),
+                      SelectableText(
+                        booking.bookingRef.isNotEmpty
+                            ? booking.bookingRef
+                            : booking.displaySessionId,
+                        style: theme.textTheme.titleSmall?.copyWith(
+                          fontWeight: FontWeight.w700,
+                          letterSpacing: 0.4,
+                        ),
+                      ),
                     ] else if (booking.status == BookingStatus.confirmed &&
                         booking.checkedInAt == null) ...[
                       const SizedBox(height: AppSpacing.lg),
@@ -300,6 +334,21 @@ class _ParkingTicketPageState extends ConsumerState<ParkingTicketPage> {
                         textAlign: TextAlign.center,
                         style: theme.textTheme.bodyMedium?.copyWith(
                           color: theme.colorScheme.error,
+                        ),
+                      ),
+                      const SizedBox(height: AppSpacing.md),
+                      FilledButton.icon(
+                        onPressed: () => context.go(RoutePaths.vehicleOwnerSearch),
+                        icon: const Icon(Icons.local_parking),
+                        label: const Text('Book a new slot'),
+                      ),
+                    ] else if (booking.wasCancelledForEntryQrExpiry) ...[
+                      const SizedBox(height: AppSpacing.md),
+                      Text(
+                        'Reference ${booking.bookingRef}',
+                        textAlign: TextAlign.center,
+                        style: theme.textTheme.bodySmall?.copyWith(
+                          color: colorScheme.onSurfaceVariant,
                         ),
                       ),
                       const SizedBox(height: AppSpacing.md),

@@ -274,15 +274,32 @@ class _SecurityScanPageState extends ConsumerState<SecurityScanPage> {
       child: Scaffold(
         backgroundColor: onScanner ? Colors.black : colorScheme.surface,
         appBar: AppBar(
-          title: Text(onScanner ? 'Scan parking QR' : 'Security'),
-          backgroundColor: onScanner ? Colors.black : colorScheme.surfaceContainer,
+          title: Text(
+            onScanner ? 'Scan parking QR' : 'Security',
+            style: TextStyle(
+              color: onScanner ? Colors.white : colorScheme.onSurface,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+          backgroundColor:
+              onScanner ? Colors.black : colorScheme.surfaceContainer,
           foregroundColor: onScanner ? Colors.white : colorScheme.onSurface,
           surfaceTintColor: Colors.transparent,
+          iconTheme: IconThemeData(
+            color: onScanner ? Colors.white : colorScheme.onSurface,
+          ),
+          actionsIconTheme: IconThemeData(
+            color: onScanner ? Colors.white : colorScheme.onSurface,
+          ),
           leading: onScanner
               ? IconButton(
                   tooltip: 'Back to gate desk',
                   onPressed: _returnToDesk,
-                  icon: const Icon(Icons.arrow_back),
+                  style: IconButton.styleFrom(
+                    foregroundColor: Colors.white,
+                    backgroundColor: Colors.white.withValues(alpha: 0.18),
+                  ),
+                  icon: const Icon(Icons.arrow_back_rounded, color: Colors.white),
                 )
               : null,
           actions: [
@@ -298,12 +315,20 @@ class _SecurityScanPageState extends ConsumerState<SecurityScanPage> {
                 },
                 icon: const Icon(Icons.person_outline),
               ),
-            if (onScanner)
-              IconButton(
-                tooltip: 'Sign out',
-                onPressed: _logout,
-                icon: const Icon(Icons.logout),
+            IconButton(
+              tooltip: 'Sign out',
+              onPressed: _logout,
+              style: onScanner
+                  ? IconButton.styleFrom(
+                      foregroundColor: Colors.white,
+                      backgroundColor: Colors.white.withValues(alpha: 0.18),
+                    )
+                  : null,
+              icon: Icon(
+                Icons.logout_rounded,
+                color: onScanner ? Colors.white : colorScheme.onSurface,
               ),
+            ),
           ],
         ),
         body: onScanner

@@ -8,8 +8,8 @@ const _themeModeKey = 'app_theme_mode';
 
 /// App appearance preference.
 ///
-/// [ThemeMode.system] here means the branded Open Sky **app** theme
-/// ([AppTheme.system]), not the phone's light/dark setting.
+/// [ThemeMode.system] follows the phone light/dark setting
+/// ([AppTheme.light] / [AppTheme.dark]).
 final themeModeProvider =
     StateNotifierProvider<ThemeModeNotifier, ThemeMode>((ref) {
   return ThemeModeNotifier();

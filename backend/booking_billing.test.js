@@ -52,12 +52,22 @@ function testComputeBillUsesRateAndDuration() {
   assert.strictEqual(bill.hourlyRate, 60);
 }
 
-function testComputeBillMinimumQuarterHour() {
+function testComputeBillMinimumOneMinute() {
+  const start = '2026-01-01T10:00:00.000Z';
+  const end = '2026-01-01T10:00:07.000Z'; // 7 seconds
+  const bill = computeBill(start, end, 60);
+  assert.strictEqual(bill.minutes, 1);
+  assert.strictEqual(bill.billedHours, 1 / 60);
+  assert.strictEqual(bill.amountDue, 1); // 1 min × ₹60/hr
+}
+
+function testComputeBillOneMinuteAtHundred() {
   const start = '2026-01-01T10:00:00.000Z';
   const end = '2026-01-01T10:01:00.000Z';
   const bill = computeBill(start, end, 100);
-  assert.strictEqual(bill.billedHours, 0.25);
-  assert.strictEqual(bill.amountDue, 25);
+  assert.strictEqual(bill.minutes, 1);
+  assert.strictEqual(bill.billedHours, 1 / 60);
+  assert.strictEqual(bill.amountDue, Math.ceil((100 / 60) * 100) / 100);
 }
 
 function testTamperedAmountWouldBeOverwrittenByRecompute() {
@@ -81,7 +91,8 @@ const tests = [
   testResolveIgnoresTamperedBookingRate,
   testResolveFallbackWhenListingMissing,
   testComputeBillUsesRateAndDuration,
-  testComputeBillMinimumQuarterHour,
+  testComputeBillMinimumOneMinute,
+  testComputeBillOneMinuteAtHundred,
   testTamperedAmountWouldBeOverwrittenByRecompute,
 ];
 

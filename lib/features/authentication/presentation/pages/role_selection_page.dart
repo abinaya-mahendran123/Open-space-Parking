@@ -89,9 +89,9 @@ class _RoleSelectionPageState extends ConsumerState<RoleSelectionPage> {
     final isLoading = ref.watch(authLoadingProvider);
 
     return AuthScaffold(
-      title: 'Choose Your Role',
+      title: 'How will you use Open Space Parking?',
       style: AuthScaffoldStyle.form,
-      subtitle: 'Select how you want to use Open Space Parking',
+      subtitle: 'Choose one to continue',
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
@@ -139,10 +139,10 @@ class _RoleCard extends StatelessWidget {
     final isLandOwner = role == UserRole.landOwner;
 
     return Material(
-      color: isSelected
+          color: isSelected
           ? (Theme.of(context).brightness == Brightness.dark
               ? colorScheme.primaryContainer.withValues(alpha: 0.35)
-              : AppColors.brandBlueSoft)
+              : AppColors.primarySoft)
           : colorScheme.surfaceContainerLow,
       borderRadius: BorderRadius.circular(16),
       child: InkWell(
@@ -184,7 +184,7 @@ class _RoleCard extends StatelessWidget {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      isLandOwner ? 'Land Owner' : 'Vehicle Owner',
+                      isLandOwner ? 'List Your Land' : 'Find Parking',
                       style: Theme.of(context).textTheme.titleMedium?.copyWith(
                             fontWeight: FontWeight.w600,
                             color: colorScheme.onSurface,
@@ -193,8 +193,8 @@ class _RoleCard extends StatelessWidget {
                     const SizedBox(height: 4),
                     Text(
                       isLandOwner
-                          ? 'List parking and submit build requests'
-                          : 'Search and book parking near you',
+                          ? 'List your available space and earn from parking'
+                          : 'Find and book a nearby verified parking space',
                       style: Theme.of(context).textTheme.bodySmall?.copyWith(
                             color: colorScheme.onSurfaceVariant,
                           ),

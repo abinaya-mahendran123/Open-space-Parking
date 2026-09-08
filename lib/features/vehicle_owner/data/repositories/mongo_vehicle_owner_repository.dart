@@ -116,20 +116,35 @@ class MongoVehicleOwnerRepository implements VehicleOwnerRepository {
 
     listings = await _applySearchFilters(listings, filters);
 
-    if (filters.userLatitude != null && filters.userLongitude != null) {
+    final centerLat = filters.distanceCenterLatitude;
+    final centerLng = filters.distanceCenterLongitude;
+
+    if (centerLat != null && centerLng != null) {
       listings = listings.map((listing) {
         final distance = distanceKmBetween(
-          filters.userLatitude!,
-          filters.userLongitude!,
+          centerLat,
+          centerLng,
           listing.latitude,
           listing.longitude,
         );
         return listing.copyWith(distanceKm: distance);
       }).toList();
 
-      if (filters.maxDistanceKm != null) {
+      // Area search (typed place): keep nearby listings around that place.
+      if (filters.searchLatitude != null && filters.searchLongitude != null) {
+        final radiusKm = filters.maxDistanceKm ?? 12;
+        final q = filters.query?.trim().toLowerCase() ?? '';
+        listings = listings.where((l) {
+          final near = (l.distanceKm ?? double.infinity) <= radiusKm;
+          if (q.isEmpty) return near;
+          final textHit = _listingMatchesQuery(l, q);
+          return near || textHit;
+        }).toList();
+      } else if (filters.maxDistanceKm != null) {
         listings = listings
-            .where((l) => (l.distanceKm ?? double.infinity) <= filters.maxDistanceKm!)
+            .where(
+              (l) => (l.distanceKm ?? double.infinity) <= filters.maxDistanceKm!,
+            )
             .toList();
       }
 
@@ -164,24 +179,32 @@ class MongoVehicleOwnerRepository implements VehicleOwnerRepository {
 
     if (filters.query != null && filters.query!.trim().isNotEmpty) {
       final q = filters.query!.trim().toLowerCase();
-      filtered = filtered.where((l) {
-        return l.displayName.toLowerCase().contains(q) ||
-            l.displayTitle.toLowerCase().contains(q) ||
-            l.ticketId.toLowerCase().contains(q) ||
-            l.parkingType.label.toLowerCase().contains(q) ||
-            (l.address?.toLowerCase().contains(q) ?? false) ||
-            (l.verifiedEmployeeName?.toLowerCase().contains(q) ?? false);
-      }).toList();
+      // If we already geocoded a place center, keep all listings for distance
+      // filtering (area search). Otherwise text-match parking name/address.
+      if (filters.searchLatitude == null || filters.searchLongitude == null) {
+        filtered = filtered.where((l) => _listingMatchesQuery(l, q)).toList();
+      }
     }
 
     if (filters.maxDistanceKm != null &&
-        filtered.any((l) => l.distanceKm != null)) {
+        filtered.any((l) => l.distanceKm != null) &&
+        filters.searchLatitude == null) {
       filtered = filtered
           .where((l) => (l.distanceKm ?? double.infinity) <= filters.maxDistanceKm!)
           .toList();
     }
 
     return filtered;
+  }
+
+  bool _listingMatchesQuery(ParkingListing listing, String q) {
+    return listing.displayName.toLowerCase().contains(q) ||
+        listing.displayTitle.toLowerCase().contains(q) ||
+        listing.ticketId.toLowerCase().contains(q) ||
+        listing.parkingType.label.toLowerCase().contains(q) ||
+        (listing.address?.toLowerCase().contains(q) ?? false) ||
+        (listing.parkingName?.toLowerCase().contains(q) ?? false) ||
+        (listing.verifiedEmployeeName?.toLowerCase().contains(q) ?? false);
   }
 
   Future<List<ParkingListing>> _enrichListings(
@@ -718,10 +741,14 @@ class MongoVehicleOwnerRepository implements VehicleOwnerRepository {
 
     final checkedIn = booking.checkedInAt!.toUtc();
     final elapsedSeconds = now.difference(checkedIn).inSeconds;
-    // At least 1 second so a same-second double-scan still produces a bill.
+    // Bill by the minute (ceil), min 1 minute — matches server computeBill.
     final seconds = elapsedSeconds < 1 ? 1 : elapsedSeconds;
-    final billedHours = seconds / 3600.0;
-    final amountDue = (billedHours * hourlyRate * 100).ceil() / 100;
+    final minutes = seconds <= 60 ? 1 : ((seconds + 59) ~/ 60);
+    final billedHours = minutes / 60.0;
+    var amountDue = (billedHours * hourlyRate * 100).ceil() / 100;
+    if (hourlyRate > 0 && amountDue > 0 && amountDue < 1) {
+      amountDue = 1;
+    }
 
     await _collectionService.updateOne(
       collectionName: AppConstants.bookingsCollection,
@@ -956,7 +983,11 @@ class MongoVehicleOwnerRepository implements VehicleOwnerRepository {
     );
 
     return results
+<<<<<<< HEAD
         .where((doc) => doc['hiddenFromOwnerHistory'] != true)
+=======
+        .where((doc) => doc['hiddenFromHistory'] != true)
+>>>>>>> 8726992 (UI ups)
         .map(_mapBookingToEntity)
         .toList();
   }
@@ -1049,6 +1080,7 @@ class MongoVehicleOwnerRepository implements VehicleOwnerRepository {
   }
 
   @override
+<<<<<<< HEAD
   Future<void> hideBookingsFromHistory({
     required String vehicleOwnerId,
     required List<String> bookingIds,
@@ -1086,6 +1118,34 @@ class MongoVehicleOwnerRepository implements VehicleOwnerRepository {
             .set('updatedAt', now),
       );
     }
+=======
+  Future<void> hideBookingFromHistory(String bookingId) async {
+    await _ensureConnected();
+
+    final booking = await getBooking(bookingId);
+    if (booking == null) {
+      throw const AppException('Booking not found.');
+    }
+
+    if (booking.isQrLive || booking.isAwaitingPayment) {
+      throw const AppException(
+        'Finish or cancel this booking before removing it from history.',
+      );
+    }
+
+    if (booking.status != BookingStatus.completed &&
+        booking.status != BookingStatus.cancelled) {
+      throw const AppException('Only past bookings can be removed from history.');
+    }
+
+    await _collectionService.updateOne(
+      collectionName: AppConstants.bookingsCollection,
+      selector: where.eq('_id', ObjectId.parse(bookingId)),
+      modifier: modify
+          .set('hiddenFromHistory', true)
+          .set('updatedAt', DateTime.now().toUtc().toIso8601String()),
+    );
+>>>>>>> 8726992 (UI ups)
   }
 
   @override
@@ -1555,6 +1615,7 @@ class MongoVehicleOwnerRepository implements VehicleOwnerRepository {
       qrExpiresAt: map['qrExpiresAt'] != null
           ? _parseBookingDateNullable('${map['qrExpiresAt']}')
           : null,
+      cancelReason: map['cancelReason'] as String?,
       sessionId: map['sessionId'] as String?,
       checkedInAt: map['checkedInAt'] != null
           ? DateTime.parse(map['checkedInAt'] as String)

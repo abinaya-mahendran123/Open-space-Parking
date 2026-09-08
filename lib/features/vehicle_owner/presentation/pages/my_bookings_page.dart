@@ -2,14 +2,20 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+<<<<<<< HEAD
 import 'package:open_space_parking/core/providers/core_providers.dart';
 import 'package:open_space_parking/core/common/exceptions/app_exception.dart';
+=======
+import 'package:open_space_parking/core/common/exceptions/app_exception.dart';
+import 'package:open_space_parking/core/providers/core_providers.dart';
+>>>>>>> 8726992 (UI ups)
 import 'package:open_space_parking/core/routes/route_paths.dart';
 import 'package:open_space_parking/core/theme/app_spacing.dart';
 import 'package:open_space_parking/core/widgets/errors/app_error_widget.dart';
 import 'package:open_space_parking/core/widgets/loading/app_loading_widget.dart';
 import 'package:open_space_parking/features/authentication/presentation/providers/auth_state_provider.dart';
 import 'package:open_space_parking/features/vehicle_owner/domain/entities/booking.dart';
+import 'package:open_space_parking/features/vehicle_owner/domain/entities/booking_status.dart';
 import 'package:open_space_parking/features/vehicle_owner/presentation/providers/vehicle_owner_providers.dart';
 import 'package:open_space_parking/features/vehicle_owner/presentation/widgets/booking_card.dart';
 import 'package:open_space_parking/features/vehicle_owner/presentation/widgets/vehicle_owner_app_bar_actions.dart';
@@ -34,6 +40,7 @@ class _MyBookingsPageState extends ConsumerState<MyBookingsPage> {
     context.push(RoutePaths.vehicleOwnerBookingDetail(booking.id));
   }
 
+<<<<<<< HEAD
   void _enterSelectMode([String? initialId]) {
     setState(() {
       _selecting = true;
@@ -85,11 +92,35 @@ class _MyBookingsPageState extends ConsumerState<MyBookingsPage> {
           ),
           FilledButton(
             onPressed: () => Navigator.of(context).pop(true),
+=======
+  Future<void> _deleteFromHistory(
+    BuildContext context,
+    WidgetRef ref,
+    Booking booking,
+    String vehicleOwnerId,
+  ) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Delete from history?'),
+        content: const Text(
+          'This removes the booking from your History list. '
+          'Payment records stay on the server.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(context, true),
+>>>>>>> 8726992 (UI ups)
             child: const Text('Delete'),
           ),
         ],
       ),
     );
+<<<<<<< HEAD
     if (confirmed != true) return;
 
     try {
@@ -113,6 +144,30 @@ class _MyBookingsPageState extends ConsumerState<MyBookingsPage> {
     }
   }
 
+=======
+    if (confirmed != true || !context.mounted) return;
+
+    try {
+      await ref
+          .read(vehicleOwnerRepositoryProvider)
+          .hideBookingFromHistory(booking.id);
+      ref.invalidate(vehicleOwnerBookingsProvider(vehicleOwnerId));
+      ref.read(snackbarServiceProvider).showSuccess('Removed from history.');
+    } on AppException catch (e) {
+      ref.read(snackbarServiceProvider).showError(e.message);
+    } catch (_) {
+      ref.read(snackbarServiceProvider).showError('Could not delete booking.');
+    }
+  }
+
+  bool _canDelete(Booking booking) {
+    return !booking.isQrLive &&
+        !booking.isAwaitingPayment &&
+        (booking.status == BookingStatus.completed ||
+            booking.status == BookingStatus.cancelled);
+  }
+
+>>>>>>> 8726992 (UI ups)
   @override
   Widget build(BuildContext context) {
     final vehicleOwnerId = ref.watch(authStateProvider).session?.userId ?? '';
@@ -189,6 +244,7 @@ class _MyBookingsPageState extends ConsumerState<MyBookingsPage> {
                             onPressed: _exitSelectMode,
                             child: const Text('Cancel'),
                           ),
+<<<<<<< HEAD
                           TextButton(
                             onPressed: past.isEmpty
                                 ? null
@@ -302,6 +358,31 @@ class _MyBookingsPageState extends ConsumerState<MyBookingsPage> {
                 ),
               ),
             ],
+=======
+                    ),
+                  );
+                }
+                final booking = row as Booking;
+                final isLive = booking.isQrLive;
+                return BookingCard(
+                  booking: booking,
+                  onTap: () => isLive
+                      ? _openTicket(context, booking)
+                      : _openDetail(context, booking),
+                  onShowQr:
+                      isLive ? () => _openTicket(context, booking) : null,
+                  onDelete: _canDelete(booking)
+                      ? () => _deleteFromHistory(
+                            context,
+                            ref,
+                            booking,
+                            vehicleOwnerId,
+                          )
+                      : null,
+                );
+              },
+            ),
+>>>>>>> 8726992 (UI ups)
           );
         },
       ),

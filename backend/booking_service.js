@@ -182,13 +182,16 @@ function resolveHourlyRate(_booking, listing) {
 function computeBill(checkedInAt, checkedOutAt, hourlyRate) {
   const start = new Date(checkedInAt);
   const end = new Date(checkedOutAt);
-  let minutes = Math.floor((end.getTime() - start.getTime()) / 60000);
-  if (!Number.isFinite(minutes) || minutes < 1) minutes = 1;
-  let billedHours = Math.ceil((minutes / 60) * 100) / 100;
-  if (billedHours < 0.25) billedHours = 0.25;
+  let seconds = Math.floor((end.getTime() - start.getTime()) / 1000);
+  if (!Number.isFinite(seconds) || seconds < 1) seconds = 1;
+  // Bill by the minute (ceil), min 1 minute — not a flat 15-minute block.
+  const minutes = Math.max(1, Math.ceil(seconds / 60));
+  const billedHours = minutes / 60;
   const rate = Number(hourlyRate) > 0 ? Number(hourlyRate) : 0;
-  const amountDue = Math.ceil(billedHours * rate * 100) / 100;
-  return { minutes, billedHours, amountDue, hourlyRate: rate };
+  let amountDue = Math.ceil(billedHours * rate * 100) / 100;
+  // Practical floor for Razorpay checkout.
+  if (rate > 0 && amountDue > 0 && amountDue < 1) amountDue = 1;
+  return { minutes, billedHours, amountDue, hourlyRate: rate, seconds };
 }
 
 /**

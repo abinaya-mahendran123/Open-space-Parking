@@ -126,6 +126,20 @@ class _AuthPageState extends ConsumerState<AuthPage> {
     setState(() => _subview = _AuthSubview.picker);
   }
 
+  void _backFromPhoneStep() {
+    final phoneStep = ref.read(phoneAuthStepProvider);
+    if (phoneStep == PhoneAuthStep.enterSecurityPassword ||
+        phoneStep == PhoneAuthStep.enterEmployeePassword ||
+        phoneStep == PhoneAuthStep.enterOtp) {
+      ref.read(phoneAuthStepProvider.notifier).state = PhoneAuthStep.enterPhone;
+      _employeePasswordController.clear();
+      _otpController.clear();
+      setState(() {});
+      return;
+    }
+    _backToPicker();
+  }
+
   Future<void> _completeAuthenticatedFlow() async {
     final role = ref.read(authStateProvider).session?.role;
     ref.read(postAuthRoleSelectionProvider.notifier).state = false;
@@ -429,14 +443,24 @@ class _AuthPageState extends ConsumerState<AuthPage> {
     final colorScheme = Theme.of(context).colorScheme;
 
     return AuthScaffold(
-      title: isSignUp ? 'Sign Up' : 'Sign In',
+      title: isSignUp
+          ? 'Create your account'
+          : phoneStep == PhoneAuthStep.enterSecurityPassword
+              ? 'Security Sign In'
+              : phoneStep == PhoneAuthStep.enterEmployeePassword
+                  ? 'Employee Sign In'
+                  : 'Welcome back',
       style: AuthScaffoldStyle.form,
       subtitle: isSignUp
-          ? 'Create an account to get started.'
-          : 'Welcome back. Sign in to continue.',
+          ? 'Get started with Open Space Parking'
+          : phoneStep == PhoneAuthStep.enterSecurityPassword
+              ? 'Password is the last 4 digits of this mobile number.'
+              : 'Sign in to continue',
       onBack: isLoading
           ? null
-          : (_subview == _AuthSubview.picker ? _backToWelcome : _backToPicker),
+          : (_subview == _AuthSubview.picker
+              ? _backToWelcome
+              : _backFromPhoneStep),
       child: Form(
         key: _formKey,
         child: Column(
@@ -573,7 +597,7 @@ class _AuthPageState extends ConsumerState<AuthPage> {
                 ),
               ] else if (phoneStep == PhoneAuthStep.enterSecurityPassword) ...[
                 Text(
-                  'Security Sign In',
+                  'Gate security access',
                   style: Theme.of(context).textTheme.titleMedium,
                 ),
                 const SizedBox(height: 8),
@@ -609,6 +633,12 @@ class _AuthPageState extends ConsumerState<AuthPage> {
                   label: 'Sign In',
                   isLoading: isLoading,
                   onPressed: _submitSecurityPassword,
+                ),
+                const SizedBox(height: 8),
+                TextButton.icon(
+                  onPressed: isLoading ? null : _backFromPhoneStep,
+                  icon: const Icon(Icons.arrow_back_rounded),
+                  label: const Text('Back'),
                 ),
               ] else ...[
                 Text(

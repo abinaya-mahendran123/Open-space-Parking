@@ -13,17 +13,25 @@ class BookingCard extends StatelessWidget {
     required this.booking,
     required this.onTap,
     this.onShowQr,
+<<<<<<< HEAD
     this.selecting = false,
     this.selected = false,
     this.onSelectedChanged,
+=======
+    this.onDelete,
+>>>>>>> 8726992 (UI ups)
   });
 
   final Booking booking;
   final VoidCallback onTap;
   final VoidCallback? onShowQr;
+<<<<<<< HEAD
   final bool selecting;
   final bool selected;
   final ValueChanged<bool>? onSelectedChanged;
+=======
+  final VoidCallback? onDelete;
+>>>>>>> 8726992 (UI ups)
 
   Color _statusColor(BookingStatus status, ColorScheme scheme) {
     switch (status) {
@@ -46,6 +54,9 @@ class BookingCard extends StatelessWidget {
     }
     if (booking.isParked) return 'Parked · ${booking.elapsedClock()}';
     if (booking.isAwaitingEntry) return 'Show QR at entry';
+    if (booking.wasCancelledForEntryQrExpiry) {
+      return 'Cancelled · QR not scanned in 2h';
+    }
     return booking.status.label;
   }
 
@@ -123,17 +134,37 @@ class BookingCard extends StatelessWidget {
               onPressed: onShowQr ?? onTap,
               icon: const Icon(Icons.qr_code_2),
             )
+<<<<<<< HEAD
           else if (!selecting)
             Column(
               crossAxisAlignment: CrossAxisAlignment.end,
+=======
+          else
+            Row(
+              mainAxisSize: MainAxisSize.min,
+>>>>>>> 8726992 (UI ups)
               children: [
-                Text(
-                  '₹${booking.totalPrice.toStringAsFixed(0)}',
-                  style: theme.textTheme.labelLarge?.copyWith(
-                    fontWeight: FontWeight.bold,
-                  ),
+                Column(
+                  crossAxisAlignment: CrossAxisAlignment.end,
+                  children: [
+                    Text(
+                      '₹${booking.totalPrice.toStringAsFixed(0)}',
+                      style: theme.textTheme.labelLarge?.copyWith(
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                    Icon(Icons.chevron_right, size: 18, color: scheme.outline),
+                  ],
                 ),
-                Icon(Icons.chevron_right, size: 18, color: scheme.outline),
+                if (onDelete != null)
+                  IconButton(
+                    tooltip: 'Delete from history',
+                    onPressed: onDelete,
+                    icon: Icon(
+                      Icons.delete_outline_rounded,
+                      color: scheme.error,
+                    ),
+                  ),
               ],
             ),
         ],

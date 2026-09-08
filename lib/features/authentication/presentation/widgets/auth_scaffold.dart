@@ -35,11 +35,21 @@ class AuthScaffold extends StatelessWidget {
           : AppBar(
               elevation: 0,
               backgroundColor: colorScheme.surface,
+              foregroundColor: colorScheme.onSurface,
               surfaceTintColor: Colors.transparent,
+              iconTheme: IconThemeData(
+                color: colorScheme.onSurface,
+                size: 24,
+              ),
               leading: IconButton(
                 tooltip: 'Back',
                 onPressed: onBack,
-                icon: const Icon(Icons.arrow_back),
+                style: IconButton.styleFrom(
+                  foregroundColor: colorScheme.onSurface,
+                  backgroundColor: colorScheme.surfaceContainerHighest
+                      .withValues(alpha: 0.65),
+                ),
+                icon: const Icon(Icons.arrow_back_rounded),
               ),
             ),
       body: SafeArea(
@@ -61,19 +71,17 @@ class AuthScaffold extends StatelessWidget {
                       _FormHeader(title: title, subtitle: subtitle),
                       const SizedBox(height: AppSpacing.lg),
                       Card(
-                        elevation: 2,
-                        shadowColor:
-                            colorScheme.primary.withValues(alpha: 0.08),
+                        elevation: 0,
                         color: colorScheme.surfaceContainerLowest,
                         shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(20),
+                          borderRadius: BorderRadius.circular(AppRadius.lg),
                           side: BorderSide(
                             color: colorScheme.outlineVariant
-                                .withValues(alpha: 0.5),
+                                .withValues(alpha: 0.8),
                           ),
                         ),
                         child: Padding(
-                          padding: const EdgeInsets.all(AppSpacing.lg),
+                          padding: const EdgeInsets.all(AppSpacing.cardPaddingWide),
                           child: child,
                         ),
                       ),

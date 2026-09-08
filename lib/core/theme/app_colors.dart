@@ -1,32 +1,49 @@
 import 'package:flutter/material.dart';
 
-/// Open Sky + Map-First — centralized design tokens.
+/// Open Space Parking — centralized design tokens.
+///
+/// Light primary actions use logo road-blue. Availability greens stay for status.
+/// Dark theme palette is preserved.
 class AppColors {
   AppColors._();
 
-  // ── Light mode ─────────────────────────────────────────────────────────────
-  static const Color background = Color(0xFFF7F9FC);
+  // ── Light — logo blue actions + mint surfaces ──────────────────────────────
+  static const Color background = Color(0xFFF3F8F6);
+  /// Primary CTA / brand actions — matches logo P blue.
   static const Color primary = Color(0xFF2563EB);
   static const Color primaryDark = Color(0xFF1D4ED8);
+
+  /// Road / map / selected location (same family as primary).
+  static const Color navigationBlue = Color(0xFF2563EB);
+  static const Color accent = Color(0xFF84CC16);
+
+  /// Legacy mint (surfaces / soft fills only — not primary buttons).
+  static const Color mintTeal = Color(0xFF0F766E);
+  static const Color mintTealDark = Color(0xFF115E59);
 
   static const Color available = Color(0xFF16A34A);
   static const Color availableLight = Color(0xFFDCFCE7);
 
-  static const Color limited = Color(0xFFF59E0B);
+  static const Color limited = Color(0xFFD97706);
   static const Color limitedLight = Color(0xFFFEF3C7);
 
   static const Color full = Color(0xFFDC2626);
   static const Color fullLight = Color(0xFFFEE2E2);
 
-  static const Color textPrimary = Color(0xFF111827);
-  static const Color textSecondary = Color(0xFF64748B);
+  static const Color textPrimary = Color(0xFF17211F);
+  static const Color textSecondary = Color(0xFF64736F);
   static const Color textMuted = Color(0xFF94A3B8);
+  static const Color disabled = Color(0xFF94A3B8);
 
   static const Color surface = Color(0xFFFFFFFF);
-  static const Color border = Color(0xFFE2E8F0);
-  static const Color divider = Color(0xFFE5E7EB);
+  static const Color border = Color(0xFFD7E5E1);
+  static const Color divider = Color(0xFFD7E5E1);
 
-  // ── Dark mode ──────────────────────────────────────────────────────────────
+  // Soft fills
+  static const Color primarySoft = Color(0xFFDBEAFE);
+  static const Color navigationBlueSoft = Color(0xFFDBEAFE);
+
+  // ── Dark mode (PRESERVED — do not restyle) ─────────────────────────────────
   static const Color darkBackground = Color(0xFF0F1419);
   static const Color darkSurface = Color(0xFF1A2332);
   static const Color darkPrimary = Color(0xFF5B9CF6);
@@ -35,10 +52,10 @@ class AppColors {
   static const Color darkElevated = Color(0xFF243044);
 
   // ── Aliases (backward compatible) ──────────────────────────────────────────
-  static const Color brandBlue = primary;
+  static const Color brandBlue = navigationBlue;
   static const Color brandBlueLight = darkPrimary;
-  static const Color brandBlueDark = primaryDark;
-  static const Color brandBlueSoft = Color(0xFFDBEAFE);
+  static const Color brandBlueDark = Color(0xFF1D4ED8);
+  static const Color brandBlueSoft = navigationBlueSoft;
   static const Color brandMint = available;
   static const Color brandMintLight = Color(0xFF22C55E);
   static const Color brandMintSoft = availableLight;
@@ -52,7 +69,7 @@ class AppColors {
   static const Color availableMedium = limited;
   static const Color availableNone = full;
 
-  // App "System" theme — Option A: Asphalt Pro (dark road brand; never phone theme).
+  // Legacy Asphalt Pro tokens (unused by MaterialApp; kept for compatibility).
   static const Color systemAsphalt = Color(0xFF263238);
   static const Color systemCard = Color(0xFF37474F);
   static const Color systemRoadBlue = Color(0xFF2196F3);
@@ -69,55 +86,52 @@ class AppColors {
   static const Color systemBorder = Color(0xFF455A64);
   static const Color systemDivider = Color(0xFF546E7A);
   static const Color systemElevated = Color(0xFF455A64);
-
-  // Aliases for system theme build()
   static const Color systemBackground = systemAsphalt;
   static const Color systemSurface = systemCard;
   static const Color systemPrimary = systemRoadBlue;
 
-  /// Crisp bright Light theme (white + royal blue).
-  static const Color lightBackground = Color(0xFFFAFBFD);
-  static const Color lightPrimary = Color(0xFF1D4ED8);
+  static const Color lightBackground = background;
+  static const Color lightPrimary = primary;
 
   static ColorScheme lightScheme = const ColorScheme(
     brightness: Brightness.light,
-    primary: lightPrimary,
+    primary: primary,
     onPrimary: Colors.white,
-    primaryContainer: Color(0xFFE0E7FF),
+    primaryContainer: primarySoft,
     onPrimaryContainer: Color(0xFF1E3A8A),
-    secondary: available,
+    secondary: mintTeal,
     onSecondary: Colors.white,
-    secondaryContainer: availableLight,
-    onSecondaryContainer: Color(0xFF14532D),
-    tertiary: Color(0xFF0284C7),
-    onTertiary: Colors.white,
-    tertiaryContainer: Color(0xFFE0F2FE),
-    onTertiaryContainer: Color(0xFF0C4A6E),
+    secondaryContainer: Color(0xFFCCFBF1),
+    onSecondaryContainer: Color(0xFF134E4A),
+    tertiary: accent,
+    onTertiary: Color(0xFF1A2E05),
+    tertiaryContainer: Color(0xFFECFCCB),
+    onTertiaryContainer: Color(0xFF365314),
     error: full,
     onError: Colors.white,
     errorContainer: fullLight,
     onErrorContainer: Color(0xFF991B1B),
-    surface: lightBackground,
+    surface: background,
     onSurface: textPrimary,
     onSurfaceVariant: textSecondary,
-    outline: Color(0xFFD0D7E2),
-    outlineVariant: Color(0xFFE8ECF2),
-    shadow: Color(0x14111827),
-    scrim: Color(0x66111827),
+    outline: border,
+    outlineVariant: Color(0xFFE4EFEC),
+    shadow: Color(0x1417211F),
+    scrim: Color(0x6617211F),
     inverseSurface: Color(0xFF1E293B),
     onInverseSurface: darkText,
-    inversePrimary: darkPrimary,
-    surfaceTint: lightPrimary,
-    surfaceContainerHighest: Color(0xFFE4EAF3),
-    surfaceContainerHigh: Color(0xFFEEF2F8),
+    inversePrimary: Color(0xFF93C5FD),
+    surfaceTint: primary,
+    surfaceContainerHighest: Color(0xFFE4EFEC),
+    surfaceContainerHigh: Color(0xFFECF4F1),
     surfaceContainer: surface,
     surfaceContainerLow: surface,
     surfaceContainerLowest: surface,
     surfaceBright: surface,
-    surfaceDim: Color(0xFFE4EAF3),
+    surfaceDim: Color(0xFFE4EFEC),
   );
 
-  /// Asphalt Pro — dark road-surface brand (distinct from Light & Dark).
+  /// Legacy Asphalt Pro scheme — retained; app System mode now follows device.
   static ColorScheme systemScheme = const ColorScheme(
     brightness: Brightness.dark,
     primary: systemRoadBlue,
@@ -183,7 +197,7 @@ class AppColors {
     scrim: Color(0xCC000000),
     inverseSurface: darkText,
     onInverseSurface: textPrimary,
-    inversePrimary: primary,
+    inversePrimary: navigationBlue,
     surfaceTint: darkPrimary,
     surfaceContainerHighest: Color(0xFF334155),
     surfaceContainerHigh: darkElevated,
@@ -255,11 +269,11 @@ class AppColors {
   }
 
   static Color osmMarkerColorForTier(int tier, {bool selected = false}) {
-    if (selected) return primary;
+    if (selected) return navigationBlue;
     return availabilityColorForTier(tier);
   }
 
-  // ── Charts (blue, green, orange only) ──────────────────────────────────────
+  // ── Charts ─────────────────────────────────────────────────────────────────
   static List<Color> statPalette(Brightness brightness) {
     if (brightness == Brightness.dark) {
       return const [
@@ -275,13 +289,13 @@ class AppColors {
     }
     return const [
       primary,
+      navigationBlue,
       available,
       limited,
       primaryDark,
       available,
-      limited,
-      Color(0xFF0891B2),
-      primaryDark,
+      accent,
+      navigationBlue,
     ];
   }
 
@@ -292,9 +306,8 @@ class AppColors {
       brightness == Brightness.dark ? const Color(0xFFFBBF24) : limited;
 
   static Color info(Brightness brightness) =>
-      brightness == Brightness.dark ? darkPrimary : primary;
+      brightness == Brightness.dark ? darkPrimary : navigationBlue;
 
-  /// Theme-aware foreground / surface tokens (prefer over light-only constants).
   static Color onSurfaceOf(BuildContext context) =>
       Theme.of(context).colorScheme.onSurface;
 

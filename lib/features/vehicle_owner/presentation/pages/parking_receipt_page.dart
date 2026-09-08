@@ -180,12 +180,20 @@ class _ParkingReceiptPageState extends ConsumerState<ParkingReceiptPage> {
                         '₹${(booking.paidAmount ?? booking.totalPrice).toStringAsFixed(0)}',
                       ),
                       _row(
-                        'Media account (10%)',
-                        '₹${ParkingPaymentSplit.platformAmount(booking.paidAmount ?? booking.totalPrice).toStringAsFixed(0)}',
+                        '${ParkingPaymentSplit.platformAccountName} (10%)',
+                        ParkingPaymentSplit.formatWholeRupees(
+                          ParkingPaymentSplit.platformWholeRupees(
+                            booking.paidAmount ?? booking.totalPrice,
+                          ),
+                        ),
                       ),
                       _row(
-                        'Land owner (90%)',
-                        '₹${ParkingPaymentSplit.landOwnerAmount(booking.paidAmount ?? booking.totalPrice).toStringAsFixed(0)}',
+                        '${ParkingPaymentSplit.landOwnerShareLabel} (90%)',
+                        ParkingPaymentSplit.formatWholeRupees(
+                          ParkingPaymentSplit.landOwnerWholeRupees(
+                            booking.paidAmount ?? booking.totalPrice,
+                          ),
+                        ),
                       ),
                       if (booking.paidAt != null)
                         _row('Paid at', format.format(booking.paidAt!.toLocal())),

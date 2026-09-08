@@ -62,22 +62,17 @@ class OpenSpaceParkingApp extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final router = ref.watch(appRouterProvider);
     final snackbarService = ref.watch(snackbarServiceProvider);
-    // Watch only the mode — ThemeData are cached statics.
-    // ThemeMode.system = Asphalt Pro app theme (never phone light/dark).
+    // Light = Parking Mint, Dark = preserved dark, System = follow device.
     final appAppearance = ref.watch(themeModeProvider);
-    final useSystemLook = appAppearance == ThemeMode.system;
 
     return NotificationBootstrap(
       child: MaterialApp.router(
         title: 'Open Space Parking',
         debugShowCheckedModeBanner: false,
         scaffoldMessengerKey: snackbarService.messengerKey,
-        theme: useSystemLook ? AppTheme.system : AppTheme.light,
+        theme: AppTheme.light,
         darkTheme: AppTheme.dark,
-        // Never pass ThemeMode.system to MaterialApp (that follows the phone).
-        themeMode: appAppearance == ThemeMode.dark
-            ? ThemeMode.dark
-            : ThemeMode.light,
+        themeMode: appAppearance,
         themeAnimationDuration: AppTheme.animationDuration,
         themeAnimationCurve: AppTheme.animationCurve,
         routerConfig: router,

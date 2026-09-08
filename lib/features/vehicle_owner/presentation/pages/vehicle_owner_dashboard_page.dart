@@ -17,6 +17,13 @@ import 'package:open_space_parking/features/vehicle_owner/presentation/widgets/v
 class VehicleOwnerDashboardPage extends ConsumerWidget {
   const VehicleOwnerDashboardPage({super.key});
 
+  String _timeGreeting() {
+    final hour = DateTime.now().hour;
+    if (hour < 12) return 'morning';
+    if (hour < 17) return 'afternoon';
+    return 'evening';
+  }
+
   void _openParking(BuildContext context, ParkingListing listing) {
     final key = ParkingListingCard.routeKeyFor(listing);
     if (key.isEmpty) return;
@@ -158,8 +165,17 @@ class VehicleOwnerDashboardPage extends ConsumerWidget {
                     ),
                   ),
                 Text(
-                  'Hello, $name',
-                  style: Theme.of(context).textTheme.titleLarge,
+                  'Good ${_timeGreeting()}, $name',
+                  style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                        fontWeight: FontWeight.w700,
+                      ),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  'Where do you want to park?',
+                  style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                        color: colorScheme.onSurfaceVariant,
+                      ),
                 ),
                 const SizedBox(height: AppSpacing.md),
                 if (listings.isEmpty)

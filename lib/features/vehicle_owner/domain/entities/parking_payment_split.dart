@@ -10,11 +10,26 @@ class ParkingPaymentSplit {
 
   static double platformAmount(double total) {
     if (total <= 0) return 0;
-    return (_paise(total) * platformCommissionPercent / 100).round() / 100;
+    final commissionPaise =
+        (_paise(total) * platformCommissionPercent / 100).round();
+    return commissionPaise / 100;
   }
 
   static double landOwnerAmount(double total) {
     if (total <= 0) return 0;
     return (_paise(total) / 100) - platformAmount(total);
   }
+
+  /// Whole-rupee split that always sums to [total.round()].
+  static int platformWholeRupees(double total) {
+    if (total <= 0) return 0;
+    return (total.round() * platformCommissionPercent / 100).round();
+  }
+
+  static int landOwnerWholeRupees(double total) {
+    if (total <= 0) return 0;
+    return total.round() - platformWholeRupees(total);
+  }
+
+  static String formatWholeRupees(int amount) => '₹$amount';
 }

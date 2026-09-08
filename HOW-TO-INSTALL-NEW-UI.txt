@@ -1,0 +1,23 @@
+INSTALL THESE STEPS (read carefully)
+
+1. On your phone: Settings → Apps → search "Parking" and "Open" and "OSP"
+   Uninstall EVERY matching app. Leave none.
+
+2. Copy this file to your phone (USB cable or Google Drive):
+   INSTALL-THIS-ONLY-BUILD103.apk
+   (Desktop file will be refreshed after rebuild as OSP-MINT-103.apk)
+
+3. On phone: open Files → Downloads (or USB folder) → tap the APK → Install
+   Allow "Install unknown apps" if asked.
+
+4. Home screen: open the app named exactly:
+   "OSP Mint 103"
+   NOT "Open Space Parking"
+
+5. Welcome must show:
+   - Title text: Find your space. Park with ease.
+   - Green bar: UI BUILD 103 — PARKING MINT
+   - NO cartoon city / blue car picture
+
+If you still see cartoon city, you opened the OLD app icon.
+Git / Render will NEVER update this screen.

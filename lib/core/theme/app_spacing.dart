@@ -8,9 +8,12 @@ class AppSpacing {
   static const double xl = 32;
   static const double xxl = 48;
 
-  static const double pagePadding = 16;
-  static const double cardPadding = 20;
+  static const double pagePadding = 20;
+  static const double pagePaddingWide = 24;
+  static const double cardPadding = 16;
+  static const double cardPaddingWide = 20;
   static const double sectionGap = 24;
+  static const double buttonHeight = 54;
 }
 
 class AppRadius {

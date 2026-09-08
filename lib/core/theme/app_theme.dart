@@ -18,7 +18,7 @@ class AppTheme {
     cardOverride: AppColors.lightSurface,
   );
 
-  /// App System theme — Asphalt Pro (does not follow phone theme).
+  /// Legacy Asphalt Pro look — unused; System appearance follows the device.
   static final ThemeData system = _build(
     AppColors.systemScheme,
     scaffoldOverride: AppColors.systemBackground,
@@ -255,7 +255,7 @@ class AppTheme {
         backgroundColor: isDark ? colorScheme.surfaceContainer : AppColors.card,
         indicatorColor: isDark
             ? colorScheme.primaryContainer
-            : AppColors.brandBlueSoft,
+            : AppColors.primarySoft,
         surfaceTintColor: Colors.transparent,
         labelTextStyle: WidgetStateProperty.resolveWith((states) {
           if (states.contains(WidgetState.selected)) {
@@ -307,14 +307,14 @@ class AppTheme {
           vertical: AppSpacing.xs,
         ),
       ),
-      progressIndicatorTheme: ProgressIndicatorThemeData(
+          progressIndicatorTheme: ProgressIndicatorThemeData(
         color: isDark ? AppColors.darkPrimary : AppColors.primary,
         linearTrackColor: isDark
             ? colorScheme.surfaceContainerHighest
-            : const Color(0xFFE8EDF4),
+            : AppColors.primarySoft,
         circularTrackColor: isDark
             ? colorScheme.surfaceContainerHighest
-            : const Color(0xFFE8EDF4),
+            : AppColors.primarySoft,
       ),
       switchTheme: SwitchThemeData(
         thumbColor: WidgetStateProperty.resolveWith((states) {

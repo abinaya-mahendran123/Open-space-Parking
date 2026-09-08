@@ -121,14 +121,51 @@ class _ParkingSearchPageState extends ConsumerState<ParkingSearchPage> {
     context.push(RoutePaths.vehicleOwnerParkingDetail(key));
   }
 
-  void _applySearch() {
+  Future<void> _applySearch() async {
+    final text = _searchController.text.trim();
     final current = ref.read(searchFiltersProvider);
-    ref.read(searchFiltersProvider.notifier).state = current.copyWith(
-      query: _searchController.text.trim().isEmpty
-          ? null
-          : _searchController.text.trim(),
-      clearQuery: _searchController.text.trim().isEmpty,
-    );
+
+    if (text.isEmpty) {
+      ref.read(searchFiltersProvider.notifier).state = current.copyWith(
+        clearQuery: true,
+        clearSearchLocation: true,
+      );
+      return;
+    }
+
+    // Try geocoding the typed place (e.g. "T Nagar") so we can list nearby parking.
+    try {
+      final geo = await ref
+          .read(mapsRepositoryProvider)
+          .geocodeLocationName('$text, India');
+      if (!mounted) return;
+      ref.read(searchFiltersProvider.notifier).state = current.copyWith(
+        query: text,
+        searchLatitude: geo.latitude,
+        searchLongitude: geo.longitude,
+        searchPlaceLabel: geo.displayName,
+        maxDistanceKm: current.maxDistanceKm ?? 12,
+      );
+      ref.read(snackbarServiceProvider).showSuccess(
+            'Showing parking near ${geo.displayName}',
+          );
+    } on AppException catch (e) {
+      // Fall back to name/address text match only.
+      ref.read(searchFiltersProvider.notifier).state = current.copyWith(
+        query: text,
+        clearSearchLocation: true,
+      );
+      ref.read(snackbarServiceProvider).showError(
+            e.message.isNotEmpty
+                ? e.message
+                : 'Could not find that area. Searching by name instead.',
+          );
+    } catch (_) {
+      ref.read(searchFiltersProvider.notifier).state = current.copyWith(
+        query: text,
+        clearSearchLocation: true,
+      );
+    }
   }
 
   void _showFilters() {
@@ -385,7 +422,7 @@ class _ParkingSearchPageState extends ConsumerState<ParkingSearchPage> {
             textInputAction: TextInputAction.search,
             style: theme.textTheme.bodyLarge,
             decoration: InputDecoration(
-              hintText: 'Search parking or ticket ID',
+              hintText: 'Search area (e.g. T Nagar) or parking',
               hintStyle: theme.textTheme.bodyLarge?.copyWith(
                 color: AppColors.textMuted,
               ),
@@ -425,6 +462,38 @@ class _ParkingSearchPageState extends ConsumerState<ParkingSearchPage> {
             onSubmitted: (_) => _applySearch(),
           ),
         ),
+        if (filters.searchPlaceLabel != null &&
+            filters.searchPlaceLabel!.trim().isNotEmpty) ...[
+          const SizedBox(height: 8),
+          Material(
+            color: theme.colorScheme.primaryContainer.withValues(alpha: 0.55),
+            borderRadius: BorderRadius.circular(10),
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+              child: Row(
+                children: [
+                  Icon(
+                    Icons.place_outlined,
+                    size: 18,
+                    color: theme.colorScheme.primary,
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      'Near ${filters.searchPlaceLabel}',
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: theme.textTheme.labelLarge?.copyWith(
+                        color: theme.colorScheme.onSurface,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ],
         const SizedBox(height: 10),
         Row(
           children: [
