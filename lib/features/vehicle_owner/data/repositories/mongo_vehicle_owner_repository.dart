@@ -983,11 +983,7 @@ class MongoVehicleOwnerRepository implements VehicleOwnerRepository {
     );
 
     return results
-<<<<<<< HEAD
         .where((doc) => doc['hiddenFromOwnerHistory'] != true)
-=======
-        .where((doc) => doc['hiddenFromHistory'] != true)
->>>>>>> 8726992 (UI ups)
         .map(_mapBookingToEntity)
         .toList();
   }
@@ -1080,7 +1076,6 @@ class MongoVehicleOwnerRepository implements VehicleOwnerRepository {
   }
 
   @override
-<<<<<<< HEAD
   Future<void> hideBookingsFromHistory({
     required String vehicleOwnerId,
     required List<String> bookingIds,
@@ -1118,34 +1113,6 @@ class MongoVehicleOwnerRepository implements VehicleOwnerRepository {
             .set('updatedAt', now),
       );
     }
-=======
-  Future<void> hideBookingFromHistory(String bookingId) async {
-    await _ensureConnected();
-
-    final booking = await getBooking(bookingId);
-    if (booking == null) {
-      throw const AppException('Booking not found.');
-    }
-
-    if (booking.isQrLive || booking.isAwaitingPayment) {
-      throw const AppException(
-        'Finish or cancel this booking before removing it from history.',
-      );
-    }
-
-    if (booking.status != BookingStatus.completed &&
-        booking.status != BookingStatus.cancelled) {
-      throw const AppException('Only past bookings can be removed from history.');
-    }
-
-    await _collectionService.updateOne(
-      collectionName: AppConstants.bookingsCollection,
-      selector: where.eq('_id', ObjectId.parse(bookingId)),
-      modifier: modify
-          .set('hiddenFromHistory', true)
-          .set('updatedAt', DateTime.now().toUtc().toIso8601String()),
-    );
->>>>>>> 8726992 (UI ups)
   }
 
   @override

@@ -7,13 +7,8 @@ import 'package:open_space_parking/core/theme/app_spacing.dart';
 import 'package:open_space_parking/core/widgets/brand/app_brand_logo.dart';
 import 'package:open_space_parking/core/widgets/buttons/primary_button.dart';
 
-<<<<<<< HEAD
-/// Welcome — full-bleed portrait art + Sign In / Create Account.
-class AuthWelcomePage extends StatelessWidget {
-=======
-/// Production welcome — full logo, Find. Park. Go., clear hero (no fake dots/box).
+/// Production welcome ΓÇö full logo, Find. Park. Go., clear hero (no fake dots/box).
 class AuthWelcomePage extends StatefulWidget {
->>>>>>> 8726992 (UI ups)
   const AuthWelcomePage({super.key});
 
   @override
@@ -87,44 +82,6 @@ class _AuthWelcomePageState extends State<AuthWelcomePage>
     final isLight = theme.brightness == Brightness.light;
 
     return Scaffold(
-<<<<<<< HEAD
-      backgroundColor: colorScheme.surface,
-      body: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          Expanded(
-            child: ColoredBox(
-              color: colorScheme.surface,
-              child: Image.asset(
-                _portraitAsset,
-                fit: BoxFit.cover,
-                alignment: Alignment.center,
-                width: double.infinity,
-                height: double.infinity,
-                filterQuality: FilterQuality.high,
-                errorBuilder: (_, __, ___) => const _PortraitFallback(),
-              ),
-            ),
-          ),
-          SafeArea(
-            top: false,
-            child: Padding(
-              padding: const EdgeInsets.fromLTRB(
-                AppSpacing.md,
-                AppSpacing.md,
-                AppSpacing.md,
-                AppSpacing.lg,
-              ),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  Semantics(
-                    button: true,
-                    label: 'Sign in to your account',
-                    child: PrimaryButton(
-                      label: 'Sign In',
-                      onPressed: () => context.go(RoutePaths.login),
-=======
       backgroundColor: isLight ? AppColors.background : colorScheme.surface,
       body: SafeArea(
         child: LayoutBuilder(
@@ -243,7 +200,7 @@ class _AuthWelcomePageState extends State<AuthWelcomePage>
                               ),
                               const SizedBox(height: 18),
                               Text(
-                                'Verified spaces  ·  Secure payments',
+                                'Verified spaces  ┬╖  Secure payments',
                                 textAlign: TextAlign.center,
                                 style: theme.textTheme.labelMedium?.copyWith(
                                   color: colorScheme.onSurfaceVariant,
@@ -253,30 +210,13 @@ class _AuthWelcomePageState extends State<AuthWelcomePage>
                           ),
                         ),
                       ],
->>>>>>> 8726992 (UI ups)
                     ),
                   ),
-                  const SizedBox(height: 12),
-                  Semantics(
-                    button: true,
-                    label: 'Create a new account',
-                    child: PrimaryButton(
-                      label: 'Create Account',
-                      variant: PrimaryButtonVariant.outlined,
-                      onPressed: () => context.go(RoutePaths.register),
-                    ),
-                  ),
-                ],
+                ),
               ),
-<<<<<<< HEAD
-            ),
-          ),
-        ],
-=======
             );
           },
         ),
->>>>>>> 8726992 (UI ups)
       ),
     );
   }
@@ -289,16 +229,6 @@ class _FindParkGoTagline extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-<<<<<<< HEAD
-    return LayoutBuilder(
-      builder: (context, constraints) {
-        return SizedBox(
-          width: constraints.maxWidth,
-          height: constraints.maxHeight,
-          child: OpenSkyHeroIllustration(height: constraints.maxHeight),
-        );
-      },
-=======
     final muted = theme.colorScheme.onSurfaceVariant;
     final park = theme.colorScheme.primary;
     final base = theme.textTheme.titleLarge?.copyWith(
@@ -419,7 +349,6 @@ class _RadarRing extends StatelessWidget {
           width: 2,
         ),
       ),
->>>>>>> 8726992 (UI ups)
     );
   }
 }
